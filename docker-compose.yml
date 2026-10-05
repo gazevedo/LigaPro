@@ -1,0 +1,31 @@
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017
+      MONGODB_DATABASE_NAME: ${MONGODB_DATABASE_NAME:-ligapro}
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:8081"]}'
+      ENVIRONMENT: production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  mongodb:
+    image: mongo:8.0
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  mongodb_data:
