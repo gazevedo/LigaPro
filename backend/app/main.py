@@ -2,12 +2,13 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 
 from app.config.settings import get_settings
-from app.controllers import health, settings
+from app.controllers import auth, health, settings
 from app.core.logging import configure_logging
 from app.database.mongo import create_client
 
@@ -23,7 +24,15 @@ async def lifespan(app: FastAPI):
     try:
         app.state.database.command("ping")
         app.state.database["app_settings"].create_index("key", unique=True)
-        logger.info("MongoDB connected; app_settings index ready")
+        app.state.database["users"].create_index("email", unique=True)
+        app.state.database["users"].create_index(
+            "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
+        )
+        app.state.database["user_sessions"].create_index("refresh_token_hash", unique=True)
+        app.state.database["user_sessions"].create_index("user_id")
+        app.state.database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
+        app.state.database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
+        logger.info("MongoDB connected; application indexes ready")
         yield
     finally:
         client.close()
@@ -33,9 +42,19 @@ def create_app() -> FastAPI:
     config = get_settings()
     app = FastAPI(title="LigaPro API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
-        CORSMiddleware, allow_origins=config.cors_origins,
-        allow_methods=["GET", "PUT"], allow_headers=["Content-Type"],
+        CORSMiddleware,
+        allow_origins=config.cors_origins,
+        allow_methods=["GET", "PUT", "POST"],
+        allow_headers=["Content-Type", "Authorization"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        errors = [
+            {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
 
     @app.exception_handler(PyMongoError)
     async def database_error(request: Request, exc: PyMongoError):
@@ -47,6 +66,7 @@ def create_app() -> FastAPI:
         logger.error("Unhandled application error (%s)", type(exc).__name__)
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+    app.include_router(auth.router, prefix="/api")
     app.include_router(health.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     return app

@@ -32,7 +32,9 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest -q
-      - run: python -c "from app.main import app; assert app.version == '0.1.0'"
+      - run: |
+          export JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          python -c "from app.main import app; assert app.version == '0.1.0'"
   mobile:
     runs-on: ubuntu-latest
     defaults:

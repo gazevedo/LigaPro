@@ -9,25 +9,27 @@ services, repositories, models e schemas; configurações em `app/config`.
 
 ## Requisitos
 Python 3.12+, Node 22.13+ LTS e npm, Docker com Compose; Expo Go ou emulador para mobile.
+Antes de iniciar o Compose, crie `backend/.env` a partir de `.env.example` e gere
+uma chave privada `JWT_SECRET_KEY` com `python -c 'import secrets; print(secrets.token_urlsafe(48))'`.
+Salve a chave somente no `.env` local ou no gerenciador de secrets do deploy, nunca no Git.
 Git já inicializado; remoto: `gazevedo/LigaPro` no GitHub.
 
 ## Docker
 Na raiz:
 ```sh
-docker compose up -d --build
-docker compose ps
+docker compose --env-file backend/.env up -d --build
+docker compose --env-file backend/.env ps
 curl http://localhost:8000/api/health
 ```
 API na porta 8000; Swagger em `/docs`. MongoDB na porta local 27017, volume
 `mongodb_data` persistente. `docker compose down` mantém os dados; não use `-v`
 se quiser preservá-los. Esta configuração de MongoDB é para desenvolvimento local;
-produção exige autenticação, acesso restrito e TLS. Os endpoints de settings ainda
-não têm autenticação e não devem ser expostos publicamente.
+produção exige autenticação, acesso restrito e TLS. Os endpoints de settings exigem autenticação Bearer. Use HTTPS em produção.
 
 ## Execução local
 ```sh
 # Na raiz: somente MongoDB em Docker
-docker compose up -d mongodb
+docker compose --env-file backend/.env up -d mongodb
 cd backend
 python3.12 -m venv .venv
 . .venv/bin/activate
@@ -44,7 +46,7 @@ usável em redes comuns. Inicialização de nuvem:
 ```sh
 cd /workspace/LigaPro
 python3.12 /workspace/ligapro-cloud/prepare_build.py
-DOCKER_CONFIG=/workspace/ligapro-cloud/docker-config docker compose -f docker-compose.yml -f /workspace/ligapro-cloud/compose.yml up -d --build --wait
+DOCKER_CONFIG=/workspace/ligapro-cloud/docker-config docker compose --env-file backend/.env -f docker-compose.yml -f /workspace/ligapro-cloud/compose.yml up -d --build --wait
 ```
 
 Em outro terminal:
@@ -57,7 +59,7 @@ npm start
 Use Expo Go/emulador ou `npm run web`. Para dispositivo físico, altere
 `EXPO_PUBLIC_API_URL` para o IP LAN da máquina; no emulador Android padrão,
 use `http://10.0.2.2:8000/api`. Nunca coloque secrets em `EXPO_PUBLIC_*`.
-Fluxo: Splash → health check → Home → Configurações. Se a API falhar,
+Fluxo: Splash → health check/restauração → Login/Cadastro ou Home → Perfil/Configurações. Se a API falhar,
 Splash mostra erro e permite tentar novamente. Novo Jogo e Carregar Jogo
 estão desabilitados. Settings lista configurações; edição disponível pela API.
 
@@ -101,7 +103,7 @@ CI executa os mesmos checks em pushes/PRs para `main`, com MongoDB real.
 
 ## Desenvolvimento e GitHub
 Use o checkout existente; cada tarefa de nuvem já é isolada, sem necessidade de worktree.
-Branches: `feature/`, `fix/`, `refactor/`, `docs/`, `chore/`.
+Trabalhe na `main`, sem criar novas branches, conforme orientação atual no `AGENTS.md`.
 Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 
 Configure proteção de `main` no GitHub: exigir PR e checks `backend` e `mobile`,
@@ -112,3 +114,28 @@ Versionamento semântico: versão inicial `0.1.0`. Após revisão e CI aprovado,
 releases podem receber tags `v0.1.0`, `v0.2.0`, `v1.0.0`; nenhuma tag criada nesta etapa.
 
 A auditoria npm ainda aponta alertas em dependências transitivas da toolchain Expo/React Native; não foi aplicado `audit fix --force`, que sugere versões incompatíveis. Validação em Android/iOS físico e execução remota do CI continuam pendentes.
+
+## Autenticação — Script 2
+
+`POST /api/auth/register` (`name`, `email`, `password`), `/login` (`email`, `password`),
+`/google` (`id_token`), `/refresh` e `/logout` (`refresh_token`); `GET /api/auth/me`
+exige `Authorization: Bearer <access_token>`. Cadastro/login/Google retornam usuário,
+access token e refresh token. Settings também exige Bearer. Logout revoga a sessão,
+inclusive seus access tokens, e retorna 204. Senhas usam Argon2id; refresh opaco é
+armazenado apenas como SHA-256 e rotacionado atomicamente. Tokens de acesso são JWT
+assinados, com issuer/audience e validade configurável. A sessão expira após 30 dias
+por padrão, sem renovar indefinidamente esse prazo.
+
+Variáveis adicionais: `JWT_SECRET_KEY` (mínimo 32 caracteres), `JWT_ALGORITHM`
+(HS256/HS384/HS512), `ACCESS_TOKEN_EXPIRE_MINUTES` (15), `REFRESH_TOKEN_EXPIRE_DAYS`
+(30), `GOOGLE_WEB_CLIENT_ID` e `AUTH_RATE_LIMIT_PER_MINUTE` (10 por IP/endpoint/minuto).
+Rate limits são compartilhados via MongoDB; não confie em headers de proxy não autenticados.
+As collections `users` e `user_sessions` têm índices de identidade/refresh e TTL;
+`auth_rate_limits` usa TTL para limpeza. Nunca dependa apenas do TTL para verificar expiração.
+
+Android/iOS persistem tokens com Expo SecureStore. A versão web mantém sessão somente
+em memória. Em 401, uma única operação de refresh atende requisições concorrentes;
+refresh inválido limpa a sessão. Login Google usa o módulo nativo em development build,
+não Expo Go. Configure IDs públicos nos `.env.example` e consulte
+[pendências Google/dispositivos](docs/PENDENCIAS.md). Não há recuperação de senha nem
+vinculação automática de conta local com Google nesta etapa.

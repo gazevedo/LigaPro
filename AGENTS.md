@@ -157,3 +157,7 @@ Para funcionalidades maiores:
 3. Implemente por etapas pequenas.
 4. Valide cada etapa.
 5. Evite modificar módulos não relacionados.
+
+## Git
+
+Trabalhe sempre na branch `main`. Não crie novas branches.

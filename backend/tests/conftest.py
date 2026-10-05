@@ -1,10 +1,13 @@
 import os
+import secrets
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
+os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))
+os.environ.setdefault("GOOGLE_WEB_CLIENT_ID", "test-client.apps.googleusercontent.com")
 os.environ.setdefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")
 os.environ["MONGODB_DATABASE_NAME"] = f"ligapro_test_{uuid4().hex}"
 
@@ -22,4 +25,21 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_settings(client):
-    app.state.database["app_settings"].delete_many({})
+    for collection in ["app_settings", "users", "user_sessions", "auth_rate_limits"]:
+        app.state.database[collection].delete_many({})
+
+
+@pytest.fixture
+def authenticated_client(client):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Settings test",
+            "email": "settings@example.com",
+            "password": "test-pass-123",
+        },
+    )
+    assert response.status_code == 201
+    client.headers["Authorization"] = "Bearer " + response.json()["access_token"]
+    yield client
+    client.headers.pop("Authorization", None)

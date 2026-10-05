@@ -23,7 +23,9 @@
     "zustand": "^5.0.0",
     "react-dom": "19.2.3",
     "react-native-web": "~0.21.0",
-    "@expo/metro-runtime": "~57.0.16"
+    "@expo/metro-runtime": "~57.0.16",
+    "expo-secure-store": "~57.0.4",
+    "@react-native-google-signin/google-signin": "^16.1.5"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",

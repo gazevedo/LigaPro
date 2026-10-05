@@ -7,7 +7,7 @@ beforeEach(() => jest.clearAllMocks());
 test('health requires API and MongoDB to be available', async () => {
   request.mockResolvedValueOnce({ status: 'ok', api: 'ok', mongodb: 'ok' });
   await expect(checkHealth()).resolves.toBeUndefined();
-  expect(request).toHaveBeenCalledWith('/health');
+  expect(request).toHaveBeenCalledWith('/health', {}, false);
   request.mockResolvedValueOnce({ status: 'ok', api: 'ok', mongodb: 'error' });
   await expect(checkHealth()).rejects.toThrow('API ou MongoDB indisponível.');
 });
