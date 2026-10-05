@@ -196,8 +196,8 @@ nem `overall`. O modo `skills` exige as sete habilidades; não inventa atributos
 O resultado contém placar, eventos, escalações finais e snapshot inicial com seed,
 configuração e atributos. O campeonato do script 4 persiste esse resultado em `matches`, com o snapshot
 utilizado em cada partida, e executa jogos mesmo sem usuários conectados. Coeficientes em
-`MatchConfig` são provisórios para calibração no script 6; foco usa probabilidade
-alvo de 70%, não uma quota por partida.
+`MatchConfig` são calibrados pelo script 6; foco usa probabilidade alvo de 70%,
+não uma quota por partida.
 
 Testes unitários isolados, sem MongoDB (com as dependências do backend instaladas):
 ```sh
@@ -230,3 +230,24 @@ APIs: `GET /api/competition`, `/api/competition/matches`, `/api/training`, `/api
 `POST /api/players/{id}/train` e `/api/youth/{id}/promote`.
 Mobile: Treinamento e Categorias de Base no dashboard; classificação na tela do clube.
 Testes de integração relacionados: `pytest tests/test_game.py tests/test_competition.py -q`.
+
+## Script 6 — calibração
+
+`backend/scripts/calibrate_match_engine.py` executa o motor de produção com seeds
+fixas, mando alternado, seis pares de forças e variações controladas de habilidades,
+improvisação, lado, energia, moral, formação, estilo, marcação e foco. Inclui as
+36 combinações entre nove táticas (três estilos × três marcações) e nove cenários
+com táticas distintas contra elenco muito superior. O modo compacto omite snapshots
+e escalações finais somente no lote de calibração, mantendo a mesma simulação.
+
+Reproduzir da raiz (sem MongoDB):
+```sh
+PYTHONPATH=backend python backend/scripts/calibrate_match_engine.py --matches 10000 --workers 4
+```
+São 85 cenários e 850.000 partidas. Relatórios em
+[calibration-script-06.md](docs/calibration-script-06.md) e JSON adjacente incluem
+métricas por fase, posse, ataques, chances, finalizações, gols, faltas, cartões,
+setores e critérios de aceitação. Posse mede minutos de iniciativa por bloco.
+A formação altera presença a partir das posições reais; o mando continua pequeno.
+`--categories` e `--matches` permitem lotes exploratórios, que não substituem a
+aceitação completa com pelo menos 10.000 partidas por cenário.

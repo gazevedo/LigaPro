@@ -43,6 +43,47 @@ class MatchEngineTests(unittest.TestCase):
             )
         self.assertEqual(result["events"][-1]["minute"], 90)
 
+    def test_calibration_mode_and_telemetry_match_persisted_simulation(self):
+        home, away = team("h"), team("a")
+        engine = MatchEngine()
+        full = engine.simulate(home, away, 543)
+        compact = engine.simulate(home, away, 543, capture_snapshot=False)
+        self.assertEqual(full["score"], compact["score"])
+        self.assertEqual(full["events"], compact["events"])
+        self.assertEqual(full["statistics"], compact["statistics"])
+        self.assertNotIn("snapshot", compact)
+        self.assertEqual(sum(s["possession_minutes"] for s in full["statistics"].values()), 90)
+        for identity, stats in full["statistics"].items():
+            self.assertEqual(stats["goals"], full["score"][identity])
+            self.assertEqual(sum(stats["lanes"].values()), stats["attacks"])
+            self.assertEqual(
+                stats["shots"],
+                sum(
+                    e["team_id"] == identity
+                    and e["type"] in {"goal", "shot_saved", "shot_off_target"}
+                    for e in full["events"]
+                ),
+            )
+            for phase in stats["phases"].values():
+                self.assertLessEqual(phase["successes"], phase["attempts"])
+        home.lineup[0].energy = 25
+        self.assertEqual(away.lineup[0].energy, 100)
+
+    def test_phase_specific_skills_and_config_validation(self):
+        calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "skills")
+        player = team("h").lineup[0]
+        before = calculator.calculate(player, "passing")
+        player.skills["goalkeeping"] += 20
+        self.assertEqual(before, calculator.calculate(player, "passing"))
+        self.assertEqual(calculator.calculate(player, "goalkeeping"), 70)
+        for changes in (
+            {"goal_base": float("nan")},
+            {"phase_bases": (0.8,)},
+            {"marking_attack_reduction": (0, 0.1, 2)},
+        ):
+            with self.assertRaises(ValueError):
+                MatchConfig(**changes)
+
     def test_position_side_energy_morale_and_traits(self):
         config = MatchConfig()
         fit = PositionFitCalculator(config)
