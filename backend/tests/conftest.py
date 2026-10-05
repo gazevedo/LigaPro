@@ -8,7 +8,9 @@ from pymongo import MongoClient
 
 os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))
 os.environ.setdefault("GOOGLE_WEB_CLIENT_ID", "test-client.apps.googleusercontent.com")
-os.environ.setdefault("MONGODB_CONNECTION_STRING", "mongodb://localhost:27017")
+os.environ.setdefault(
+    "MONGODB_CONNECTION_STRING", "mongodb://localhost:27017/?directConnection=true"
+)
 os.environ["MONGODB_DATABASE_NAME"] = f"ligapro_test_{uuid4().hex}"
 
 from app.main import app  # noqa: E402
@@ -25,7 +27,9 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_settings(client):
-    for collection in ["app_settings", "users", "user_sessions", "auth_rate_limits"]:
+    for collection in app.state.database.list_collection_names():
+        if collection in {"countries", "club_badges"}:
+            continue
         app.state.database[collection].delete_many({})
 
 

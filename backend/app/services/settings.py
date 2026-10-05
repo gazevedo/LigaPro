@@ -20,4 +20,6 @@ class SettingsService:
         return setting
 
     def put(self, key: str, value: Any) -> Setting:
+        if key == "game_rules":
+            raise HTTPException(403, "Regras do jogo são administradas no servidor.")
         return self.repository.put(key, value)

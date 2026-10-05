@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017/?directConnection=true
       MONGODB_DATABASE_NAME: ${MONGODB_DATABASE_NAME:-ligapro}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:8081"]}'
       ENVIRONMENT: production
@@ -17,6 +17,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -24,14 +26,24 @@ services:
       retries: 5
   mongodb:
     image: mongo:8.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.hello().isWritablePrimary ? 1 : quit(1)"]
       interval: 5s
       timeout: 5s
       retries: 10
+  mongodb-init:
+    image: mongo:8.0
+    depends_on:
+      mongodb:
+        condition: service_started
+    restart: on-failure
+    entrypoint: ["mongosh", "--host", "mongodb:27017", "--quiet", "--eval"]
+    command:
+      - 'try { rs.status() } catch (e) { if (e.code === 94) rs.initiate({_id:"rs0",members:[{_id:0,host:"mongodb:27017"}]}); else throw e; }'
 volumes:
   mongodb_data:

@@ -1,6 +1,6 @@
 # LigaPro — 0.1.0
 
-Fundação técnica do jogo mobile. Nenhuma regra esportiva implementada.
+Base técnica, autenticação e gerenciamento inicial do clube. Partidas e campeonatos ainda não implementados.
 
 ## Arquitetura
 React Native / Expo / TypeScript → API REST FastAPI → MongoDB.
@@ -22,14 +22,16 @@ docker compose --env-file backend/.env ps
 curl http://localhost:8000/api/health
 ```
 API na porta 8000; Swagger em `/docs`. MongoDB na porta local 27017, volume
-`mongodb_data` persistente. `docker compose down` mantém os dados; não use `-v`
+`mongodb_data` persistente e replica set `rs0` para transações atômicas. O serviço
+`mongodb-init` inicializa o conjunto sem apagar os dados. Conexões locais usam
+`mongodb://localhost:27017/?directConnection=true`. `docker compose down` mantém os dados; não use `-v`
 se quiser preservá-los. Esta configuração de MongoDB é para desenvolvimento local;
 produção exige autenticação, acesso restrito e TLS. Os endpoints de settings exigem autenticação Bearer. Use HTTPS em produção.
 
 ## Execução local
 ```sh
 # Na raiz: somente MongoDB em Docker
-docker compose --env-file backend/.env up -d mongodb
+docker compose --env-file backend/.env up -d mongodb mongodb-init
 cd backend
 python3.12 -m venv .venv
 . .venv/bin/activate
@@ -59,9 +61,9 @@ npm start
 Use Expo Go/emulador ou `npm run web`. Para dispositivo físico, altere
 `EXPO_PUBLIC_API_URL` para o IP LAN da máquina; no emulador Android padrão,
 use `http://10.0.2.2:8000/api`. Nunca coloque secrets em `EXPO_PUBLIC_*`.
-Fluxo: Splash → health check/restauração → Login/Cadastro ou Home → Perfil/Configurações. Se a API falhar,
-Splash mostra erro e permite tentar novamente. Novo Jogo e Carregar Jogo
-estão desabilitados. Settings lista configurações; edição disponível pela API.
+Fluxo: Splash → health check/restauração → Login/Cadastro → criação de clube
+ou Dashboard, conforme `/api/game/status`. Dashboard: Clube, Plantel, Estádio,
+Financeiro, Calendário e Mercado. Settings lista configurações; edição disponível pela API.
 
 ## Variáveis
 | Variável | Uso |
@@ -139,3 +141,46 @@ refresh inválido limpa a sessão. Login Google usa o módulo nativo em developm
 não Expo Go. Configure IDs públicos nos `.env.example` e consulte
 [pendências Google/dispositivos](docs/PENDENCIAS.md). Não há recuperação de senha nem
 vinculação automática de conta local com Google nesta etapa.
+
+## Script 3 — clube e gerenciamento inicial
+
+Criação transacional de um clube por usuário, 25 jogadores (3 GOL, 8 DEF, 8 MED,
+6 ATA), estádio, escalação e patrocinador inicial. Consulta pública de clube
+omite proprietário e finanças; administração sempre usa o clube da sessão.
+Não há partidas, campeonatos ou troféus simulados.
+
+Valores monetários são inteiros em centavos. Defaults em `app/models/game.py`:
+capital inicial R$ 100.000, patrocínio R$ 5.000 por 90 dias com pagamento único,
+estádio de 10.000 lugares, ingresso R$ 20, upgrade R$ 1.000 × nível atual.
+Investimentos: 30 dias e 1% por contrato; empréstimos bancários: 30 dias e 5%,
+limite R$ 50.000 e um contrato ativo por clube. Estes são defaults iniciais para
+esta etapa, configuráveis via `app_settings.game_rules` por administração do
+servidor; a API de settings não permite alterar essa chave. Formações também
+são configuráveis ali. Jogadores iniciais usam nomes provisórios e overall 50.
+
+Cada receita/despesa registra uma transação; compra e empréstimo de jogador
+movimentam saldo, plantéis, anúncio, propostas e histórico na mesma transação.
+Empréstimos preservam `owner_club_id`. Uma rotina do backend executa a cada 30s,
+mesmo sem usuários conectados, retornos de jogadores, vencimentos de investimentos,
+pagamento bancário quando há saldo e expiração de patrocinadores. Contrato bancário
+sem saldo fica vencido até pagamento. Transferências preservam um plantel próprio
+capaz de escalar 11 jogadores; reservas e escalação são ajustadas no retorno.
+Datas usam UTC; sem jogos, bilheteria e eventos de partidas permanecem vazios.
+
+Endpoints autenticados (detalhes e schemas no Swagger):
+
+- `GET /api/game/status`, `GET /api/game/catalog`, `POST /api/clubs`, `GET /api/clubs/{id}`.
+- `GET /api/squad`, `PUT /api/squad/lineup`.
+- `GET /api/stadium`, `POST /api/stadium/{facility}/upgrade`.
+- `GET /api/finance`, `/api/finance/bank`, `/api/finance/tickets`, `/api/finance/sponsors`.
+- `POST /api/finance/bank/{investment|bank_loan}`, `/api/finance/contracts/{id}/settle`,
+  `/api/finance/sponsors/{id}/accept`; `PUT /api/finance/tickets`.
+- `GET /api/calendar?start=...&end=...&type=...`.
+- `GET /api/market/players` (nome, posição, país, tipo, intervalos de idade/overall/valor),
+  `GET /api/market/mine`, `GET /api/players/{id}`.
+- `POST /api/market/listings`, `/api/market/offers`, `/api/market/offers/{id}/accept`,
+  `/api/market/listings/{id}/cancel`, `/api/market/offers/{id}/cancel`.
+
+Listas de consulta têm limite de 200 registros (calendário: 500); o plantel e
+as validações de escalação consideram todos os jogadores atuais do clube. Google e validações em
+dispositivo físico continuam listados em `docs/PENDENCIAS.md`.
