@@ -6,10 +6,12 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
-from app.config.game import GameConfig, legacy_position
+from app.config.game import GameConfig
 from app.models.game import public, utcnow
-from app.services.match_engine import MatchEngine, MatchPlayer, MatchTeam
+from app.services.match_engine import MatchEngine, MatchPlayer, MatchTeam, arrange_formation
+from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
+from app.services.tactics import TacticsService
 
 
 def division_name(tier):
@@ -150,6 +152,19 @@ class CompetitionService:
                 "reserves": [p["_id"] for p in players if p["_id"] not in starters],
             },
         )
+
+        TacticsService.persist(
+            repo,
+            club_id,
+            {
+                "formation": "4-4-2",
+                "play_style": "balanced",
+                "marking": "light",
+                "attack_focus": "normal",
+            },
+        )
+        repo.insert("club_finances", {"_id": club_id, "balance": 0})
+        ContractService.initial(repo, players, config)
         return bot
 
     @staticmethod
@@ -386,28 +401,29 @@ class CompetitionService:
         selected = [by_id[p] for p in lineup["starters"] if p in by_id]
         # An aging squad can require improvisation. Fill missing role slots with
         # real active players; position fit in the engine applies the penalty.
-        formation = lineup["formation"]
-        sectors = [int(n) for n in formation.split("-")]
-        roles = ["GK"] + ["CB"] * sectors[0] + ["MID"] * sum(sectors[1:-1]) + ["ATT"] * sectors[-1]
+
+        tactics = TacticsService.settings(repo, club_id, lineup)
+        formation = tactics["formation"]
+
         pool = selected + [p for p in documents if p not in selected]
-        players = []
-        for role in roles:
-            expected = {"GK": "GOL", "CB": "DEF", "MID": "MED", "ATT": "ATA"}[role]
-            candidate = next(
-                (p for p in pool if legacy_position(p["position"]) == expected), pool[0]
-            )
-            pool.remove(candidate)
-            players.append(MatchPlayer.from_document(candidate, role))
+        players = arrange_formation([MatchPlayer.from_document(p) for p in pool[:11]], formation)
+        pool = pool[11:]
         return MatchTeam(
             str(club_id),
             players,
             formation,
-            lineup.get("style", "balanced"),
-            lineup.get("marking", "light"),
-            lineup.get("attack_focus", "normal"),
+            tactics["play_style"],
+            tactics["marking"],
+            tactics["attack_focus"],
+            [MatchPlayer.from_document(p) for p in pool if p["_id"] in lineup.get("reserves", [])],
+            bool(repo.find("clubs", {"_id": club_id}, {"is_bot": 1}).get("is_bot", False)),
         )
 
     def play(self, identity, now=None):
+        pending = self.repo.find("matches", {"_id": identity, "status": "scheduled"}, {"date": 1})
+        if pending and pending["date"] <= (now or utcnow()):
+            ContractService(self.repo).process_due(pending["date"])
+
         def operation(repo):
             self.lock(repo)
             match = repo.find("matches", {"_id": identity, "status": "scheduled"})
@@ -419,7 +435,9 @@ class CompetitionService:
                 self.match_team(repo, match[f"{side}_club_id"]) for side in ("home", "away")
             )
             if home and away:
-                result = MatchEngine().simulate(home, away, match["seed"])
+                result = MatchEngine().simulate(
+                    home, away, match["seed"], commands=match.get("commands", [])
+                )
                 home_goals = result["score"][home.id]
                 away_goals = result["score"][away.id]
             else:

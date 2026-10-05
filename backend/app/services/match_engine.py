@@ -4,10 +4,21 @@ Snapshots are JSON-compatible and returned with the result for the match schedul
 to persist. This module performs no database reads or writes.
 """
 
-from copy import copy
+from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field
 from math import isfinite
 from random import Random
+
+from app.services.discipline import DuelResolver, FoulResolver, PenaltyService
+
+MAX_SUBSTITUTIONS = 5
+FORMATIONS = {"4-4-2", "4-3-3", "4-2-3-1", "3-5-2", "5-3-2", "4-5-1", "3-4-3"}
+BOT_PRESETS = {
+    "balanced": ("balanced", "light", "normal"),
+    "aggressive": ("all_out_attack", "heavy", "center"),
+    "counter": ("counter_attack", "light", "wings"),
+    "defensive_heavy_marking": ("balanced", "very_heavy", "normal"),
+}
 
 POSITIONS = {"GK", "FB", "CB", "MID", "ATT"}
 ALIASES = {"GOL": "GK", "DEF": "CB", "MED": "MID", "ATA": "ATT"}
@@ -30,6 +41,10 @@ class MatchConfig:
     marking_containment: tuple = (1.0, 1.08, 1.20)
     marking_build_up: tuple = (1.0, 0.98, 0.90)
     foul_probability: tuple = (0.03, 0.07, 0.12)
+    foul_marking_modifiers: tuple = (0.75, 1.0, 1.35)
+    yellow_probability: tuple = (0.20, 0.32, 0.44)
+    direct_red_probability: tuple = (0.025, 0.05, 0.075)
+    penalty_area_probability: tuple = (0.02, 0.08, 0.16)
     phase_bases: tuple = (0.80, 0.75, 0.65)
     phase_sensitivity: float = 0.30
     goal_base: float = 0.36
@@ -55,6 +70,10 @@ class MatchConfig:
             self.marking_containment,
             self.marking_build_up,
             self.foul_probability,
+            self.foul_marking_modifiers,
+            self.yellow_probability,
+            self.direct_red_probability,
+            self.penalty_area_probability,
             self.phase_bases,
             self.marking_attack_reduction,
             self.marking_attempt_cost,
@@ -80,6 +99,20 @@ class MatchConfig:
             raise ValueError("Containment must be positive")
         if any(not 0 < x <= 1 for x in self.marking_build_up):
             raise ValueError("Build-up factors must be in (0, 1]")
+        if any(x <= 0 for x in self.foul_marking_modifiers):
+            raise ValueError("Foul modifiers must be positive")
+        for probabilities in (
+            self.yellow_probability,
+            self.direct_red_probability,
+            self.penalty_area_probability,
+        ):
+            if any(not 0 <= x <= 1 for x in probabilities):
+                raise ValueError("Invalid disciplinary probability")
+        if any(
+            red > yellow
+            for red, yellow in zip(self.direct_red_probability, self.yellow_probability)
+        ):
+            raise ValueError("Direct red threshold must not exceed yellow threshold")
         if any(not 0 <= x <= 1 for x in self.foul_probability):
             raise ValueError("Foul probabilities must be in [0, 1]")
 
@@ -137,6 +170,8 @@ class MatchTeam:
     style: str = "balanced"
     marking: str = "light"
     attack_focus: str = "normal"
+    reserves: list[MatchPlayer] = field(default_factory=list)
+    is_bot: bool = False
 
     def __post_init__(self):
         if self.style not in {"balanced", "all_out_attack", "counter_attack"}:
@@ -153,6 +188,9 @@ class MatchTeam:
             raise ValueError("Formation must describe ten outfield players")
         if len(self.lineup) != 11 or len({p.id for p in self.lineup}) != 11:
             raise ValueError("Lineup requires eleven distinct players")
+        ids = [p.id for p in self.lineup + self.reserves]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Starters and reserves must be distinct")
         counts = [
             sum(p.assigned_position == "GK" for p in self.lineup),
             sum(p.assigned_position in {"CB", "FB"} for p in self.lineup),
@@ -161,6 +199,87 @@ class MatchTeam:
         ]
         if counts != [1, sectors[0], sum(sectors[1:-1]), sectors[-1]]:
             raise ValueError("Lineup sectors must match formation")
+
+
+def arrange_formation(players, formation):
+    """Keep actual players and their current energy; assign roles and sides."""
+    if formation not in FORMATIONS:
+        raise ValueError("Unknown formation")
+    sectors = [int(n) for n in formation.split("-")]
+    defenders = [("CB", "center")] * sectors[0]
+    if sectors[0] >= 4:
+        defenders = [("FB", "left"), ("FB", "right")] + [("CB", "center")] * (sectors[0] - 2)
+    midfield = [("MID", "center")] * sum(sectors[1:-1])
+    if len(midfield) >= 4:
+        midfield[:2] = [("MID", "left"), ("MID", "right")]
+    slots = [("GK", "center")] + defenders + midfield + [("ATT", "center")] * sectors[-1]
+    pool, assigned = list(players), []
+    for role, side in slots:
+
+        def suitability(player):
+            natural = player.position == role or {player.position, role} == {"CB", "FB"}
+            return (
+                natural,
+                player.preferred_side in {side, "both"},
+                player.assigned_position == role,
+            )
+
+        player = max(pool, key=suitability)
+        pool.remove(player)
+        player.assigned_position, player.side = role, side
+        assigned.append(player)
+    return assigned
+
+
+def bot_preset(team, opponent, difference):
+    strength = sum(p.strength for p in team.lineup) / 11
+    rival = sum(p.strength for p in opponent.lineup) / 11
+    speed = sum(p.skills.get("speed", p.strength) for p in team.lineup) / 11
+    if difference < 0:
+        return "aggressive"
+    if difference > 0 or opponent.style == "all_out_attack" or speed > strength + 5:
+        return "counter"
+    if strength < rival - 8:
+        return "defensive_heavy_marking"
+    return "balanced"
+
+
+def validate_commands(commands, team_ids):
+    for command in commands:
+        if not isinstance(command, dict) or set(command) != {
+            "team_id",
+            "minute",
+            "type",
+            "payload",
+        }:
+            raise ValueError("Invalid command fields")
+        if command["team_id"] not in team_ids:
+            raise ValueError("Unknown command team")
+        minute = command["minute"]
+        if type(minute) is not int or not 0 <= minute < 90:
+            raise ValueError("Command minute must be between 0 and 89")
+        payload = command["payload"]
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("Empty command payload")
+        if command["type"] == "substitution":
+            if set(payload) != {"out_player_id", "in_player_id"} or any(
+                not isinstance(v, str) for v in payload.values()
+            ):
+                raise ValueError("Invalid substitution")
+        elif command["type"] == "tactics_change":
+            choices = {
+                "formation": FORMATIONS,
+                "play_style": {"balanced", "all_out_attack", "counter_attack"},
+                "marking": {"light", "heavy", "very_heavy"},
+                "attack_focus": {"normal", "center", "wings"},
+            }
+            if any(
+                k not in choices or not isinstance(v, str) or v not in choices[k]
+                for k, v in payload.items()
+            ):
+                raise ValueError("Invalid tactical command")
+        else:
+            raise ValueError("Unknown command type")
 
 
 class PositionFitCalculator:
@@ -224,8 +343,18 @@ class SectorContributionCalculator:
             * (
                 1.4
                 if team.style == "all_out_attack"
-                and p.assigned_position in {"MID", "ATT"}
+                and p.assigned_position in {"MID", "FB", "ATT"}
                 and phase != "defend"
+                else 1
+            )
+            * (1.5 if lane != "center" and p.assigned_position == "FB" else 1)
+            * (
+                1
+                + sum(
+                    p.skills.get(skill, p.strength) for skill in ("speed", "passing", "finishing")
+                )
+                / 300
+                if team.style == "counter_attack" and phase in {"progress", "create", "finish"}
                 else 1
             )
             for p in players
@@ -320,6 +449,8 @@ class MatchEngine:
         self.sectors = SectorContributionCalculator(self.calculator)
         self.goalkeeper = GoalkeeperResolver(self.calculator)
         self.finishing = FinishingResolver(self.config)
+        self.fouls = FoulResolver(self.config)
+        self.penalties = PenaltyService(self.calculator, self.goalkeeper, self.finishing)
         self.phases = [
             (phase, resolver(base, self.config.phase_sensitivity))
             for phase, resolver, base in zip(
@@ -336,16 +467,20 @@ class MatchEngine:
         wings = favored if focus == "wings" else not favored
         return rng.choice(["left", "right"]) if wings else "center"
 
-    def simulate(self, home, away, seed, *, capture_snapshot=True):
+    def simulate(self, home, away, seed, *, capture_snapshot=True, commands=None):
         # Revalidate mutable inputs and isolate fatigue/cards from caller data.
+        commands = deepcopy(commands or [])
+        validate_commands(commands, {home.id, away.id})
+        pending = sorted(commands, key=lambda command: command["minute"])
         teams = [copy(home), copy(away)]
         for team in teams:
             team.lineup = [copy(player) for player in team.lineup]
+            team.reserves = [copy(player) for player in team.reserves]
         if home.id == away.id:
             raise ValueError("Teams must be distinct")
         for team in teams:
             team.__post_init__()
-            for player in team.lineup:
+            for player in team.lineup + team.reserves:
                 player.__post_init__()
                 if self.mode == "skills" and not SKILLS <= player.skills.keys():
                     raise ValueError("Skills mode requires all seven skills")
@@ -356,6 +491,7 @@ class MatchEngine:
                 "seed": seed,
                 "mode": self.mode,
                 "config": asdict(self.config),
+                "commands": commands,
             }
             if capture_snapshot
             else None
@@ -371,6 +507,64 @@ class MatchEngine:
             if key not in presence_cache:
                 presence_cache[key] = self.sectors.presence(teams[index], phase, dismissed[index])
             return presence_cache[key]
+
+        substitutions = [0, 0]
+
+        def apply_command(command, minute):
+            index = next(i for i, t in enumerate(teams) if t.id == command["team_id"])
+            active = teams[index]
+            payload = command["payload"]
+            base = {"minute": minute, "team_id": active.id, "player_id": None}
+            if command["type"] == "substitution":
+                outgoing = next(
+                    (p for p in active.lineup if p.id == payload["out_player_id"]), None
+                )
+                incoming = next(
+                    (p for p in active.reserves if p.id == payload["in_player_id"]), None
+                )
+                if (
+                    substitutions[index] >= MAX_SUBSTITUTIONS
+                    or outgoing is None
+                    or incoming is None
+                    or outgoing.id in dismissed[index]
+                ):
+                    events.append(
+                        {
+                            **base,
+                            "type": "command_rejected",
+                            "command": command,
+                            "reason": "Substituição indisponível ou limite atingido.",
+                        }
+                    )
+                    return
+                incoming.assigned_position, incoming.side = (
+                    outgoing.assigned_position,
+                    outgoing.side,
+                )
+                active.lineup[active.lineup.index(outgoing)] = incoming
+                active.reserves.remove(incoming)
+                substitutions[index] += 1
+                events.append(
+                    {**base, "type": "substitution", **payload, "energy": incoming.energy}
+                )
+            else:
+                for field_name, value in payload.items():
+                    attribute = "style" if field_name == "play_style" else field_name
+                    previous = getattr(active, attribute)
+                    if previous == value:
+                        continue
+                    if field_name == "formation":
+                        active.lineup = arrange_formation(active.lineup, value)
+                    setattr(active, attribute, value)
+                    events.append(
+                        {
+                            **base,
+                            "type": field_name + "_change",
+                            "previous": previous,
+                            "value": value,
+                        }
+                    )
+            presence_cache.clear()
 
         stats = [
             {
@@ -390,6 +584,56 @@ class MatchEngine:
             for _ in teams
         ]
         for start in range(0, 90, self.config.block_minutes):
+            while pending and pending[0]["minute"] <= start:
+                apply_command(pending.pop(0), start)
+            for index, active in enumerate(teams):
+                if not active.is_bot:
+                    continue
+                if start in {0, 45, 65, 80}:
+                    preset = bot_preset(active, teams[1 - index], scores[index] - scores[1 - index])
+                    style, marking, focus = BOT_PRESETS[preset]
+                    if sum(yellows[index].values()) >= 3 or dismissed[index]:
+                        marking = "light"
+                    apply_command(
+                        {
+                            "team_id": active.id,
+                            "type": "tactics_change",
+                            "payload": {
+                                "play_style": style,
+                                "marking": marking,
+                                "attack_focus": focus,
+                            },
+                        },
+                        start,
+                    )
+                if start in {60, 75}:
+                    for _ in range(3):
+                        if substitutions[index] >= MAX_SUBSTITUTIONS:
+                            break
+                        options = [
+                            (out, reserve)
+                            for out in active.lineup
+                            for reserve in active.reserves
+                            if out.id not in dismissed[index]
+                            and out.assigned_position == reserve.position
+                            and reserve.energy > out.energy + 5
+                        ]
+                        if not options:
+                            break
+                        outgoing, incoming = min(
+                            options, key=lambda pair: (pair[0].energy, -pair[1].strength)
+                        )
+                        apply_command(
+                            {
+                                "team_id": active.id,
+                                "type": "substitution",
+                                "payload": {
+                                    "out_player_id": outgoing.id,
+                                    "in_player_id": incoming.id,
+                                },
+                            },
+                            start,
+                        )
             minute = min(90, start + self.config.block_minutes)
             duration = minute - start
             for index, active_team in enumerate(teams):
@@ -472,21 +716,41 @@ class MatchEngine:
             )
             if transition_attack:
                 stats[attacker]["transitions"] += 1
-            if defenders and rng.random() < self.config.foul_probability[mark]:
-                culprit = rng.choice(defenders)
-                event("foul", culprit, team_id=opponent.id)
-                card = rng.random()
-                if card < 0.025 * (mark + 1):
-                    event("red_card", culprit, team_id=opponent.id)
+            foul = None
+            if defenders and build_players:
+                challenger, culprit = rng.choice(build_players), rng.choice(defenders)
+                duel = DuelResolver.resolve(
+                    challenger,
+                    culprit,
+                    self.calculator.calculate(challenger, "technique", "speed"),
+                    self.calculator.calculate(culprit, "tackling", "speed"),
+                    rng,
+                )
+                event("duel", challenger, **duel)
+                foul = self.fouls.resolve(duel, challenger, mark, rng)
+            if foul:
+                event(
+                    "foul",
+                    culprit,
+                    team_id=opponent.id,
+                    severity=foul["severity"],
+                    penalty_area=foul["penalty_area"],
+                    opponent_player_id=challenger.id,
+                )
+                if foul["card"] == "direct_red":
+                    event("direct_red", culprit, team_id=opponent.id)
+                    event("red_card", culprit, team_id=opponent.id, reason="direct_red")
                     dismissed[defender].add(culprit.id)
-                elif card < 0.20 + mark * 0.12:
+                elif foul["card"] == "yellow":
                     event("yellow_card", culprit, team_id=opponent.id)
                     yellows[defender][culprit.id] = yellows[defender].get(culprit.id, 0) + 1
                     if yellows[defender][culprit.id] == 2:
-                        event("red_card", culprit, team_id=opponent.id)
+                        event("second_yellow", culprit, team_id=opponent.id)
+                        event("red_card", culprit, team_id=opponent.id, reason="second_yellow")
                         dismissed[defender].add(culprit.id)
-                if rng.random() < 0.10:
-                    event("penalty_awarded")
+                presence_cache.clear()
+                if foul["penalty_area"]:
+                    event("penalty_awarded", challenger)
                     shooters = self.sectors.participants(
                         team, "finish", lane, rng, dismissed[attacker]
                     )
@@ -499,12 +763,7 @@ class MatchEngine:
                             ),
                             None,
                         )
-                        shot = self.finishing.resolve(
-                            self.calculator.calculate(shooters[0], "finishing"),
-                            self.goalkeeper.strength(keeper),
-                            1.0,
-                            rng,
-                        )
+                        shot = self.penalties.resolve(shooters[0], keeper, rng)
                         event(shot, shooters[0], penalty=True)
                         scores[attacker] += shot == "goal"
                     continue
@@ -564,6 +823,16 @@ class MatchEngine:
                 )
                 event(shot, shooter)
                 scores[attacker] += shot == "goal"
+        for command in pending:
+            events.append(
+                {
+                    "minute": 90,
+                    "type": "command_rejected",
+                    "team_id": command["team_id"],
+                    "command": command,
+                    "reason": "Sem bloco futuro para aplicar o comando.",
+                }
+            )
         result = {
             "score": {home.id: scores[0], away.id: scores[1]},
             "events": events,
@@ -573,5 +842,9 @@ class MatchEngine:
             },
         }
         if capture_snapshot:
-            result.update(snapshot=snapshot, final_lineups=[asdict(t) for t in teams])
+            final = [asdict(t) for t in teams]
+            for index, lineup in enumerate(final):
+                lineup["lineup"] = [p for p in lineup["lineup"] if p["id"] not in dismissed[index]]
+                lineup["dismissed_player_ids"] = sorted(dismissed[index])
+            result.update(snapshot=snapshot, final_lineups=final)
         return result

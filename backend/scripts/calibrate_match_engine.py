@@ -180,6 +180,33 @@ def run_case(case, matches, seed, config):
     }
 
 
+def discipline_acceptance(results, matches):
+    cases = {r["name"]: r for r in results}
+    names = ["marking_" + marking for marking in ("light", "heavy", "very_heavy")]
+    if not all(name in cases for name in names):
+        return []
+    checks = [{"name": "discipline_sample_size", "passed": matches >= 10000, "detail": matches}]
+    for field in ("fouls", "yellow_cards", "red_cards"):
+        values = [cases[name]["teams"]["A"][field] for name in names]
+        checks.append(
+            {
+                "name": field + "_increases",
+                "passed": values[0] < values[1] < values[2],
+                "detail": values,
+            }
+        )
+    for side, field in (("B", "attacks"), ("A", "build_success_rate")):
+        values = [cases[name]["teams"][side][field] for name in names]
+        checks.append(
+            {
+                "name": side + "_" + field + "_decreases",
+                "passed": values[0] > values[1] > values[2],
+                "detail": values,
+            }
+        )
+    return checks
+
+
 def acceptance(results, matches):
     by_name = {result["name"]: result for result in results}
     checks = []
@@ -444,8 +471,12 @@ def main():
         "seed": args.seed,
         "config": asdict(config),
         "engine_sha256": hashlib.sha256(engine_path.read_bytes()).hexdigest(),
+        "discipline_sha256": hashlib.sha256(
+            engine_path.with_name("discipline.py").read_bytes()
+        ).hexdigest(),
         "results": results,
-        "acceptance": acceptance(results, args.matches) if complete else [],
+        "acceptance": (acceptance(results, args.matches) if complete else [])
+        + discipline_acceptance(results, args.matches),
         "elapsed_seconds": perf_counter() - start,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

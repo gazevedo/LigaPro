@@ -96,9 +96,9 @@ class GameRepository:
         setting = self.find("app_settings", {"key": "game_rules"})
         return {**DEFAULT_RULES, **(setting["value"] if setting else {})}
 
-    def money(self, club_id, amount, category, reference=None):
+    def money(self, club_id, amount, category, reference=None, *, allow_overdraft=False):
         query = {"_id": club_id}
-        if amount < 0:
+        if amount < 0 and not allow_overdraft:
             query["balance"] = {"$gte": -amount}
         if not self.update("club_finances", query, {"$inc": {"balance": amount}}):
             raise HTTPException(409, "Saldo insuficiente.")
@@ -140,12 +140,22 @@ class GameRepository:
         self.database.seasons.create_index(
             "status", unique=True, partialFilterExpression={"status": "active"}
         )
+        self.database.club_tactics.create_index("club_id", unique=True)
         self.database.divisions.create_index("tier", unique=True)
         self.database.season_clubs.create_index([("season_id", 1), ("club_id", 1)], unique=True)
         self.database.standings.create_index(
             [("season_id", 1), ("division_id", 1), ("position", 1)]
         )
         self.database.matches.create_index([("season_id", 1), ("status", 1), ("date", 1)])
+        self.database.player_contracts.create_index(
+            "player_id",
+            unique=True,
+            partialFilterExpression={"status": {"$in": ["active", "expiring"]}},
+        )
+        self.database.player_contracts.create_index([("status", 1), ("next_salary_at", 1)])
+        self.database.player_contracts.create_index([("status", 1), ("expiring_at", 1)])
+        self.database.player_contracts.create_index([("club_id", 1), ("status", 1)])
+        self.database.contract_history.create_index([("player_id", 1), ("created_at", -1)])
         self.database.youth_players.create_index("current_club_id")
         self.database.calendar_events.create_index([("reference_id", 1), ("club_id", 1)])
         indexes = {

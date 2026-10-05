@@ -10,8 +10,11 @@ from app.schemas.game import (
     ClubInput,
     LineupInput,
     ListingInput,
+    MatchCommandInput,
     MoneyInput,
     OfferInput,
+    PlayerContractInput,
+    TacticsInput,
     TicketInput,
 )
 from app.services.competition import CompetitionService
@@ -23,7 +26,9 @@ from app.services.game import (
     SquadService,
     StadiumService,
 )
+from app.services.player_contracts import ContractService
 from app.services.player_development import TrainingService
+from app.services.tactics import TacticsService
 
 router = APIRouter(tags=["game"], dependencies=[Depends(get_current_user)])
 User = Annotated[object, Depends(get_current_user)]
@@ -129,6 +134,7 @@ def search(
     name: str | None = Query(None, max_length=60),
     position: Literal["GOL", "GK", "DEF", "MED", "MID", "ATA", "ATT"] | None = None,
     country_id: str | None = None,
+    status: Literal["free_agent"] | None = None,
     type: Literal["sale", "loan"] | None = None,
     age_min: int | None = Query(None, ge=0),
     age_max: int | None = Query(None, ge=0),
@@ -205,3 +211,33 @@ def youth(user: User, repo: Repo):
 @router.post("/youth/{identity}/promote")
 def promote(identity: str, user: User, repo: Repo):
     return TrainingService(repo).promote(user, identity)
+
+
+@router.get("/tactics")
+def tactics(user: User, repo: Repo):
+    return TacticsService(repo).get(user)
+
+
+@router.put("/tactics")
+def save_tactics(data: TacticsInput, user: User, repo: Repo):
+    return TacticsService(repo).save(user, data)
+
+
+@router.post("/competition/matches/{identity}/commands")
+def match_command(identity: str, data: MatchCommandInput, user: User, repo: Repo):
+    return TacticsService(repo).command(user, identity, data)
+
+
+@router.get("/players/{identity}/contract")
+def player_contract(identity: str, user: User, repo: Repo):
+    return ContractService(repo).get(user, identity)
+
+
+@router.post("/players/{identity}/contract/renew")
+def renew_contract(identity: str, data: PlayerContractInput, user: User, repo: Repo):
+    return ContractService(repo).renew(user, identity, data)
+
+
+@router.post("/market/players/{identity}/sign", status_code=201)
+def sign_free_agent(identity: str, data: PlayerContractInput, user: User, repo: Repo):
+    return ContractService(repo).sign(user, identity, data)

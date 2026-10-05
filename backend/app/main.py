@@ -15,6 +15,7 @@ from app.database.mongo import create_client
 from app.repositories.game import GameRepository
 from app.services.competition import CompetitionService
 from app.services.game import process_due
+from app.services.player_contracts import ContractService
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
         repository = GameRepository(app.state.database)
         repository.initialize()
         CompetitionService(repository).bootstrap()
+        ContractService(repository).bootstrap()
 
         async def maintenance():
             while True:

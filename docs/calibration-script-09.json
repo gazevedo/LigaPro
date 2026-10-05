@@ -1,0 +1,357 @@
+{
+  "matches_per_scenario": 10000,
+  "total_matches": 30000,
+  "seed": 1729,
+  "config": {
+    "block_minutes": 5,
+    "compatible_fit": 0.9,
+    "unsuitable_fit": 0.72,
+    "wrong_side_fit": 0.96,
+    "home_advantage": 1.04,
+    "focus_probability": 0.7,
+    "energy_loss": 1.5,
+    "marking_containment": [
+      1.0,
+      1.08,
+      1.2
+    ],
+    "marking_build_up": [
+      1.0,
+      0.98,
+      0.9
+    ],
+    "foul_probability": [
+      0.03,
+      0.07,
+      0.12
+    ],
+    "foul_marking_modifiers": [
+      0.75,
+      1.0,
+      1.35
+    ],
+    "yellow_probability": [
+      0.2,
+      0.32,
+      0.44
+    ],
+    "direct_red_probability": [
+      0.025,
+      0.05,
+      0.075
+    ],
+    "penalty_area_probability": [
+      0.02,
+      0.08,
+      0.16
+    ],
+    "phase_bases": [
+      0.8,
+      0.75,
+      0.65
+    ],
+    "phase_sensitivity": 0.3,
+    "goal_base": 0.36,
+    "on_target_base": 0.45,
+    "marking_attack_reduction": [
+      0.0,
+      0.07,
+      0.2
+    ],
+    "marking_attempt_cost": [
+      0.0,
+      0.04,
+      0.12
+    ],
+    "attacking_creation_bonus": 0.05,
+    "attacking_exposure": 0.85,
+    "counter_initiative": 0.86,
+    "counter_progression_bonus": 0.1,
+    "counter_creation_bonus": 0.06
+  },
+  "engine_sha256": "339b8a08dcfd1b56a6e749520949ab75061f6de3879feb776dc79d273c16dd73",
+  "results": [
+    {
+      "name": "marking_light",
+      "category": "marking",
+      "left": {
+        "marking": "light"
+      },
+      "right": {},
+      "mode": "classic",
+      "matches": 10000,
+      "seed": 1729,
+      "home_games_A": 5000,
+      "wins_A": 0.3656,
+      "draws": 0.2659,
+      "wins_B": 0.3685,
+      "home_wins": 0.3834,
+      "away_wins": 0.3507,
+      "goals_per_match": 2.3707000000000003,
+      "teams": {
+        "A": {
+          "possession_minutes": 45.0465,
+          "attacks": 9.0093,
+          "chances": 3.5428,
+          "shots": 3.555,
+          "goals": 1.1839,
+          "fouls": 0.2099,
+          "yellow_cards": 0.038,
+          "red_cards": 0.0044,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.500516666666668,
+          "lane_center": 3.0203,
+          "lane_left": 2.9983,
+          "lane_right": 2.9907,
+          "build_attempts": 8.9971,
+          "build_successes": 7.2327,
+          "progress_attempts": 7.2327,
+          "progress_successes": 5.4319,
+          "create_attempts": 5.4319,
+          "create_successes": 3.5428,
+          "build_success_rate": 0.8038923653177136,
+          "progress_success_rate": 0.7510196745337149,
+          "create_success_rate": 0.6522211380916438,
+          "chance_efficiency": 0.3932380984094214,
+          "shot_conversion": 0.3330239099859353,
+          "transition_efficiency": 0.0
+        },
+        "B": {
+          "possession_minutes": 44.9535,
+          "attacks": 8.9907,
+          "chances": 3.5255,
+          "shots": 3.5383,
+          "goals": 1.1868,
+          "fouls": 0.1956,
+          "yellow_cards": 0.0347,
+          "red_cards": 0.0051,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.49948333333333195,
+          "lane_center": 2.983,
+          "lane_left": 2.9997,
+          "lane_right": 3.008,
+          "build_attempts": 8.9779,
+          "build_successes": 7.2163,
+          "progress_attempts": 7.2163,
+          "progress_successes": 5.4139,
+          "create_attempts": 5.4139,
+          "create_successes": 3.5255,
+          "build_success_rate": 0.8037848494636831,
+          "progress_success_rate": 0.7502321134099191,
+          "create_success_rate": 0.651194148395796,
+          "chance_efficiency": 0.39212742055679756,
+          "shot_conversion": 0.33541531243817657,
+          "transition_efficiency": 0.0
+        }
+      }
+    },
+    {
+      "name": "marking_heavy",
+      "category": "marking",
+      "left": {
+        "marking": "heavy"
+      },
+      "right": {},
+      "mode": "classic",
+      "matches": 10000,
+      "seed": 1729,
+      "home_games_A": 5000,
+      "wins_A": 0.379,
+      "draws": 0.2831,
+      "wins_B": 0.3379,
+      "home_wins": 0.3761,
+      "away_wins": 0.3408,
+      "goals_per_match": 2.1387,
+      "teams": {
+        "A": {
+          "possession_minutes": 44.956,
+          "attacks": 8.633,
+          "chances": 3.3735,
+          "shots": 3.3855,
+          "goals": 1.1126,
+          "fouls": 0.6057,
+          "yellow_cards": 0.1609,
+          "red_cards": 0.0293,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.49951111111111085,
+          "lane_center": 2.8965,
+          "lane_left": 2.8661,
+          "lane_right": 2.8704,
+          "build_attempts": 8.621,
+          "build_successes": 6.9058,
+          "progress_attempts": 6.9058,
+          "progress_successes": 5.192,
+          "create_attempts": 5.192,
+          "create_successes": 3.3735,
+          "build_success_rate": 0.801043962417353,
+          "progress_success_rate": 0.7518317935648295,
+          "create_success_rate": 0.6497496147919877,
+          "chance_efficiency": 0.3907679833198193,
+          "shot_conversion": 0.32863683355486634,
+          "transition_efficiency": 0.0
+        },
+        "B": {
+          "possession_minutes": 45.044,
+          "attacks": 8.3763,
+          "chances": 3.1372,
+          "shots": 3.1738,
+          "goals": 1.0261,
+          "fouls": 0.1927,
+          "yellow_cards": 0.0341,
+          "red_cards": 0.0045,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.5004888888888891,
+          "lane_center": 2.8025,
+          "lane_left": 2.7914,
+          "lane_right": 2.7824,
+          "build_attempts": 8.3397,
+          "build_successes": 6.6129,
+          "progress_attempts": 6.6129,
+          "progress_successes": 4.8897,
+          "create_attempts": 4.8897,
+          "create_successes": 3.1372,
+          "build_success_rate": 0.7929421921651857,
+          "progress_success_rate": 0.7394184094723949,
+          "create_success_rate": 0.6415935537967564,
+          "chance_efficiency": 0.37453290832467795,
+          "shot_conversion": 0.32330329573382066,
+          "transition_efficiency": 0.0
+        }
+      }
+    },
+    {
+      "name": "marking_very_heavy",
+      "category": "marking",
+      "left": {
+        "marking": "very_heavy"
+      },
+      "right": {},
+      "mode": "classic",
+      "matches": 10000,
+      "seed": 1729,
+      "home_games_A": 5000,
+      "wins_A": 0.407,
+      "draws": 0.3032,
+      "wins_B": 0.2898,
+      "home_wins": 0.3609,
+      "away_wins": 0.3359,
+      "goals_per_match": 1.8319999999999999,
+      "teams": {
+        "A": {
+          "possession_minutes": 44.979,
+          "attacks": 7.9063,
+          "chances": 3.0401,
+          "shots": 3.0506,
+          "goals": 1.0229,
+          "fouls": 1.1623,
+          "yellow_cards": 0.4243,
+          "red_cards": 0.0977,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.4997666666666668,
+          "lane_center": 2.6552,
+          "lane_left": 2.6192,
+          "lane_right": 2.6319,
+          "build_attempts": 7.8958,
+          "build_successes": 6.2235,
+          "progress_attempts": 6.2235,
+          "progress_successes": 4.6718,
+          "create_attempts": 4.6718,
+          "create_successes": 3.0401,
+          "build_success_rate": 0.7882038552141644,
+          "progress_success_rate": 0.750670844380172,
+          "create_success_rate": 0.6507341923883727,
+          "chance_efficiency": 0.38451614535244044,
+          "shot_conversion": 0.3353110863436701,
+          "transition_efficiency": 0.0
+        },
+        "B": {
+          "possession_minutes": 45.021,
+          "attacks": 7.1968,
+          "chances": 2.5061,
+          "shots": 2.5765,
+          "goals": 0.8091,
+          "fouls": 0.1752,
+          "yellow_cards": 0.0308,
+          "red_cards": 0.0045,
+          "transitions": 0.0,
+          "transition_chances": 0.0,
+          "possession": 0.500233333333333,
+          "lane_center": 2.4117,
+          "lane_left": 2.3913,
+          "lane_right": 2.3938,
+          "build_attempts": 7.1264,
+          "build_successes": 5.5458,
+          "progress_attempts": 5.5458,
+          "progress_successes": 4.0238,
+          "create_attempts": 4.0238,
+          "create_successes": 2.5061,
+          "build_success_rate": 0.7782049842837898,
+          "progress_success_rate": 0.7255580799884597,
+          "create_success_rate": 0.6228192256076346,
+          "chance_efficiency": 0.34822421076033794,
+          "shot_conversion": 0.3140306617504367,
+          "transition_efficiency": 0.0
+        }
+      }
+    }
+  ],
+  "acceptance": [
+    {
+      "name": "discipline_sample_size",
+      "passed": true,
+      "detail": 10000
+    },
+    {
+      "name": "fouls_increases",
+      "passed": true,
+      "detail": [
+        0.2099,
+        0.6057,
+        1.1623
+      ]
+    },
+    {
+      "name": "yellow_cards_increases",
+      "passed": true,
+      "detail": [
+        0.038,
+        0.1609,
+        0.4243
+      ]
+    },
+    {
+      "name": "red_cards_increases",
+      "passed": true,
+      "detail": [
+        0.0044,
+        0.0293,
+        0.0977
+      ]
+    },
+    {
+      "name": "B_attacks_decreases",
+      "passed": true,
+      "detail": [
+        8.9907,
+        8.3763,
+        7.1968
+      ]
+    },
+    {
+      "name": "A_build_success_rate_decreases",
+      "passed": true,
+      "detail": [
+        0.8038923653177136,
+        0.801043962417353,
+        0.7882038552141644
+      ]
+    }
+  ],
+  "elapsed_seconds": 22.00419810099993,
+  "discipline_sha256": "155ce03072f913e6154f8eced7c0468622fce7fa26e9b6301db34b1af9003f79"
+}

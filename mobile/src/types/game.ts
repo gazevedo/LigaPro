@@ -1,11 +1,11 @@
 export interface Club { country?: { id: string; name: string }; badge?: { id: string; color: string; symbol: string }; id: string; name: string; country_id: string; badge_id: string; created_at: string; ranking: number; competition_positions: unknown[]; trophies: unknown[] }
 export interface Catalog { countries: { id: string; name: string }[]; badges: { id: string; name: string; color: string; symbol: string }[] }
-export interface Player { strength?: number; training_level?: number; disease?: string | null; status?: string; id: string; name: string; position: string; age: number; overall: number; value: number; country_id: string; owner_club_id: string; current_club_id: string; listing?: Listing | null }
+export interface Player { strength?: number; training_level?: number; disease?: string | null; status?: string; id: string; name: string; position: string; age: number; overall: number; value: number; country_id: string; owner_club_id: string | null; current_club_id: string | null; listing?: Listing | null }
 export interface Lineup { formation: string; starters: string[]; reserves: string[] }
 export interface Squad { players: Player[]; lineup: Lineup; formations: Record<string, Record<string, number>> }
 export interface Stadium { capacity: number; ticket_price: number; facilities: Record<string, number>; names: Record<string, string>; upgrade_costs: Record<string, number> }
 export interface Transaction { id: string; amount: number; category: string; created_at: string }
-export interface Finance { balance: number; transactions: Transaction[] }
+export interface Finance { balance: number; transactions: Transaction[]; monthly_payroll?: number; total_contract_cost?: number; salary_costs?: { player_id: string; name: string; salary: number; expires_at: string; status: string }[]; salary_history?: Transaction[] }
 export interface Contract { id: string; type: string; amount: number; interest: number; status: string; ends_at: string; overdue?: boolean }
 export interface Bank { contracts: Contract[]; rules: Record<string, number> }
 export interface Ticketing { price: number; capacity: number; income: number; history: { id: string; attendance: number; income: number }[] }

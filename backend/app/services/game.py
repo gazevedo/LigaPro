@@ -8,7 +8,9 @@ from pymongo.errors import DuplicateKeyError
 from app.config.game import GameConfig, legacy_position
 from app.models.game import FACILITIES, public, utcnow
 from app.services.competition import CompetitionService
+from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerGeneratorService
+from app.services.tactics import TacticsService
 
 
 class ClubService:
@@ -98,6 +100,17 @@ class ClubService:
                     "reserves": [p["_id"] for p in players if p["_id"] not in starters],
                 },
             )
+
+            TacticsService.persist(
+                repo,
+                club_id,
+                {
+                    "formation": "4-4-2",
+                    "play_style": "balanced",
+                    "marking": "light",
+                    "attack_focus": "normal",
+                },
+            )
             repo.insert(
                 "stadiums",
                 {
@@ -122,6 +135,7 @@ class ClubService:
                 },
             )
             repo.money(club_id, rules["sponsor_value"], "sponsor")
+            ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
             competition = CompetitionService(repo)
             competition.enroll(repo, club, now)
             season = competition.current(repo)
@@ -179,6 +193,16 @@ class SquadService:
                 raise HTTPException(
                     422, "Titulares incompatíveis com a formação; é necessário um goleiro."
                 )
+
+            settings = TacticsService.settings(repo, club["_id"], {"formation": data.formation})
+            TacticsService.persist(
+                repo,
+                club["_id"],
+                {
+                    **{k: settings[k] for k in ("play_style", "marking", "attack_focus")},
+                    "formation": data.formation,
+                },
+            )
             # Also locks the roster against concurrent transfers.
             repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
             return public(
@@ -243,6 +267,7 @@ class FinanceService:
         return public(
             {
                 **self.repo.find("club_finances", {"_id": club["_id"]}),
+                **ContractService(self.repo).finance(club["_id"]),
                 "transactions": self.repo.many(
                     "financial_transactions", {"club_id": club["_id"]}, sort=[("created_at", -1)]
                 ),
@@ -418,7 +443,7 @@ class MarketService:
 
     def search(self, filters):
         query = {"status": {"$ne": "retired"}}
-        for key in ["position", "country_id"]:
+        for key in ["position", "country_id", "status"]:
             if filters.get(key):
                 query[key] = filters[key]
         if filters.get("name"):
@@ -561,6 +586,16 @@ class MarketService:
                         }
                     },
                 )
+
+                settings = TacticsService.settings(repo, club_id, lineup)
+                TacticsService.persist(
+                    repo,
+                    club_id,
+                    {
+                        **{k: settings[k] for k in ("play_style", "marking", "attack_focus")},
+                        "formation": formation,
+                    },
+                )
                 return
         raise HTTPException(409, "Transferência deixaria o clube sem escalação válida.")
 
@@ -578,6 +613,9 @@ class MarketService:
                 raise HTTPException(409, "Jogador indisponível.")
             if player.get("status") == "retired":
                 raise HTTPException(409, "Jogador aposentado.")
+            contract = ContractService.current(repo, player["_id"])
+            if not contract or contract["expires_at"] <= utcnow():
+                raise HTTPException(409, "Jogador sem contrato vigente.")
             # Lock both rosters; simultaneous lineup/transfer changes are retried by MongoDB.
             for club_id in sorted([club["_id"], offer["buyer_club_id"]]):
                 repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
@@ -595,6 +633,7 @@ class MarketService:
             )
             ownership = {"current_club_id": offer["buyer_club_id"]}
             if listing["type"] == "sale":
+                ContractService.transfer(repo, player["_id"], offer["buyer_club_id"])
                 ownership["owner_club_id"] = offer["buyer_club_id"]
             else:
                 loan = repo.insert(
@@ -700,6 +739,7 @@ class MarketService:
 def process_due(repository):
     now = utcnow()
     CompetitionService(repository).process_due(now)
+    ContractService(repository).process_due(now)
     for loan in repository.many("player_loans", {"status": "active", "ends_at": {"$lte": now}}):
 
         def return_player(repo, identity=loan["_id"]):

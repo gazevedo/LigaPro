@@ -45,8 +45,8 @@ test('dashboard opens every module', async () => {
   const navigate = jest.fn();
   const props = { navigation: { navigate } } as unknown as NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
   await render(<DashboardScreen {...props} />);
-  for (const title of ['Clube', 'Plantel', 'Estádio', 'Financeiro', 'Calendário', 'Mercado', 'Treinamento', 'Categorias de Base']) await fireEvent.press(screen.getByText(title));
-  expect(navigate.mock.calls).toEqual([['Club', { id: club.id }], ['Squad'], ['Stadium'], ['Finance'], ['Calendar'], ['Market'], ['Training'], ['YouthAcademy']]);
+  for (const title of ['Clube', 'Plantel', 'Táticas', 'Estádio', 'Financeiro', 'Calendário', 'Mercado', 'Treinamento', 'Categorias de Base']) await fireEvent.press(screen.getByText(title));
+  expect(navigate.mock.calls).toEqual([['Club', { id: club.id }], ['Squad'], ['Tactics'], ['Stadium'], ['Finance'], ['Calendar'], ['Market'], ['Training'], ['YouthAcademy']]);
 });
 test('public club hides administration for a different owner', async () => {
   useClubStore.setState({ data: { club: { ...club, id: 'other' } } });

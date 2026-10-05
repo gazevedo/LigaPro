@@ -63,3 +63,21 @@ class CalendarFilter(Input):
                 raise ValueError("Informe a data com fuso horário ISO 8601")
             return value.astimezone(timezone.utc)
         return value
+
+
+class TacticsInput(Input):
+    formation: Literal["4-4-2", "4-3-3", "4-2-3-1", "3-5-2", "5-3-2", "4-5-1", "3-4-3"] = "4-4-2"
+    play_style: Literal["balanced", "all_out_attack", "counter_attack"] = "balanced"
+    marking: Literal["light", "heavy", "very_heavy"] = "light"
+    attack_focus: Literal["normal", "center", "wings"] = "normal"
+
+
+class MatchCommandInput(Input):
+    minute: int = Field(ge=0, le=85, strict=True)
+    type: Literal["tactics_change", "substitution"]
+    payload: dict
+
+
+class PlayerContractInput(Input):
+    salary: int = Field(gt=0, le=1_000_000_000, strict=True)
+    seasons: int = Field(ge=1, le=5, strict=True)

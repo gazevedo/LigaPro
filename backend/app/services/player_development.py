@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from app.config.game import GameConfig
 from app.models.game import public, utcnow
+from app.services.player_contracts import ContractService
 
 
 class PlayerGeneratorService:
@@ -110,6 +111,7 @@ class TrainingService:
             repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
             professional = {**player, "promoted_at": utcnow()}
             repo.insert("players", professional)
+            ContractService.initial(repo, [professional])
             repo.update(
                 "youth_players",
                 {"_id": player["_id"]},
@@ -150,7 +152,9 @@ class PlayerAgingService:
                         )
                 repo.update(collection, {"_id": player["_id"]}, {"$set": values})
                 if values.get("status") == "retired" and collection == "players":
-                    affected_clubs.add(player["current_club_id"])
+                    ContractService.terminate(repo, player["_id"], reason="retired")
+                    if player["current_club_id"] is not None:
+                        affected_clubs.add(player["current_club_id"])
                     repo.update_many(
                         "lineups",
                         {"_id": player["current_club_id"]},
