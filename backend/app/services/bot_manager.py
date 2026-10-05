@@ -319,6 +319,9 @@ class BotYouthService:
         )
         for player in youth:
             role = [p for p in squad if p["position"] == player["position"]]
+            cpe = player.get(
+                "estimated_potential_capacity", player.get("potential", player["strength"])
+            )
             if (
                 player["age"] >= 18
                 and BotFinanceService.affordable(
@@ -328,6 +331,7 @@ class BotYouthService:
                 and (
                     len(squad) < 25
                     or not role
+                    or (cpe >= 75 and player["strength"] >= min(p["strength"] for p in role) - 3)
                     or player["strength"] >= min(p["strength"] for p in role)
                 )
             ):
@@ -380,7 +384,8 @@ class BotStadiumService:
         if len(history) < 3 or any(h["attendance"] < stadium["capacity"] * 0.9 for h in history):
             return
         cost = stadium.get("facilities", {}).get("stands", 1) * repo.rules()["upgrade_base_cost"]
-        if cost > BotFinanceService.budget(repo, club["_id"]):
+        projected_income = sum(item.get("income", 0) for item in history) / len(history) * 12
+        if cost > projected_income or cost > BotFinanceService.budget(repo, club["_id"]):
             return
         from app.services.game import StadiumService
 
@@ -654,6 +659,9 @@ class BotManagerService:
                         raise
                 else:
                     BotTransferService.manage(repo, club, now)
+                from app.services.sponsorship import SponsorshipService
+
+                SponsorshipService.bot(repo, club, now)
                 BotStadiumService.manage(repo, club, now)
                 self.prepare(repo, identity, now)
                 repo.update("clubs", {"_id": identity}, {"$set": {"last_bot_management_at": now}})

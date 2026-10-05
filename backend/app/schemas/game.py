@@ -51,7 +51,25 @@ class CalendarFilter(Input):
     start: datetime | None = None
     end: datetime | None = None
     type: (
-        Literal["match", "training", "competition", "transfer", "financial", "stadium", "other"]
+        Literal[
+            "match",
+            "training",
+            "competition",
+            "transfer",
+            "financial",
+            "stadium",
+            "other",
+            "league_match",
+            "cup_match",
+            "friendly",
+            "transfer_window_open",
+            "transfer_window_close",
+            "season_start",
+            "season_end",
+            "youth_generation",
+            "financial_close",
+            "training_event",
+        ]
         | None
     ) = None
 
@@ -113,3 +131,15 @@ class CounterOfferInput(Input):
 
 class TransferStatusInput(Input):
     status: Literal["available", "not_for_sale"]
+
+
+class FriendlyInput(Input):
+    opponent_club_id: str
+    date: datetime
+
+    @field_validator("date")
+    @classmethod
+    def utc_date(cls, value):
+        if value.tzinfo is None:
+            raise ValueError("Informe o fuso horário")
+        return value.astimezone(timezone.utc)

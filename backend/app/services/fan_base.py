@@ -25,7 +25,7 @@ class FanBaseService:
         )
 
     @staticmethod
-    def attendance(club, stadium, importance=1.0, price=None):
+    def attendance(club, stadium, importance=1.0, price=None, opponent=None, position=None):
         ticket = stadium["ticket_price"] if price is None else price
         price_factor = min(1.5, 2000 / max(500, ticket))
         satisfaction = 0.4 + 0.8 * club.get("fan_satisfaction", 50) / 100
@@ -41,6 +41,9 @@ class FanBaseService:
                     * price_factor
                     * prestige
                     * importance
+                    * max(0.85, 1 - min(4, club.get("division_tier", 0)) * 0.03)
+                    * (1 + max(0, 10 - (position or 10)) * 0.01)
+                    * (1 + min(0.12, (opponent or {}).get("reputation", 0) / 800))
                 ),
             ),
         )
@@ -97,7 +100,16 @@ class FanBaseService:
         stadium = repo.find("stadiums", {"_id": match["home_club_id"]})
         if stadium:
             club = repo.find("clubs", {"_id": match["home_club_id"]})
-            attendance = cls.attendance(club, stadium, importance)
+            rival = repo.find("clubs", {"_id": match["away_club_id"]})
+            standing = (
+                repo.find(
+                    "standings", {"club_id": club["_id"], "season_id": match.get("season_id")}
+                )
+                or {}
+            )
+            attendance = cls.attendance(
+                club, stadium, importance, opponent=rival, position=standing.get("position")
+            )
             income = attendance * stadium["ticket_price"]
             repo.money(club["_id"], income, "ticketing", match["_id"], effective_at=match["date"])
             repo.insert(

@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import get_current_user
 from app.database.mongo import get_database
+from app.models.game import public
 from app.repositories.game import GameRepository
 from app.schemas.game import (
     CalendarFilter,
     ClubInput,
     CounterOfferInput,
+    FriendlyInput,
     LineupInput,
     ListingInput,
     MatchCommandInput,
@@ -341,3 +343,35 @@ def transfer_status(identity: str, data: TransferStatusInput, user: User, repo: 
         )
 
     return repo.transaction(operation)
+
+
+@router.post("/youth/{identity}/release")
+def release_youth(identity: str, user: User, repo: Repo):
+    return TrainingService(repo).release(user, identity)
+
+
+@router.post("/calendar/friendlies", status_code=201)
+def friendly(data: FriendlyInput, user: User, repo: Repo):
+    from app.services.season_calendar import FriendlyService
+
+    return FriendlyService(repo).create(user, data)
+
+
+@router.post("/calendar/friendlies/{identity}/accept")
+def friendly_accept(identity: str, user: User, repo: Repo):
+    from app.services.season_calendar import FriendlyService
+
+    return FriendlyService(repo).accept(user, identity)
+
+
+@router.get("/calendar/friendlies")
+def friendly_list(user: User, repo: Repo):
+    club = repo.owned(user.id)
+    return public(
+        repo.many(
+            "friendly_matches",
+            {"$or": [{"home_club_id": club["_id"]}, {"away_club_id": club["_id"]}]},
+            limit=None,
+            sort=[("date", 1)],
+        )
+    )

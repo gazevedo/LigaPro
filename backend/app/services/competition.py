@@ -412,10 +412,21 @@ class CompetitionService:
         if repo.find("youth_batches", {"_id": batch_id}):
             return
         players = PlayerGeneratorService(config, batch_id).youth(club["_id"], club["country_id"])
+        available = repo.database.youth_players.count_documents(
+            {"current_club_id": club["_id"], "status": {"$in": ["available", "active"]}},
+            session=repo.session,
+        )
+        players = players[: max(0, config.MAX_YOUTH_PLAYERS - available)]
         if players:
             repo.insert_many(
                 "youth_players", [{**p, "generated_season_id": season["_id"]} for p in players]
             )
+        repo.event(
+            club["_id"], "youth_generation", "Chegada de juniores", season["starts_at"], batch_id
+        )
+        from app.services.season_calendar import SeasonCalendarService
+
+        SeasonCalendarService.ensure(repo, club["_id"], season)
         repo.insert(
             "youth_batches", {"_id": batch_id, "season_id": season["_id"], "club_id": club["_id"]}
         )
@@ -645,12 +656,29 @@ class CompetitionService:
                 sort=[("date", 1), ("_id", 1)],
                 projection={"date": 1},
             )
-            if not league and not cup:
+            friendly = self.repo.many(
+                "friendly_matches",
+                query,
+                limit=1,
+                sort=[("date", 1), ("_id", 1)],
+                projection={"date": 1},
+            )
+            options = [
+                (row[0]["date"], kind, row[0]["_id"])
+                for kind, row in [("league", league), ("cup", cup), ("friendly", friendly)]
+                if row
+            ]
+            if not options:
                 break
-            if cup and (not league or cup[0]["date"] < league[0]["date"]):
-                CupService(self.repo).play(cup[0]["_id"], now)
+            _, kind, identity = min(options, key=lambda row: (row[0], row[1]))
+            if kind == "cup":
+                CupService(self.repo).play(identity, now)
+            elif kind == "friendly":
+                from app.services.season_calendar import FriendlyService
+
+                FriendlyService(self.repo).play(identity, now)
             else:
-                self.play(league[0]["_id"], now)
+                self.play(identity, now)
 
     def process_due(self, now=None):
         self.ensure_lock(self.repo)

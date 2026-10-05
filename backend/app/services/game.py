@@ -136,19 +136,6 @@ class ClubService:
             repo.insert("club_finances", {"_id": club_id, "balance": 0})
             MonthlyFinanceService.initialize(repo, club_id, now)
             FanBaseService.initialize(repo, club_id)
-            repo.insert(
-                "sponsor_contracts",
-                {
-                    "_id": ObjectId(),
-                    "club_id": club_id,
-                    "name": "Parceiro inicial",
-                    "status": "active",
-                    "value": rules["sponsor_value"],
-                    "starts_at": now,
-                    "ends_at": now + timedelta(days=rules["sponsor_days"]),
-                },
-            )
-
             ChemistryService().save(repo, club_id, {})
             ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
             competition = CompetitionService(repo)
@@ -405,53 +392,25 @@ class FinanceService:
         return self.tickets(user)
 
     def sponsors(self, user):
-        club, rules = self.repo.owned(user.id), self.repo.rules()
-        return public(
-            {
-                "contracts": self.repo.many("sponsor_contracts", {"club_id": club["_id"]}),
-                "offers": [
-                    {
-                        "id": "principal",
-                        "name": "Parceiro principal",
-                        "required_ranking": 0,
-                        "duration_days": rules["sponsor_days"],
-                        "value": rules["sponsor_value"],
-                    }
-                ],
-            }
-        )
-
-    def sponsor(self, user, identity):
-        if identity != "principal":
-            raise HTTPException(404, "Oferta não encontrada.")
+        from app.services.sponsorship import SponsorshipService
 
         def operation(repo):
-            club, now, rules = repo.owned(user.id), utcnow(), repo.rules()
-            repo.update_many(
-                "sponsor_contracts",
-                {"club_id": club["_id"], "status": "active", "ends_at": {"$lte": now}},
-                {"$set": {"status": "expired"}},
-            )
-            # Serialize all contracts of this club.
-            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"sponsor_revision": 1}})
-            if repo.find("sponsor_contracts", {"club_id": club["_id"], "status": "active"}):
-                raise HTTPException(409, "Já existe patrocinador principal ativo.")
-            contract = repo.insert(
-                "sponsor_contracts",
+            club = repo.owned(user.id)
+            return public(
                 {
-                    "_id": ObjectId(),
-                    "club_id": club["_id"],
-                    "name": "Parceiro principal",
-                    "status": "active",
-                    "value": rules["sponsor_value"],
-                    "starts_at": now,
-                    "ends_at": now + timedelta(days=rules["sponsor_days"]),
-                },
+                    "contracts": repo.many("sponsor_contracts", {"club_id": club["_id"]}),
+                    "offers": SponsorshipService.offers(repo, club),
+                }
             )
-            # Fixed sponsorship is credited only by the monthly close.
-            return public(contract)
 
         return self.repo.transaction(operation)
+
+    def sponsor(self, user, identity):
+        from app.services.sponsorship import SponsorshipService
+
+        return self.repo.transaction(
+            lambda repo: SponsorshipService.accept(repo, repo.owned(user.id), identity)
+        )
 
 
 class CalendarService:
@@ -461,7 +420,7 @@ class CalendarService:
     def get(self, user, filters):
         query = {"club_id": self.repo.owned(user.id)["_id"]}
         if filters.type:
-            query["type"] = filters.type
+            query["$or"] = [{"type": filters.type}, {"kind": filters.type}]
         dates = {}
         if filters.start:
             dates["$gte"] = filters.start

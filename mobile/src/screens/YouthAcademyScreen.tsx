@@ -13,12 +13,13 @@ export function YouthAcademyScreen() {
     <Text>O clube recebe dois jovens por temporada. A promoção pode ocorrer a partir dos 18 anos.</Text>
     {data?.map(player => <View key={player.id} style={{ gap: 6 }}>
       <Text>{player.name} · {player.position} · {player.age} anos</Text>
-      <Text>Força: {player.strength ?? player.overall} · Treino: {player.training_progress ?? 0}/100</Text>
+      <Text>Força: {player.strength ?? player.overall} · CPE: {player.estimated_potential_capacity ?? 'Em avaliação'} · Treino: {player.training_progress ?? 0}/100</Text>
       {player.can_train === false && <Text>Limite de desenvolvimento atingido.</Text>}
       <Button title={`Treinar ${player.name}`} disabled={action.busy || loading || player.can_train === false}
         onPress={() => void action.run(async () => { await developmentService.train(player.id); await load(); })} />
       <Button title={`Promover ${player.name}`} disabled={action.busy || loading || player.age < 18}
         onPress={() => void action.run(async () => { await developmentService.promote(player.id); await load(); })} />
+      <Button title={`Dispensar ${player.name}`} disabled={action.busy || loading} onPress={() => void action.run(async () => { await developmentService.release(player.id); await load(); })} />
     </View>)}
     {data?.length === 0 && <Text>Nenhum jovem disponível.</Text>}
   </GamePage>;

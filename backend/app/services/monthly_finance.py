@@ -33,6 +33,9 @@ class MonthlyFinanceService:
                 }
             },
         )
+        from app.services.sponsorship import SponsorshipService
+
+        SponsorshipService.initial(repo, club_id, now)
         repo.money(club_id, config.STARTING_CASH, "other_income", "initial_funding")
 
     @classmethod
@@ -63,9 +66,12 @@ class MonthlyFinanceService:
                         {"_id": current["_id"]},
                         {"$set": {"next_month_at": end + period}},
                     )
+                    from app.services.sponsorship import SponsorshipService
+
+                    sponsorship = SponsorshipService.monthly_income(tx, current["_id"], start, end)
                     tx.money(
                         current["_id"],
-                        config.MONTHLY_SPONSORSHIP,
+                        sponsorship,
                         "sponsorship",
                         end,
                         effective_at=end - timedelta(microseconds=1),
@@ -154,9 +160,19 @@ class MonthlyFinanceService:
             )
         )
         payroll = ContractService.payroll(repo, club_id)
+        sponsor = (
+            repo.find(
+                "sponsor_contracts",
+                {"club_id": club_id, "status": "active", "ends_at": {"$gt": end}},
+            )
+            or {}
+        )
+        fixed = config.MONTHLY_TV_REVENUE + (
+            sponsor.get("monthly_value", config.MONTHLY_SPONSORSHIP) if sponsor else 0
+        )
         values = {
             "cash_balance": finance["balance"],
-            "monthly_fixed_revenue": config.fixed_revenue,
+            "monthly_fixed_revenue": fixed,
             "monthly_payroll": payroll,
             "monthly_income": income,
             "monthly_period_end": end,
@@ -168,7 +184,7 @@ class MonthlyFinanceService:
             "other_expenses": expenses
             - abs(amounts.get("salary", 0) + amounts.get("player_salary", 0)),
             "accumulated_prizes": prizes[0]["amount"] if prizes else 0,
-            "payroll_health": payroll_health(payroll, config.fixed_revenue),
+            "payroll_health": payroll_health(payroll, fixed),
             "updated_at": utcnow(),
         }
         repo.update(
@@ -186,6 +202,9 @@ def bootstrap_economy(repo):
 
         def operation(tx, identity=club["_id"]):
             FanBaseService.initialize(tx, identity)
+            from app.services.sponsorship import SponsorshipService
+
+            SponsorshipService.initial(tx, identity)
             finance = tx.find("club_finances", {"_id": identity})
             if finance and "next_month_at" not in finance:
                 # Preserve existing balances/contracts; begin monthly receipts now.

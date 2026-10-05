@@ -5,6 +5,7 @@ from app.models.game import public
 SKILLS = {"goalkeeping", "speed", "technique", "passing", "tackling", "playmaking", "finishing"}
 FORBIDDEN = {
     "potential",
+    "estimated_potential_capacity",
     "experience",
     "integration",
     "chemistry",
@@ -70,11 +71,21 @@ def normalize_player(player):
     }
 
 
-def player_public(player):
+def player_public(player, youth=False):
     return public(
         {
             **{key: value for key, value in player.items() if key not in FORBIDDEN},
             **normalize_player(player),
+            **(
+                {
+                    "estimated_potential_capacity": player.get(
+                        "estimated_potential_capacity",
+                        player.get("potential", player.get("strength", 50)),
+                    )
+                }
+                if youth
+                else {}
+            ),
             "is_free_agent": player.get("owner_club_id") is None,
             "transfer_fee": 0
             if player.get("owner_club_id") is None

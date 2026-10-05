@@ -4,5 +4,6 @@ export const developmentService = {
   training: () => apiRequest<Player[]>('/training'),
   youth: () => apiRequest<Player[]>('/youth'),
   train: (id: string, skill?: PlayerSkill) => apiRequest<Player>(`/players/${id}/train`, { method: 'POST', body: JSON.stringify({ skill }) }),
+  release: (id: string) => apiRequest(`/youth/${id}/release`, { method: 'POST' }),
   promote: (id: string) => apiRequest<Player>(`/youth/${id}/promote`, { method: 'POST' }),
 };

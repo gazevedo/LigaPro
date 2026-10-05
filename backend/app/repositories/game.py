@@ -136,6 +136,9 @@ class GameRepository:
                 "_id": ObjectId(),
                 "club_id": club_id,
                 "type": event_type,
+                "kind": ("cup_match" if "Copa" in title else "league_match")
+                if event_type == "match"
+                else {"training": "training_event"}.get(event_type, event_type),
                 "title": title,
                 "date": date or utcnow(),
                 "reference_id": reference,
@@ -143,6 +146,11 @@ class GameRepository:
         )
 
     def initialize(self):
+        self.database.player_development_history.create_index(
+            [("season_id", 1), ("player_id", 1)], unique=True
+        )
+        self.database.sponsor_offers.create_index([("club_id", 1), ("status", 1)])
+        self.database.friendly_matches.create_index([("season_id", 1), ("status", 1), ("date", 1)])
         old_index = self.database.clubs.index_information().get("owner_user_id_1", {})
         partial = {"owner_user_id": {"$type": "objectId"}}
         if old_index and old_index.get("partialFilterExpression") != partial:

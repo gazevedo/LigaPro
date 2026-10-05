@@ -15,6 +15,7 @@ class GameConfig:
     INITIAL_SQUAD_SIZE: int = 25
     MAX_PLAYER_LEVEL: int = 100
     YOUTH_PLAYERS_PER_SEASON: int = 2
+    MAX_YOUTH_PLAYERS: int = 20
     YOUTH_PROMOTION_AGE: int = 18
     PLAYER_DECLINE_AGE: int = 35
     BOT_REPLACEMENT_STRATEGY: str = "lowest_ranked"
@@ -50,6 +51,7 @@ class GameConfig:
             "INITIAL_SQUAD_SIZE",
             "MAX_PLAYER_LEVEL",
             "YOUTH_PLAYERS_PER_SEASON",
+            "MAX_YOUTH_PLAYERS",
             "YOUTH_PROMOTION_AGE",
             "PLAYER_DECLINE_AGE",
         )
@@ -80,7 +82,11 @@ class GameConfig:
             raise ValueError("Initial squad must support 4-4-2")
         if self.BOT_REPLACEMENT_STRATEGY not in {"lowest_ranked", "highest_ranked"}:
             raise ValueError("Unknown bot replacement strategy")
-        if not 1 <= self.MAX_PLAYER_LEVEL <= 100 or self.YOUTH_PLAYERS_PER_SEASON < 0:
+        if (
+            not 1 <= self.MAX_PLAYER_LEVEL <= 100
+            or self.YOUTH_PLAYERS_PER_SEASON < 0
+            or self.MAX_YOUTH_PLAYERS < 2
+        ):
             raise ValueError("Invalid player configuration")
         for probabilities in (self.DECLINE_PROBABILITIES, self.RETIREMENT_PROBABILITIES):
             if not probabilities or list(probabilities) != sorted(probabilities):

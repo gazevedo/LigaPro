@@ -121,6 +121,21 @@ class CupService:
         for home, away in pairs:
             identity = ObjectId()
             date = competition["round_dates"][number - 1]
+            from app.services.season_calendar import SeasonCalendarService
+
+            season = repo.find("seasons", {"_id": competition["season_id"]})
+            while True:
+                try:
+                    SeasonCalendarService.free(repo, [home, away], date)
+                    break
+                except HTTPException as exc:
+                    if exc.status_code != 409:
+                        raise
+                    date += timedelta(minutes=90)
+                    if date >= season["ends_at"]:
+                        raise HTTPException(
+                            409, "Sem horário livre para a copa nesta temporada."
+                        ) from exc
             repo.insert(
                 "competition_matches",
                 {
