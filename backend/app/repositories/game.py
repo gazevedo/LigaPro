@@ -130,8 +130,25 @@ class GameRepository:
         )
 
     def initialize(self):
+        old_index = self.database.clubs.index_information().get("owner_user_id_1", {})
+        partial = {"owner_user_id": {"$type": "objectId"}}
+        if old_index and old_index.get("partialFilterExpression") != partial:
+            self.database.clubs.drop_index("owner_user_id_1")
+        self.database.clubs.create_index(
+            "owner_user_id", unique=True, partialFilterExpression=partial
+        )
+        self.database.seasons.create_index(
+            "status", unique=True, partialFilterExpression={"status": "active"}
+        )
+        self.database.divisions.create_index("tier", unique=True)
+        self.database.season_clubs.create_index([("season_id", 1), ("club_id", 1)], unique=True)
+        self.database.standings.create_index(
+            [("season_id", 1), ("division_id", 1), ("position", 1)]
+        )
+        self.database.matches.create_index([("season_id", 1), ("status", 1), ("date", 1)])
+        self.database.youth_players.create_index("current_club_id")
+        self.database.calendar_events.create_index([("reference_id", 1), ("club_id", 1)])
         indexes = {
-            "clubs": [("owner_user_id", True)],
             "players": [("current_club_id", False), ("owner_club_id", False)],
             "financial_transactions": [("club_id", False)],
             "calendar_events": [("club_id", False)],

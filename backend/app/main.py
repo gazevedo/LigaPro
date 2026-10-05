@@ -13,6 +13,7 @@ from app.controllers import auth, game, health, settings
 from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
+from app.services.competition import CompetitionService
 from app.services.game import process_due
 
 configure_logging()
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
         app.state.database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
         repository = GameRepository(app.state.database)
         repository.initialize()
+        CompetitionService(repository).bootstrap()
 
         async def maintenance():
             while True:

@@ -1,3 +1,5 @@
+import { TrainingScreen } from '../screens/TrainingScreen';
+import { YouthAcademyScreen } from '../screens/YouthAcademyScreen';
 import { TransferOffersScreen } from '../screens/TransferOffersScreen';
 import { PlayerDetailsScreen } from '../screens/PlayerDetailsScreen';
 import { MarketScreen } from '../screens/MarketScreen';
@@ -46,6 +48,8 @@ export function AppNavigator() {
         <Stack.Screen name="Ticketing" component={TicketingScreen} options={{ title: 'Bilheteria' }} />
         <Stack.Screen name="Sponsors" component={SponsorsScreen} options={{ title: 'Patrocinadores' }} />
         <Stack.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendário' }} />
+        <Stack.Screen name="Training" component={TrainingScreen} options={{ title: 'Treinamento' }} />
+        <Stack.Screen name="YouthAcademy" component={YouthAcademyScreen} options={{ title: 'Categorias de Base' }} />
         <Stack.Screen name="Market" component={MarketScreen} options={{ title: 'Mercado' }} />
         <Stack.Screen name="PlayerDetails" component={PlayerDetailsScreen} options={{ title: 'Jogador' }} />
         <Stack.Screen name="TransferOffers" component={TransferOffersScreen} options={{ title: 'Propostas' }} />

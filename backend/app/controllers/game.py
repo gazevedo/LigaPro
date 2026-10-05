@@ -14,6 +14,7 @@ from app.schemas.game import (
     OfferInput,
     TicketInput,
 )
+from app.services.competition import CompetitionService
 from app.services.game import (
     CalendarService,
     ClubService,
@@ -22,6 +23,7 @@ from app.services.game import (
     SquadService,
     StadiumService,
 )
+from app.services.player_development import TrainingService
 
 router = APIRouter(tags=["game"], dependencies=[Depends(get_current_user)])
 User = Annotated[object, Depends(get_current_user)]
@@ -125,7 +127,7 @@ def calendar(user: User, repo: Repo, filters: Annotated[CalendarFilter, Query()]
 def search(
     repo: Repo,
     name: str | None = Query(None, max_length=60),
-    position: Literal["GOL", "DEF", "MED", "ATA"] | None = None,
+    position: Literal["GOL", "GK", "DEF", "MED", "MID", "ATA", "ATT"] | None = None,
     country_id: str | None = None,
     type: Literal["sale", "loan"] | None = None,
     age_min: int | None = Query(None, ge=0),
@@ -173,3 +175,33 @@ def accept(identity: str, user: User, repo: Repo):
 @router.post("/market/offers/{identity}/cancel")
 def cancel_offer(identity: str, user: User, repo: Repo):
     return MarketService(repo).close(user, "transfer_offers", identity)
+
+
+@router.get("/competition")
+def competition(user: User, repo: Repo):
+    return CompetitionService(repo).table(user)
+
+
+@router.get("/competition/matches")
+def competition_matches(user: User, repo: Repo):
+    return CompetitionService(repo).matches(user)
+
+
+@router.get("/training")
+def training(user: User, repo: Repo):
+    return TrainingService(repo).get(user)
+
+
+@router.post("/players/{identity}/train")
+def train(identity: str, user: User, repo: Repo):
+    return TrainingService(repo).train(user, identity)
+
+
+@router.get("/youth")
+def youth(user: User, repo: Repo):
+    return TrainingService(repo).get(user, youth=True)
+
+
+@router.post("/youth/{identity}/promote")
+def promote(identity: str, user: User, repo: Repo):
+    return TrainingService(repo).promote(user, identity)

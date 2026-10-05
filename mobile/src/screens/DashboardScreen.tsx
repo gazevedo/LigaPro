@@ -12,6 +12,8 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
     <Button title="Financeiro" onPress={() => navigation.navigate('Finance')} />
     <Button title="Calendário" onPress={() => navigation.navigate('Calendar')} />
     <Button title="Mercado" onPress={() => navigation.navigate('Market')} />
+    <Button title="Treinamento" onPress={() => navigation.navigate('Training')} />
+    <Button title="Categorias de Base" onPress={() => navigation.navigate('YouthAcademy')} />
     <Button title="Perfil" onPress={() => navigation.navigate('Profile')} />
     <Button title="Configurações" onPress={() => navigation.navigate('Settings')} />
   </GamePage>;

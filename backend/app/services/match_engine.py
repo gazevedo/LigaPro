@@ -1,0 +1,357 @@
+"""Individual, seeded match simulation; tuning values are provisional configuration.
+
+Snapshots are JSON-compatible and returned with the result for the match scheduler
+to persist. This module performs no database reads or writes.
+"""
+
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
+from math import isfinite
+from random import Random
+
+POSITIONS = {"GK", "FB", "CB", "MID", "ATT"}
+ALIASES = {"GOL": "GK", "DEF": "CB", "MED": "MID", "ATA": "ATT"}
+SKILLS = {"goalkeeping", "speed", "technique", "passing", "tackling", "playmaking", "finishing"}
+
+
+def clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+@dataclass(frozen=True)
+class MatchConfig:
+    block_minutes: int = 5
+    compatible_fit: float = 0.90
+    unsuitable_fit: float = 0.72
+    wrong_side_fit: float = 0.96
+    home_advantage: float = 1.02
+    focus_probability: float = 0.70
+    energy_loss: float = 1.5
+    marking_containment: tuple = (1.0, 1.08, 1.20)
+    marking_build_up: tuple = (1.0, 0.98, 0.90)
+    foul_probability: tuple = (0.03, 0.07, 0.12)
+
+    def __post_init__(self):
+        if not isinstance(self.block_minutes, int) or not 1 <= self.block_minutes <= 90:
+            raise ValueError("block_minutes must be between 1 and 90")
+        if not 0 < self.unsuitable_fit <= self.compatible_fit <= self.wrong_side_fit <= 1:
+            raise ValueError("Invalid position/side calibration")
+        if not 1 <= self.home_advantage <= 1.05:
+            raise ValueError("Home advantage must remain small")
+        if not 0 <= self.focus_probability <= 1 or not 0 <= self.energy_loss <= 100:
+            raise ValueError("Invalid focus/energy calibration")
+        for values in (self.marking_containment, self.marking_build_up, self.foul_probability):
+            if len(values) != 3 or any(not isfinite(x) for x in values):
+                raise ValueError("Marking requires three finite values")
+        if any(x <= 0 for x in self.marking_containment):
+            raise ValueError("Containment must be positive")
+        if any(not 0 < x <= 1 for x in self.marking_build_up):
+            raise ValueError("Build-up factors must be in (0, 1]")
+        if any(not 0 <= x <= 1 for x in self.foul_probability):
+            raise ValueError("Foul probabilities must be in [0, 1]")
+
+
+@dataclass
+class MatchPlayer:
+    id: str
+    position: str
+    assigned_position: str
+    strength: float = 50
+    energy: float = 100
+    morale: float = 50
+    preferred_side: str = "both"
+    side: str = "center"
+    skills: dict = field(default_factory=dict)
+    traits: tuple = ()
+
+    def __post_init__(self):
+        self.position = ALIASES.get(self.position, self.position)
+        self.assigned_position = ALIASES.get(self.assigned_position, self.assigned_position)
+        if self.position not in POSITIONS or self.assigned_position not in POSITIONS:
+            raise ValueError("Unknown player position")
+        if self.preferred_side not in {"left", "right", "both"}:
+            raise ValueError("Unknown preferred side")
+        if self.side not in {"left", "right", "center"}:
+            raise ValueError("Unknown lineup side")
+        values = [self.strength, self.energy, self.morale, *self.skills.values()]
+        if any(not isfinite(x) or not 0 <= x <= 100 for x in values):
+            raise ValueError("Player attributes must be finite and between 0 and 100")
+        if set(self.skills) - SKILLS:
+            raise ValueError("Unknown skill")
+
+    @classmethod
+    def from_document(cls, document, assigned_position=None, side="center"):
+        """Adapt existing overall/GOL/DEF/MED/ATA documents without migration."""
+        return cls(
+            id=str(document.get("_id", document.get("id", ""))),
+            position=document["position"],
+            assigned_position=assigned_position or document["position"],
+            strength=document.get("strength", document.get("overall", 50)),
+            energy=document.get("energy", 100), morale=document.get("morale", 50),
+            preferred_side=document.get("preferred_side", "both"), side=side,
+            skills=dict(document.get("skills", {})), traits=tuple(document.get("traits", ())),
+        )
+
+
+@dataclass
+class MatchTeam:
+    id: str
+    lineup: list[MatchPlayer]
+    formation: str = "4-4-2"
+    style: str = "balanced"
+    marking: str = "light"
+    attack_focus: str = "normal"
+
+    def __post_init__(self):
+        if self.style not in {"balanced", "all_out_attack", "counter_attack"}:
+            raise ValueError("Unknown style")
+        if self.marking not in {"light", "heavy", "very_heavy"}:
+            raise ValueError("Unknown marking")
+        if self.attack_focus not in {"normal", "center", "wings"}:
+            raise ValueError("Unknown attack focus")
+        try:
+            sectors = [int(n) for n in self.formation.split("-")]
+        except ValueError as exc:
+            raise ValueError("Invalid formation") from exc
+        if len(sectors) < 3 or any(n <= 0 for n in sectors) or sum(sectors) != 10:
+            raise ValueError("Formation must describe ten outfield players")
+        if len(self.lineup) != 11 or len({p.id for p in self.lineup}) != 11:
+            raise ValueError("Lineup requires eleven distinct players")
+        counts = [sum(p.assigned_position == "GK" for p in self.lineup),
+                  sum(p.assigned_position in {"CB", "FB"} for p in self.lineup),
+                  sum(p.assigned_position == "MID" for p in self.lineup),
+                  sum(p.assigned_position == "ATT" for p in self.lineup)]
+        if counts != [1, sectors[0], sum(sectors[1:-1]), sectors[-1]]:
+            raise ValueError("Lineup sectors must match formation")
+
+
+class PositionFitCalculator:
+    def __init__(self, config):
+        self.config = config
+
+    def calculate(self, player):
+        if player.position == player.assigned_position:
+            fit = 1.0
+        elif {player.position, player.assigned_position} in (
+            {"FB", "CB"}, {"FB", "MID"}, {"MID", "ATT"},
+        ):
+            fit = self.config.compatible_fit
+        else:
+            fit = self.config.unsuitable_fit
+        if player.side != "center" and player.preferred_side not in {player.side, "both"}:
+            fit *= self.config.wrong_side_fit
+        return fit
+
+
+class PlayerEffectiveStrengthCalculator:
+    def __init__(self, config, mode):
+        if mode not in {"classic", "skills"}:
+            raise ValueError("Unknown attribute mode")
+        self.mode = mode
+        self.fit = PositionFitCalculator(config)
+
+    def calculate(self, player, *skills):
+        value = player.strength if self.mode == "classic" else (
+            sum(player.skills[s] for s in skills) / len(skills)
+        )
+        energy = clamp(0.70 + player.energy / 333, 0.70, 1.0)
+        morale = 1 + (player.morale - 50) * 0.0008
+        related = set(skills) & set(player.traits)
+        # Traits apply only to the requested phase, never to general team strength.
+        return value * energy * morale * self.fit.calculate(player) * (1 + 0.02 * len(related))
+
+
+class SectorContributionCalculator:
+    def __init__(self, calculator):
+        self.calculator = calculator
+
+    def participants(self, team, phase, lane, rng, dismissed):
+        players = [p for p in team.lineup if p.id not in dismissed and
+                   p.assigned_position != "GK"]
+        if not players:
+            return []
+        roles = {
+            "build": {"CB": 2, "FB": 2, "MID": 3, "ATT": 1},
+            "progress": {"CB": 1, "FB": 2, "MID": 3, "ATT": 2},
+            "create": {"CB": 1, "FB": 2, "MID": 3, "ATT": 3},
+            "finish": {"CB": 1, "FB": 1, "MID": 2, "ATT": 5},
+            "defend": {"CB": 4, "FB": 3, "MID": 2, "ATT": 1},
+        }[phase]
+        weights = [roles[p.assigned_position] * (2 if p.side == lane else 1) *
+                   (1.4 if team.style == "all_out_attack" and
+                    p.assigned_position in {"MID", "ATT"} and phase != "defend" else 1)
+                   for p in players]
+        selected = []
+        for _ in range(min(3, len(players))):
+            index = rng.choices(range(len(players)), weights=weights)[0]
+            selected.append(players.pop(index))
+            weights.pop(index)
+        return selected
+
+    def contribution(self, players, *skills):
+        return sum(self.calculator.calculate(p, *skills) for p in players) / max(1, len(players))
+
+
+class BuildUpResolver:
+    skills = ("passing", "technique", "playmaking")
+    base = 0.80
+
+    def resolve(self, attack, defense, rng, bonus=0):
+        probability = clamp(self.base + 0.30 * (attack - defense) / max(1, attack + defense)
+                            + bonus, 0.08, 0.97)
+        return rng.random() < probability
+
+
+class ProgressionResolver(BuildUpResolver):
+    skills = ("speed", "technique", "playmaking")
+    base = 0.75
+
+
+class ChanceCreator(BuildUpResolver):
+    skills = ("playmaking", "passing")
+    base = 0.65
+
+
+class GoalkeeperResolver:
+    def __init__(self, calculator):
+        self.calculator = calculator
+
+    def strength(self, goalkeeper):
+        return self.calculator.calculate(goalkeeper, "goalkeeping") if goalkeeper else 0
+
+
+class FinishingResolver:
+    def resolve(self, finishing, goalkeeper, quality, rng):
+        on_target = clamp(0.45 + quality * 0.25 + finishing / 500, 0.20, 0.85)
+        if rng.random() >= on_target:
+            return "shot_off_target"
+        goal = clamp(0.22 + quality * 0.22 +
+                     (finishing - goalkeeper) / max(1, finishing + goalkeeper) * 0.35,
+                     0.03, 0.85)
+        return "goal" if rng.random() < goal else "shot_saved"
+
+
+class MatchEngine:
+    def __init__(self, config=None, mode="classic"):
+        self.config = config or MatchConfig()
+        self.mode = mode
+        self.calculator = PlayerEffectiveStrengthCalculator(self.config, mode)
+        self.sectors = SectorContributionCalculator(self.calculator)
+        self.goalkeeper = GoalkeeperResolver(self.calculator)
+        self.finishing = FinishingResolver()
+
+    def attack_lane(self, focus, rng):
+        favored = rng.random() < self.config.focus_probability
+        if focus == "normal":
+            return rng.choice(["center", "left", "right"])
+        wings = favored if focus == "wings" else not favored
+        return rng.choice(["left", "right"]) if wings else "center"
+
+    def simulate(self, home, away, seed):
+        # Revalidate mutable inputs and isolate fatigue/cards from caller data.
+        teams = deepcopy([home, away])
+        if home.id == away.id:
+            raise ValueError("Teams must be distinct")
+        for team in teams:
+            team.__post_init__()
+            for player in team.lineup:
+                player.__post_init__()
+                if self.mode == "skills" and not SKILLS <= player.skills.keys():
+                    raise ValueError("Skills mode requires all seven skills")
+        snapshot = {"home": asdict(teams[0]), "away": asdict(teams[1]),
+                    "seed": seed, "mode": self.mode, "config": asdict(self.config)}
+        rng = Random(seed)
+        events, scores = [], [0, 0]
+        dismissed, yellows = [set(), set()], [{}, {}]
+        marking_names = ["light", "heavy", "very_heavy"]
+        for start in range(0, 90, self.config.block_minutes):
+            minute = min(90, start + self.config.block_minutes)
+            duration = minute - start
+            for index, active_team in enumerate(teams):
+                for player in active_team.lineup:
+                    if player.id not in dismissed[index]:
+                        player.energy = max(0, player.energy -
+                                            self.config.energy_loss * duration / 5)
+            initiative = []
+            for index, team in enumerate(teams):
+                players = [p for p in team.lineup if p.id not in dismissed[index] and
+                           p.assigned_position != "GK"]
+                presence = sum(self.calculator.calculate(p, "passing", "playmaking") *
+                               (1.2 if p.assigned_position == "MID" else 1) for p in players)
+                initiative.append(max(1, presence) *
+                                  (0.80 if team.style == "counter_attack" else 1) *
+                                  (self.config.home_advantage if index == 0 else 1))
+            attacker = rng.choices([0, 1], weights=initiative)[0]
+            defender = 1 - attacker
+            team, opponent = teams[attacker], teams[defender]
+            lane = self.attack_lane(team.attack_focus, rng)
+            mark = marking_names.index(opponent.marking)
+            own_mark = marking_names.index(team.marking)
+
+            def event(kind, player=None, **extra):
+                events.append({"minute": minute, "type": kind, "team_id": team.id,
+                               "player_id": player.id if player else None, **extra})
+
+            event("attack", lane=lane)
+            defenders = self.sectors.participants(
+                opponent, "defend", lane, rng, dismissed[defender])
+            if defenders and rng.random() < self.config.foul_probability[mark]:
+                culprit = rng.choice(defenders)
+                event("foul", culprit, team_id=opponent.id)
+                card = rng.random()
+                if card < 0.025 * (mark + 1):
+                    event("red_card", culprit, team_id=opponent.id)
+                    dismissed[defender].add(culprit.id)
+                elif card < 0.20 + mark * 0.12:
+                    event("yellow_card", culprit, team_id=opponent.id)
+                    yellows[defender][culprit.id] = yellows[defender].get(culprit.id, 0) + 1
+                    if yellows[defender][culprit.id] == 2:
+                        event("red_card", culprit, team_id=opponent.id)
+                        dismissed[defender].add(culprit.id)
+                if rng.random() < 0.10:
+                    event("penalty_awarded")
+                    shooters = self.sectors.participants(
+                        team, "finish", lane, rng, dismissed[attacker])
+                    if shooters:
+                        keeper = next((p for p in opponent.lineup if
+                                       p.assigned_position == "GK" and
+                                       p.id not in dismissed[defender]), None)
+                        shot = self.finishing.resolve(
+                            self.calculator.calculate(shooters[0], "finishing"),
+                            self.goalkeeper.strength(keeper), 1.0, rng)
+                        event(shot, shooters[0], penalty=True)
+                        scores[attacker] += shot == "goal"
+                    continue
+                defenders = [p for p in defenders if p.id not in dismissed[defender]]
+            quality = 0.5
+            for phase, resolver in [("build", BuildUpResolver()),
+                                    ("progress", ProgressionResolver()),
+                                    ("create", ChanceCreator())]:
+                participants = self.sectors.participants(
+                    team, phase, lane, rng, dismissed[attacker])
+                attack = self.sectors.contribution(participants, *resolver.skills)
+                if phase == "build":
+                    attack *= self.config.marking_build_up[own_mark]
+                defense = self.sectors.contribution(defenders, "tackling", "speed")
+                defense *= self.config.marking_containment[mark]
+                if opponent.style == "all_out_attack":
+                    defense *= 0.94
+                transition = (0.06 if team.style == "counter_attack" and
+                              opponent.style == "all_out_attack" and phase == "progress" else 0)
+                if not participants or not resolver.resolve(attack, defense, rng, transition):
+                    event("attack_lost", phase=phase)
+                    break
+                quality = clamp(0.5 + (attack - defense) / max(1, attack + defense), 0, 1)
+            else:
+                shooters = self.sectors.participants(team, "finish", lane, rng, dismissed[attacker])
+                shooter = shooters[0]
+                event("chance", shooter, quality=quality)
+                keeper = next((p for p in opponent.lineup if p.assigned_position == "GK" and
+                               p.id not in dismissed[defender]), None)
+                shot = self.finishing.resolve(
+                    self.calculator.calculate(shooter, "finishing"),
+                    self.goalkeeper.strength(keeper), quality, rng)
+                event(shot, shooter)
+                scores[attacker] += shot == "goal"
+        return {"snapshot": snapshot, "score": {home.id: scores[0], away.id: scores[1]},
+                "events": events, "final_lineups": [asdict(t) for t in teams]}

@@ -71,7 +71,7 @@ def test_create_club_and_initial_data(client):
     assert len(squad["players"]) == 25
     assert len(squad["lineup"]["starters"]) == 11
     assert len(squad["lineup"]["reserves"]) == 14
-    assert set(p["position"] for p in squad["players"]) == {"GOL", "DEF", "MED", "ATA"}
+    assert set(p["position"] for p in squad["players"]) == {"GK", "DEF", "MID", "ATT"}
     assert client.get("/api/finance", headers=headers).json()["balance"] == 10500000
     assert len(client.get("/api/finance/sponsors", headers=headers).json()["contracts"]) == 1
     assert (
@@ -82,7 +82,8 @@ def test_create_club_and_initial_data(client):
         ).status_code
         == 409
     )
-    assert app.state.database.clubs.count_documents({}) == 1
+    assert app.state.database.clubs.count_documents({"is_bot": {"$ne": True}}) == 1
+    assert app.state.database.clubs.count_documents({"is_bot": True}) == 19
 
 
 def test_public_club_and_permissions(client, clubs):
@@ -200,8 +201,8 @@ def test_bank_tickets_sponsors_calendar(client, clubs):
     )
     assert client.post("/api/finance/sponsors/principal/accept", headers=seller).status_code == 200
     events = client.get("/api/calendar", headers=seller).json()
-    assert events and not any(e["type"] == "match" for e in events)
-    assert client.get("/api/calendar?type=match", headers=seller).json() == []
+    assert events and sum(e["type"] == "match" for e in events) == 38
+    assert len(client.get("/api/calendar?type=match", headers=seller).json()) == 38
     assert all(
         e["type"] == "financial"
         for e in client.get("/api/calendar?type=financial", headers=seller).json()
@@ -288,8 +289,9 @@ def test_market_filters_cancel_and_ownership(client, clubs):
     seller, buyer, _, _ = clubs
     player, listing, offer = listing_offer(client, clubs)
     query = (
-        f"/api/market/players?name=Jogador&position={player['position']}"
-        "&age_min=21&age_max=21&overall_min=50&overall_max=50"
+        f"/api/market/players?name={player['name']}&position={player['position']}"
+        f"&age_min={player['age']}&age_max={player['age']}"
+        f"&overall_min={player['overall']}&overall_max={player['overall']}"
         "&value_min=100000&value_max=100000&country_id=BR&type=sale"
     )
     assert len(client.get(query, headers=buyer).json()) == 1
@@ -387,6 +389,13 @@ def test_player_details_use_identity_even_with_duplicate_names(client, clubs):
     player, listing, _ = listing_offer(client, clubs)
     details = client.get(f"/api/players/{player['id']}", headers=buyer).json()
     assert details["listing"]["id"] == listing["id"]
+    db = app.state.database
+    second_player = db.players.find_one({"_id": {"$ne": ObjectId(player["id"])}})
+    db.players.update_many(
+        {"name": player["name"], "_id": {"$ne": ObjectId(player["id"])}},
+        {"$set": {"name": "Outro nome"}},
+    )
+    db.players.update_one({"_id": second_player["_id"]}, {"$set": {"name": player["name"]}})
     same_name = client.get("/api/market/players?name=" + player["name"], headers=seller).json()
     assert len(same_name) == 2
     assert sum(p["listing"] is not None for p in same_name) == 1

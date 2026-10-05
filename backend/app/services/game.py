@@ -5,7 +5,10 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from app.config.game import GameConfig, legacy_position
 from app.models.game import FACILITIES, public, utcnow
+from app.services.competition import CompetitionService
+from app.services.player_development import PlayerGeneratorService
 
 
 class ClubService:
@@ -49,7 +52,10 @@ class ClubService:
         )
 
     def create(self, user, data):
+        CompetitionService.ensure_lock(self.repo)
+
         def operation(repo):
+            CompetitionService.lock(repo)
             if repo.find("clubs", {"owner_user_id": ObjectId(user.id)}):
                 raise HTTPException(409, "Você já possui um clube.")
             country = repo.find("countries", {"_id": data.country_id})
@@ -71,26 +77,17 @@ class ClubService:
                     "trophies": [],
                 },
             )
-            players = []
-            for position, count in [("GOL", 3), ("DEF", 8), ("MED", 8), ("ATA", 6)]:
-                for _ in range(count):
-                    player = {
-                        "_id": ObjectId(),
-                        "name": f"Jogador {len(players) + 1:02}",
-                        "position": position,
-                        "age": 21,
-                        "overall": 50,
-                        "value": 100_000,
-                        "country_id": data.country_id,
-                        "owner_club_id": club_id,
-                        "current_club_id": club_id,
-                    }
-                    players.append(player)
+            players = PlayerGeneratorService(GameConfig.from_rules(rules), str(club_id)).squad(
+                club_id, data.country_id
+            )
             repo.insert_many("players", players)
             starters = []
             for position, count in {"GOL": 1, **rules["formations"]["4-4-2"]}.items():
                 starters.extend(
-                    p["_id"] for p in [p for p in players if p["position"] == position][:count]
+                    p["_id"]
+                    for p in [p for p in players if legacy_position(p["position"]) == position][
+                        :count
+                    ]
                 )
             repo.insert(
                 "lineups",
@@ -125,6 +122,10 @@ class ClubService:
                 },
             )
             repo.money(club_id, rules["sponsor_value"], "sponsor")
+            competition = CompetitionService(repo)
+            competition.enroll(repo, club, now)
+            season = competition.current(repo)
+            competition.generate_youth(repo, club, season, competition.season_config(season))
             return self.response(club)
 
         try:
@@ -141,7 +142,11 @@ class SquadService:
         club = self.repo.owned(user.id)
         return public(
             {
-                "players": self.repo.many("players", {"current_club_id": club["_id"]}, limit=None),
+                "players": self.repo.many(
+                    "players",
+                    {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                    limit=None,
+                ),
                 "lineup": self.repo.find("lineups", {"_id": club["_id"]}),
                 "formations": self.repo.rules()["formations"],
             }
@@ -158,12 +163,18 @@ class SquadService:
                 or any(not ObjectId.is_valid(p) for p in ids)
             ):
                 raise HTTPException(422, "Formação ou jogadores inválidos/duplicados.")
-            players = repo.many("players", {"current_club_id": club["_id"]}, limit=None)
+            players = repo.many(
+                "players",
+                {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                limit=None,
+            )
             if set(ids) != {str(p["_id"]) for p in players}:
                 raise HTTPException(
                     422, "Escalação deve incluir exatamente os jogadores do plantel."
                 )
-            positions = Counter(p["position"] for p in players if str(p["_id"]) in data.starters)
+            positions = Counter(
+                legacy_position(p["position"]) for p in players if str(p["_id"]) in data.starters
+            )
             if dict(positions) != {"GOL": 1, **formation}:
                 raise HTTPException(
                     422, "Titulares incompatíveis com a formação; é necessário um goleiro."
@@ -406,7 +417,7 @@ class MarketService:
         return public({**player, "listing": listing})
 
     def search(self, filters):
-        query = {}
+        query = {"status": {"$ne": "retired"}}
         for key in ["position", "country_id"]:
             if filters.get(key):
                 query[key] = filters[key]
@@ -434,7 +445,12 @@ class MarketService:
                 "outgoing": self.repo.many("transfer_offers", {"buyer_club_id": club["_id"]}),
                 "loans": self.repo.many(
                     "player_loans",
-                    {"$or": [{"owner_club_id": club["_id"]}, {"current_club_id": club["_id"]}]},
+                    {
+                        "$or": [
+                            {"owner_club_id": club["_id"]},
+                            {"current_club_id": club["_id"]},
+                        ]
+                    },
                 ),
             }
         )
@@ -446,6 +462,8 @@ class MarketService:
                 raise HTTPException(
                     403, "Só é possível anunciar jogadores próprios e presentes no clube."
                 )
+            if player.get("status") == "retired":
+                raise HTTPException(409, "Jogador aposentado.")
             lineup = repo.find("lineups", {"_id": club["_id"]})
             if player["_id"] in lineup["starters"]:
                 raise HTTPException(409, "Mova o jogador para a reserva antes de anunciá-lo.")
@@ -503,7 +521,9 @@ class MarketService:
 
     @staticmethod
     def repair_lineup(repo, club_id):
-        players = repo.many("players", {"current_club_id": club_id}, limit=None)
+        players = repo.many(
+            "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
+        )
         lineup = repo.find("lineups", {"_id": club_id})
         available = {p["_id"] for p in players}
         if len(lineup["starters"]) == 11 and set(lineup["starters"]) <= available:
@@ -523,7 +543,9 @@ class MarketService:
         for formation in [lineup["formation"], *rules]:
             starters = []
             for position, count in {"GOL": 1, **rules[formation]}.items():
-                choices = [p["_id"] for p in players if p["position"] == position][:count]
+                choices = [p["_id"] for p in players if legacy_position(p["position"]) == position][
+                    :count
+                ]
                 if len(choices) != count:
                     break
                 starters.extend(choices)
@@ -544,6 +566,7 @@ class MarketService:
 
     def accept(self, user, identity):
         def operation(repo):
+            CompetitionService.require_transfer_window(repo)
             club, offer = repo.owned(user.id), repo.document("transfer_offers", identity)
             listing = repo.document("transfer_listings", str(offer["listing_id"]))
             if offer["seller_club_id"] != club["_id"]:
@@ -553,6 +576,8 @@ class MarketService:
             player = repo.document("players", str(listing["player_id"]))
             if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
                 raise HTTPException(409, "Jogador indisponível.")
+            if player.get("status") == "retired":
+                raise HTTPException(409, "Jogador aposentado.")
             # Lock both rosters; simultaneous lineup/transfer changes are retried by MongoDB.
             for club_id in sorted([club["_id"], offer["buyer_club_id"]]):
                 repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
@@ -596,10 +621,14 @@ class MarketService:
             # A club must retain its own complete roster when borrowed players return.
             permanent = repo.many(
                 "players",
-                {"owner_club_id": club["_id"], "current_club_id": club["_id"]},
+                {
+                    "owner_club_id": club["_id"],
+                    "current_club_id": club["_id"],
+                    "status": {"$ne": "retired"},
+                },
                 limit=None,
             )
-            counts = Counter(p["position"] for p in permanent)
+            counts = Counter(legacy_position(p["position"]) for p in permanent)
             if not any(
                 counts["GOL"] >= 1 and all(counts[p] >= n for p, n in f.items())
                 for f in repo.rules()["formations"].values()
@@ -670,6 +699,7 @@ class MarketService:
 
 def process_due(repository):
     now = utcnow()
+    CompetitionService(repository).process_due(now)
     for loan in repository.many("player_loans", {"status": "active", "ends_at": {"$lte": now}}):
 
         def return_player(repo, identity=loan["_id"]):

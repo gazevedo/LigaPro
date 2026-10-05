@@ -1,6 +1,6 @@
 # LigaPro — 0.1.0
 
-Base técnica, autenticação e gerenciamento inicial do clube. Partidas e campeonatos ainda não implementados.
+Base técnica, autenticação, gerenciamento de clubes e ciclo competitivo com partidas e campeonatos.
 
 ## Arquitetura
 React Native / Expo / TypeScript → API REST FastAPI → MongoDB.
@@ -184,3 +184,49 @@ Endpoints autenticados (detalhes e schemas no Swagger):
 Listas de consulta têm limite de 200 registros (calendário: 500); o plantel e
 as validações de escalação consideram todos os jogadores atuais do clube. Google e validações em
 dispositivo físico continuam listados em `docs/PENDENCIAS.md`.
+
+## Script 5 — motor de partidas
+
+`backend/app/services/match_engine.py` oferece `MatchEngine.simulate(home, away, seed)`
+com `MatchTeam` e onze `MatchPlayer` por escalação. Suporta modos `classic` e `skills`,
+posições GK/FB/CB/MID/ATT, fases individuais, táticas, energia, moral e eventos.
+`MatchPlayer.from_document` adapta os jogadores atuais sem migrar GOL/DEF/MED/ATA
+nem `overall`. O modo `skills` exige as sete habilidades; não inventa atributos ausentes.
+
+O resultado contém placar, eventos, escalações finais e snapshot inicial com seed,
+configuração e atributos. O campeonato do script 4 persiste esse resultado em `matches`, com o snapshot
+utilizado em cada partida, e executa jogos mesmo sem usuários conectados. Coeficientes em
+`MatchConfig` são provisórios para calibração no script 6; foco usa probabilidade
+alvo de 70%, não uma quota por partida.
+
+Testes unitários isolados, sem MongoDB (com as dependências do backend instaladas):
+```sh
+PYTHONPATH=backend python -m unittest discover -s backend/tests/unit -v
+```
+
+## Script 4 — campeonato e desenvolvimento
+
+Divisões de 20 clubes, preenchidas por bots, com turno e returno (38 rodadas).
+Novos clubes substituem o pior bot da série mais alta disponível e herdam somente
+sua vaga esportiva; resultados originais e auditoria permanecem registrados.
+Sem bot disponível, uma nova série é criada. Clubes existentes entram no campeonato
+na inicialização, preservando seus jogadores e dados administrativos.
+
+A manutenção a cada 30 segundos joga partidas vencidas e encerra temporadas
+idempotentemente. Registra campeão da A, quatro acessos/rebaixamentos por fronteira,
+envelhecimento, declínio, aposentadorias, dois jovens e o próximo calendário.
+Configuração em `backend/app/config/game.py`, com overrides administrativos em
+`app_settings.game_rules`; calendário e regras ficam congelados por temporada.
+Defaults: 30 dias, preparação nos dias 0–2 e janela intermediária nos dias 15–17.
+Transferências só podem ser concluídas nessas janelas; consultas e propostas continuam disponíveis.
+
+Novos jogadores usam GK/DEF/MID/ATT, força aleatória e `overall` sincronizado;
+GOL/MED/ATA antigos continuam compatíveis. Treino ganha um ponto de força a cada
+100 cliques válidos, com limite padrão 100. Jovens de 14–17 anos podem ser promovidos
+aos 18. Aposentados mantêm histórico e saem do plantel, mercado e treino.
+Elencos com menos de onze ativos geram W.O. (3–0; 0–0 se ambos insuficientes).
+
+APIs: `GET /api/competition`, `/api/competition/matches`, `/api/training`, `/api/youth`;
+`POST /api/players/{id}/train` e `/api/youth/{id}/promote`.
+Mobile: Treinamento e Categorias de Base no dashboard; classificação na tela do clube.
+Testes de integração relacionados: `pytest tests/test_game.py tests/test_competition.py -q`.
