@@ -122,7 +122,9 @@ def test_training_youth_promotion_and_permissions(client):
     create(client, stranger)
     player = client.get("/api/training", headers=headers).json()[0]
     db = app.state.database
-    db.players.update_one({"_id": ObjectId(player["id"])}, {"$set": {"training_level": 99}})
+    db.players.update_one(
+        {"_id": ObjectId(player["id"])}, {"$set": {"training_level": 99, "potential": 100}}
+    )
     trained = client.post(f"/api/players/{player['id']}/train", headers=headers)
     assert trained.status_code == 200
     assert trained.json()["strength"] == player["strength"] + 1
@@ -148,7 +150,9 @@ def test_concurrent_training_loses_no_clicks(client):
     user, club = add_club()
     repo = GameRepository(app.state.database)
     player = repo.find("players", {"current_club_id": ObjectId(club["id"])})
-    app.state.database.players.update_one({"_id": player["_id"]}, {"$set": {"training_level": 98}})
+    app.state.database.players.update_one(
+        {"_id": player["_id"]}, {"$set": {"training_level": 98, "potential": 100}}
+    )
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(
             executor.map(lambda _: TrainingService(repo).train(user, str(player["_id"])), range(2))

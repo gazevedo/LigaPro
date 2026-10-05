@@ -7,7 +7,10 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.config.game import GameConfig
+from app.config.team_performance import MoraleConfig
 from app.models.game import public, utcnow
+from app.services.chemistry import ChemistryService
+from app.services.player_morale import PlayerMoraleService
 
 OPEN_STATUSES = ["active", "expiring"]
 
@@ -219,44 +222,50 @@ class ContractService:
 
             CompetitionService.require_transfer_window(repo)
             club, player = repo.owned(user.id), repo.document("players", identity)
-            if (
-                player.get("status") != "free_agent"
-                or player.get("owner_club_id") is not None
-                or player.get("current_club_id") is not None
-                or self.current(repo, player["_id"])
-            ):
-                raise HTTPException(409, "Jogador não está livre.")
-            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
-            self.capacity(repo, club["_id"], data.salary)
-            now = utcnow()
-            contract = self.document(
-                player["_id"],
-                club["_id"],
-                data.salary,
-                data.seasons,
-                GameConfig.from_rules(repo.rules()),
-                now,
-            )
-            repo.insert("player_contracts", contract)
-            repo.update(
-                "players",
-                {"_id": player["_id"]},
-                {
-                    "$set": {
-                        "status": "active",
-                        "owner_club_id": club["_id"],
-                        "current_club_id": club["_id"],
-                    }
-                },
-            )
-            repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
-            self.history(repo, contract, "signed", now)
-            repo.event(
-                club["_id"], "transfer", "Contratação de jogador livre", reference=player["_id"]
-            )
-            return public(contract)
+            return self.sign_for_club(repo, club, player, data.salary, data.seasons)
 
         return self.repo.transaction(operation)
+
+    @classmethod
+    def sign_for_club(cls, repo, club, player, salary, seasons):
+        if (
+            player.get("status") != "free_agent"
+            or player.get("owner_club_id") is not None
+            or player.get("current_club_id") is not None
+            or cls.current(repo, player["_id"])
+        ):
+            raise HTTPException(409, "Jogador não está livre.")
+        repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+        cls.capacity(repo, club["_id"], salary)
+        now = utcnow()
+        contract = cls.document(
+            player["_id"],
+            club["_id"],
+            salary,
+            seasons,
+            GameConfig.from_rules(repo.rules()),
+            now,
+        )
+        repo.insert("player_contracts", contract)
+        repo.update(
+            "players",
+            {"_id": player["_id"]},
+            {
+                "$set": {
+                    "status": "active",
+                    "integration": 0,
+                    "joined_at": now,
+                    "owner_club_id": club["_id"],
+                    "current_club_id": club["_id"],
+                }
+            },
+        )
+        repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
+        ChemistryService().recruit(repo, club["_id"])
+        PlayerMoraleService().change(repo, player, MoraleConfig().transfer)
+        cls.history(repo, contract, "signed", now)
+        repo.event(club["_id"], "transfer", "Contratação de jogador livre", reference=player["_id"])
+        return public(contract)
 
     @classmethod
     def transfer(cls, repo, player_id, buyer_id):

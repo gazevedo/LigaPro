@@ -8,9 +8,13 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config.game import GameConfig
 from app.models.game import public, utcnow
+from app.services.chemistry import ChemistryService
 from app.services.match_engine import MatchEngine, MatchPlayer, MatchTeam, arrange_formation
 from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
+from app.services.player_morale import PlayerMoraleService
+from app.services.player_ratings import PlayerRatingService
+from app.services.player_statistics import PlayerStatisticsService, match_player_summaries
 from app.services.tactics import TacticsService
 
 
@@ -164,6 +168,7 @@ class CompetitionService:
             },
         )
         repo.insert("club_finances", {"_id": club_id, "balance": 0})
+        ChemistryService().save(repo, club_id, {})
         ContractService.initial(repo, players, config)
         return bot
 
@@ -406,7 +411,10 @@ class CompetitionService:
         formation = tactics["formation"]
 
         pool = selected + [p for p in documents if p not in selected]
-        players = arrange_formation([MatchPlayer.from_document(p) for p in pool[:11]], formation)
+        pool_documents = pool[:11]
+        players = arrange_formation(
+            [MatchPlayer.from_document(p) for p in pool_documents], formation
+        )
         pool = pool[11:]
         return MatchTeam(
             str(club_id),
@@ -417,6 +425,7 @@ class CompetitionService:
             tactics["attack_focus"],
             [MatchPlayer.from_document(p) for p in pool if p["_id"] in lineup.get("reserves", [])],
             bool(repo.find("clubs", {"_id": club_id}, {"is_bot": 1}).get("is_bot", False)),
+            ChemistryService().available(repo, club_id, pool_documents),
         )
 
     def play(self, identity, now=None):
@@ -451,6 +460,12 @@ class CompetitionService:
                     },
                     "events": [],
                 }
+            summaries = match_player_summaries(result)
+            PlayerStatisticsService.after_match(repo, match, summaries)
+            PlayerRatingService.after_match(repo, match, result, summaries)
+            if summaries:
+                PlayerMoraleService().after_match(repo, match, result, summaries)
+                ChemistryService().after_match(repo, match, result, summaries)
             repo.update(
                 "matches",
                 {"_id": identity},

@@ -22,6 +22,7 @@ function SquadEditor({ squad, navigation }: { squad: Squad; navigation: Props['n
   return <View style={{ gap: 14 }}>
     {action.error && <Text accessibilityRole="alert">{action.error}</Text>}
     <Choices values={Object.keys(squad.formations)} value={formation} onChange={setFormation} />
+    <Text>Entrosamento da equipe: {squad.team_chemistry ?? 40}/100</Text>
     <Text>Titulares: {starters.length}/11 · selecione um GK (GOL) e as posições da formação</Text>
     {squad.players.map(player => <View key={player.id}>
       <Button title={`${starters.includes(player.id) ? 'Titular' : 'Reserva'} · ${player.position} ${player.name}`} onPress={() => setStarters(ids => ids.includes(player.id) ? ids.filter(id => id !== player.id) : [...ids, player.id])} />

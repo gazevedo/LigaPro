@@ -16,6 +16,7 @@ from app.repositories.game import GameRepository
 from app.services.competition import CompetitionService
 from app.services.game import process_due
 from app.services.player_contracts import ContractService
+from app.services.player_development import bootstrap_player_attributes
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
         repository.initialize()
         CompetitionService(repository).bootstrap()
         ContractService(repository).bootstrap()
+        bootstrap_player_attributes(repository)
 
         async def maintenance():
             while True:

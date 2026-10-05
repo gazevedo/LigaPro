@@ -13,8 +13,8 @@ class GameRepository:
     def find(self, collection, query, projection=None):
         return self.database[collection].find_one(query, projection, session=self.session)
 
-    def many(self, collection, query, *, limit=200, sort=None):
-        cursor = self.database[collection].find(query, session=self.session)
+    def many(self, collection, query, *, limit=200, sort=None, projection=None):
+        cursor = self.database[collection].find(query, projection, session=self.session)
         if sort:
             cursor = cursor.sort(sort)
         return list(cursor.limit(limit or 0))
@@ -156,6 +156,15 @@ class GameRepository:
         self.database.player_contracts.create_index([("status", 1), ("expiring_at", 1)])
         self.database.player_contracts.create_index([("club_id", 1), ("status", 1)])
         self.database.contract_history.create_index([("player_id", 1), ("created_at", -1)])
+        self.database.club_chemistry.create_index("club_id", unique=True)
+        self.database.player_season_stats.create_index(
+            [("player_id", 1), ("club_id", 1), ("season_id", 1)], unique=True
+        )
+        self.database.player_season_stats.create_index([("season_id", 1), ("goals", -1)])
+        self.database.player_match_ratings.create_index(
+            [("match_id", 1), ("player_id", 1)], unique=True
+        )
+        self.database.player_match_ratings.create_index([("player_id", 1), ("match_id", 1)])
         self.database.youth_players.create_index("current_club_id")
         self.database.calendar_events.create_index([("reference_id", 1), ("club_id", 1)])
         indexes = {

@@ -1,3 +1,5 @@
+import { StatisticsScreen } from '../screens/StatisticsScreen';
+import { MatchReportScreen } from '../screens/MatchReportScreen';
 import { TacticsScreen } from '../screens/TacticsScreen';
 import { TrainingScreen } from '../screens/TrainingScreen';
 import { YouthAcademyScreen } from '../screens/YouthAcademyScreen';
@@ -42,6 +44,8 @@ export function AppNavigator() {
       {auth.authenticated ? (!game.data ? <View style={{ padding: 24 }}><Text>{game.error || 'Carregando clube…'}</Text><Button title="Tentar novamente" onPress={() => void game.load()} /><Button title="Sair" onPress={() => void auth.logout()} /></View> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'LigaPro' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
+        <Stack.Screen name="Statistics" component={StatisticsScreen} options={{ title: 'Estatísticas' }} />
+        <Stack.Screen name="MatchReport" component={MatchReportScreen} options={{ title: 'Relatório da partida' }} />
         <Stack.Screen name="Tactics" component={TacticsScreen} options={{ title: 'Táticas' }} />
         <Stack.Screen name="Squad" component={SquadScreen} options={{ title: 'Plantel' }} />
         <Stack.Screen name="Stadium" component={StadiumScreen} options={{ title: 'Estádio' }} />

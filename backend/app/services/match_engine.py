@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from math import isfinite
 from random import Random
 
+from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.services.discipline import DuelResolver, FoulResolver, PenaltyService
 
 MAX_SUBSTITUTIONS = 5
@@ -172,8 +173,11 @@ class MatchTeam:
     attack_focus: str = "normal"
     reserves: list[MatchPlayer] = field(default_factory=list)
     is_bot: bool = False
+    team_chemistry: float = 50
 
     def __post_init__(self):
+        if not isfinite(self.team_chemistry) or not 0 <= self.team_chemistry <= 100:
+            raise ValueError("Chemistry must be between 0 and 100")
         if self.style not in {"balanced", "all_out_attack", "counter_attack"}:
             raise ValueError("Unknown style")
         if self.marking not in {"light", "heavy", "very_heavy"}:
@@ -308,6 +312,7 @@ class PlayerEffectiveStrengthCalculator:
             raise ValueError("Unknown attribute mode")
         self.mode = mode
         self.fit = PositionFitCalculator(config)
+        self.morale = MoraleConfig()
 
     def calculate(self, player, *skills):
         value = (
@@ -316,7 +321,7 @@ class PlayerEffectiveStrengthCalculator:
             else (sum(player.skills[s] for s in skills) / len(skills))
         )
         energy = clamp(0.70 + player.energy / 333, 0.70, 1.0)
-        morale = 1 + (player.morale - 50) * 0.0008
+        morale = self.morale.modifier(player.morale)
         related = sum(skill in player.traits for skill in skills) if player.traits else 0
         # Traits apply only to the requested phase, never to general team strength.
         return value * energy * morale * self.fit.calculate(player) * (1 + 0.02 * related)
@@ -325,6 +330,7 @@ class PlayerEffectiveStrengthCalculator:
 class SectorContributionCalculator:
     def __init__(self, calculator):
         self.calculator = calculator
+        self.chemistry = ChemistryConfig()
 
     def participants(self, team, phase, lane, rng, dismissed):
         players = [p for p in team.lineup if p.id not in dismissed and p.assigned_position != "GK"]
@@ -384,8 +390,10 @@ class SectorContributionCalculator:
         )
         return (actual / reference) ** 0.5
 
-    def contribution(self, players, *skills):
-        return sum(self.calculator.calculate(p, *skills) for p in players) / max(1, len(players))
+    def contribution(self, players, *skills, chemistry=50):
+        return (
+            sum(self.calculator.calculate(p, *skills) for p in players) / max(1, len(players))
+        ) * self.chemistry.modifier(chemistry)
 
 
 class BuildUpResolver:
@@ -656,6 +664,7 @@ class MatchEngine:
                 )
                 initiative.append(
                     max(1, presence)
+                    * self.sectors.chemistry.modifier(team.team_chemistry)
                     * (self.config.counter_initiative if team.style == "counter_attack" else 1)
                     * (self.config.home_advantage if index == 0 else 1)
                 )
@@ -697,8 +706,12 @@ class MatchEngine:
                 opponent, "defend", lane, rng, dismissed[defender]
             )
             build_players = self.sectors.participants(team, "build", lane, rng, dismissed[attacker])
-            build_strength = self.sectors.contribution(build_players, *BuildUpResolver.skills)
-            pressure = self.sectors.contribution(defenders, "tackling", "speed")
+            build_strength = self.sectors.contribution(
+                build_players, *BuildUpResolver.skills, chemistry=team.team_chemistry
+            )
+            pressure = self.sectors.contribution(
+                defenders, "tackling", "speed", chemistry=opponent.team_chemistry
+            )
             suppression = self.config.marking_attack_reduction[mark] * clamp(
                 pressure / max(1, build_strength), 0.5, 1
             )
@@ -764,7 +777,12 @@ class MatchEngine:
                             None,
                         )
                         shot = self.penalties.resolve(shooters[0], keeper, rng)
-                        event(shot, shooters[0], penalty=True)
+                        event(
+                            shot,
+                            shooters[0],
+                            penalty=True,
+                            goalkeeper_id=keeper.id if keeper else None,
+                        )
                         scores[attacker] += shot == "goal"
                     continue
                 defenders = [p for p in defenders if p.id not in dismissed[defender]]
@@ -775,13 +793,17 @@ class MatchEngine:
                     if phase == "build"
                     else self.sectors.participants(team, phase, lane, rng, dismissed[attacker])
                 )
-                attack = self.sectors.contribution(participants, *resolver.skills)
+                attack = self.sectors.contribution(
+                    participants, *resolver.skills, chemistry=team.team_chemistry
+                )
                 attack *= sector_presence(attacker, phase)
                 if phase == "build":
                     attack *= self.config.marking_build_up[own_mark]
                     if attacker == 0:
                         attack *= self.config.home_advantage
-                defense = self.sectors.contribution(defenders, "tackling", "speed")
+                defense = self.sectors.contribution(
+                    defenders, "tackling", "speed", chemistry=opponent.team_chemistry
+                )
                 defense *= self.config.marking_containment[mark]
                 defense *= sector_presence(defender, "defend")
                 if opponent.style == "all_out_attack":
@@ -796,8 +818,15 @@ class MatchEngine:
                         "progress": self.config.counter_progression_bonus,
                         "create": self.config.counter_creation_bonus,
                     }.get(phase, 0)
+                event("phase_participation", phase=phase, player_ids=[p.id for p in participants])
                 stats[attacker]["phases"][phase]["attempts"] += 1
                 if not participants or not resolver.resolve(attack, defense, rng, bonus):
+                    event(
+                        "defensive_action",
+                        team_id=opponent.id,
+                        phase=phase,
+                        player_ids=[p.id for p in defenders],
+                    )
                     event("attack_lost", phase=phase)
                     break
                 stats[attacker]["phases"][phase]["successes"] += 1
@@ -821,7 +850,7 @@ class MatchEngine:
                     quality,
                     rng,
                 )
-                event(shot, shooter)
+                event(shot, shooter, goalkeeper_id=keeper.id if keeper else None)
                 scores[attacker] += shot == "goal"
         for command in pending:
             events.append(

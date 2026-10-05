@@ -43,3 +43,10 @@ test('youth permits promotion at eighteen and reloads the academy', async () => 
   await waitFor(() => expect(developmentService.promote).toHaveBeenCalledWith('p1'));
   await waitFor(() => expect(screen.queryByText('Promover Pedro Silva')).toBeNull());
 });
+
+test('training hides exact potential and disables players at their ceiling', async () => {
+  jest.mocked(developmentService.training).mockResolvedValue([{ ...player, can_train: false, potential_hint: 'Em avaliação' }]);
+  await render(<TrainingScreen />);
+  expect(await screen.findByRole('button', { name: 'Treinar Pedro Silva' })).toBeDisabled();
+  await screen.findByText('Limite de desenvolvimento atingido.');
+});

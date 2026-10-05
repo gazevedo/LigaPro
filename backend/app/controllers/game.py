@@ -28,6 +28,7 @@ from app.services.game import (
 )
 from app.services.player_contracts import ContractService
 from app.services.player_development import TrainingService
+from app.services.player_statistics import PlayerStatisticsService
 from app.services.tactics import TacticsService
 
 router = APIRouter(tags=["game"], dependencies=[Depends(get_current_user)])
@@ -241,3 +242,24 @@ def renew_contract(identity: str, data: PlayerContractInput, user: User, repo: R
 @router.post("/market/players/{identity}/sign", status_code=201)
 def sign_free_agent(identity: str, data: PlayerContractInput, user: User, repo: Repo):
     return ContractService(repo).sign(user, identity, data)
+
+
+@router.get("/statistics")
+def statistics(
+    user: User,
+    repo: Repo,
+    ranking: Literal["goals", "matches", "cards"] = "goals",
+    season_id: str | None = None,
+):
+    club = repo.owned(user.id)
+    return PlayerStatisticsService(repo).rankings(ranking, season_id, club["_id"])
+
+
+@router.get("/players/{identity}/statistics")
+def player_statistics(identity: str, repo: Repo):
+    return PlayerStatisticsService(repo).player(identity)
+
+
+@router.get("/competition/matches/{identity}")
+def match_report(identity: str, user: User, repo: Repo):
+    return PlayerStatisticsService(repo).report(user, identity)

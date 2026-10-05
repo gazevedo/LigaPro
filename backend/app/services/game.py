@@ -6,10 +6,14 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from app.config.game import GameConfig, legacy_position
+from app.config.team_performance import MoraleConfig
 from app.models.game import FACILITIES, public, utcnow
+from app.models.player import player_public
+from app.services.chemistry import ChemistryService
 from app.services.competition import CompetitionService
 from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerGeneratorService
+from app.services.player_morale import PlayerMoraleService
 from app.services.tactics import TacticsService
 
 
@@ -135,6 +139,7 @@ class ClubService:
                 },
             )
             repo.money(club_id, rules["sponsor_value"], "sponsor")
+            ChemistryService().save(repo, club_id, {})
             ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
             competition = CompetitionService(repo)
             competition.enroll(repo, club, now)
@@ -156,11 +161,15 @@ class SquadService:
         club = self.repo.owned(user.id)
         return public(
             {
-                "players": self.repo.many(
-                    "players",
-                    {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
-                    limit=None,
-                ),
+                "players": [
+                    player_public(p)
+                    for p in self.repo.many(
+                        "players",
+                        {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                        limit=None,
+                    )
+                ],
+                "team_chemistry": ChemistryService().get(self.repo, club["_id"])["value"],
                 "lineup": self.repo.find("lineups", {"_id": club["_id"]}),
                 "formations": self.repo.rules()["formations"],
             }
@@ -194,6 +203,10 @@ class SquadService:
                     422, "Titulares incompatíveis com a formação; é necessário um goleiro."
                 )
 
+            previous = repo.find("lineups", {"_id": club["_id"]})
+            ChemistryService().lineup_change(
+                repo, club["_id"], previous, [ObjectId(p) for p in data.starters], data.formation
+            )
             settings = TacticsService.settings(repo, club["_id"], {"formation": data.formation})
             TacticsService.persist(
                 repo,
@@ -439,7 +452,7 @@ class MarketService:
         listing = self.repo.find(
             "transfer_listings", {"player_id": player["_id"], "status": "active"}
         )
-        return public({**player, "listing": listing})
+        return player_public({**player, "listing": listing})
 
     def search(self, filters):
         query = {"status": {"$ne": "retired"}}
@@ -458,7 +471,7 @@ class MarketService:
                     bounds[operator] = value
             if bounds:
                 query[key] = bounds
-        return public(self.repo.search_players(query, filters.get("type")))
+        return [player_public(p) for p in self.repo.search_players(query, filters.get("type"))]
 
     def mine(self, user):
         club = self.repo.owned(user.id)
@@ -492,6 +505,7 @@ class MarketService:
             lineup = repo.find("lineups", {"_id": club["_id"]})
             if player["_id"] in lineup["starters"]:
                 raise HTTPException(409, "Mova o jogador para a reserva antes de anunciá-lo.")
+            PlayerMoraleService().change(repo, player, MoraleConfig().future_transfer)
             repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
             return public(
                 repo.insert(
@@ -631,7 +645,13 @@ class MarketService:
                 "player_sale" if listing["type"] == "sale" else "player_loan_income",
                 offer["_id"],
             )
-            ownership = {"current_club_id": offer["buyer_club_id"]}
+            ownership = {
+                "current_club_id": offer["buyer_club_id"],
+                "integration": 0,
+                "joined_at": utcnow(),
+            }
+            ChemistryService().recruit(repo, offer["buyer_club_id"])
+            PlayerMoraleService().change(repo, player, MoraleConfig().transfer)
             if listing["type"] == "sale":
                 ContractService.transfer(repo, player["_id"], offer["buyer_club_id"])
                 ownership["owner_club_id"] = offer["buyer_club_id"]
@@ -740,6 +760,9 @@ def process_due(repository):
     now = utcnow()
     CompetitionService(repository).process_due(now)
     ContractService(repository).process_due(now)
+    from app.services.bot_market import BotMarketService
+
+    BotMarketService(repository).process_due()
     for loan in repository.many("player_loans", {"status": "active", "ends_at": {"$lte": now}}):
 
         def return_player(repo, identity=loan["_id"]):
@@ -751,8 +774,15 @@ def process_due(repository):
             repo.update(
                 "players",
                 {"_id": current["player_id"]},
-                {"$set": {"current_club_id": current["owner_club_id"]}},
+                {
+                    "$set": {
+                        "current_club_id": current["owner_club_id"],
+                        "integration": 0,
+                        "joined_at": now,
+                    }
+                },
             )
+            ChemistryService().recruit(repo, current["owner_club_id"])
             for club_id in [current["owner_club_id"], current["current_club_id"]]:
                 MarketService.repair_lineup(repo, club_id)
                 repo.event(club_id, "transfer", "Retorno de empréstimo", reference=identity)

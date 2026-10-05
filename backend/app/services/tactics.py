@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.models.game import public, utcnow
+from app.services.chemistry import ChemistryService
 from app.services.match_engine import MatchPlayer, arrange_formation, validate_commands
 
 
@@ -52,6 +53,9 @@ class TacticsService:
                 raise HTTPException(409, "Atualize a escalação antes de salvar a tática.")
             assigned = arrange_formation(
                 [MatchPlayer.from_document(by_id[i]) for i in lineup["starters"]], data.formation
+            )
+            ChemistryService().lineup_change(
+                repo, club["_id"], lineup, lineup["starters"], data.formation
             )
             # Role assignments are computed by the engine; keep the actual starters.
             repo.update(

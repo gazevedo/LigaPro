@@ -7,6 +7,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
   const club = useClubStore(state => state.data?.club);
   return <GamePage><Text style={{ fontSize: 24 }}>{club?.name}</Text>
     <Button title="Clube" onPress={() => club && navigation.navigate('Club', { id: club.id })} />
+    <Button title="Estatísticas" onPress={() => navigation.navigate('Statistics')} />
     <Button title="Táticas" onPress={() => navigation.navigate('Tactics')} />
     <Button title="Plantel" onPress={() => navigation.navigate('Squad')} />
     <Button title="Estádio" onPress={() => navigation.navigate('Stadium')} />

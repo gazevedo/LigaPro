@@ -14,7 +14,8 @@ export function YouthAcademyScreen() {
     {data?.map(player => <View key={player.id} style={{ gap: 6 }}>
       <Text>{player.name} · {player.position} · {player.age} anos</Text>
       <Text>Força: {player.strength ?? player.overall} · Treino: {player.training_level ?? 0}/100</Text>
-      <Button title={`Treinar ${player.name}`} disabled={action.busy || loading}
+      {player.can_train === false && <Text>Limite de desenvolvimento atingido.</Text>}
+      <Button title={`Treinar ${player.name}`} disabled={action.busy || loading || player.can_train === false}
         onPress={() => void action.run(async () => { await developmentService.train(player.id); await load(); })} />
       <Button title={`Promover ${player.name}`} disabled={action.busy || loading || player.age < 18}
         onPress={() => void action.run(async () => { await developmentService.promote(player.id); await load(); })} />

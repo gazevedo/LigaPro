@@ -4,7 +4,10 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.config.game import GameConfig
-from app.models.game import public, utcnow
+from app.config.team_performance import ChemistryConfig, MoraleConfig
+from app.models.game import utcnow
+from app.models.player import market_value, player_public
+from app.services.chemistry import ChemistryService
 from app.services.player_contracts import ContractService
 
 
@@ -20,22 +23,37 @@ class PlayerGeneratorService:
         )
         first = self.rng.choice(("João", "Pedro", "Lucas", "André", "Rafael", "Bruno", "Caio"))
         last = self.rng.choice(("Silva", "Santos", "Costa", "Souza", "Lima", "Alves", "Oliveira"))
+        age = self.rng.randint(14, 17) if youth else self.rng.randint(18, 30)
+        potential = self.potential(strength, youth)
+        value = market_value(strength, potential, age)
         return {
             "_id": ObjectId(),
             "name": f"{first} {last}",
             "position": position or self.rng.choice(("GK", "DEF", "MID", "ATT")),
-            "age": self.rng.randint(14, 17) if youth else self.rng.randint(18, 30),
+            "age": age,
+            "potential": potential,
+            "morale": MoraleConfig().initial,
+            "integration": ChemistryConfig().initial,
+            "joined_at": utcnow(),
             "strength": strength,
             "overall": strength,
             "training_level": 0,
             "disease": None,
             "status": "active",
-            "value": 100_000,
+            "value": value,
+            "market_value": value,
             "country_id": country_id,
             "owner_club_id": club_id,
             "current_club_id": club_id,
             "created_at": utcnow(),
         }
+
+    def potential(self, strength, youth=False):
+        ceiling = max(strength, self.config.MAX_PLAYER_LEVEL)
+        promising = youth and self.rng.random() < 0.75
+        low = max(strength, min(55, ceiling)) if promising else max(1, strength)
+        high = ceiling if promising else min(ceiling, max(1, strength) + (30 if not youth else 15))
+        return self.rng.randint(low, high)
 
     def squad(self, club_id, country_id):
         return [
@@ -58,13 +76,14 @@ class TrainingService:
     def get(self, user, youth=False):
         club = self.repo.owned(user.id)
         collection = "youth_players" if youth else "players"
-        return public(
-            self.repo.many(
+        return [
+            player_public(player)
+            for player in self.repo.many(
                 collection,
                 {"current_club_id": club["_id"], "status": {"$nin": ["retired", "promoted"]}},
                 limit=None,
             )
-        )
+        ]
 
     def train(self, user, identity):
         def operation(repo):
@@ -83,16 +102,29 @@ class TrainingService:
             if player.get("status") == "retired":
                 raise HTTPException(409, "Jogador aposentado.")
             strength = player.get("strength", player.get("overall", 50))
-            if strength >= config.MAX_PLAYER_LEVEL:
-                raise HTTPException(409, "Jogador atingiu a força máxima.")
+            if strength >= min(
+                config.MAX_PLAYER_LEVEL, player.get("potential", config.MAX_PLAYER_LEVEL)
+            ):
+                raise HTTPException(409, "Jogador atingiu o limite de desenvolvimento.")
             level = player.get("training_level", 0) + 1
             if level >= 100:
                 strength, level = strength + 1, 0
-            return public(
+            value = market_value(
+                strength, player.get("potential", config.MAX_PLAYER_LEVEL), player["age"]
+            )
+            return player_public(
                 repo.update(
                     collection,
                     {"_id": player["_id"]},
-                    {"$set": {"training_level": level, "strength": strength, "overall": strength}},
+                    {
+                        "$set": {
+                            "training_level": level,
+                            "strength": strength,
+                            "overall": strength,
+                            "value": value,
+                            "market_value": value,
+                        }
+                    },
                 )
             )
 
@@ -109,7 +141,14 @@ class TrainingService:
             if player["age"] < GameConfig.from_rules(repo.rules()).YOUTH_PROMOTION_AGE:
                 raise HTTPException(409, "Jogador ainda não tem idade para promoção.")
             repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
-            professional = {**player, "promoted_at": utcnow()}
+            professional = {
+                **player,
+                "promoted_at": utcnow(),
+                "morale": min(100, player.get("morale", 50) + MoraleConfig().promotion),
+                "integration": 0,
+                "joined_at": utcnow(),
+            }
+            ChemistryService().recruit(repo, club["_id"])
             repo.insert("players", professional)
             ContractService.initial(repo, [professional])
             repo.update(
@@ -118,7 +157,7 @@ class TrainingService:
                 {"$set": {"status": "promoted", "promoted_at": professional["promoted_at"]}},
             )
             repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
-            return public(professional)
+            return player_public(professional)
 
         return self.repo.transaction(operation)
 
@@ -150,6 +189,11 @@ class PlayerAgingService:
                         values.update(
                             status="retired", retired_at=utcnow(), retired_season_id=season_id
                         )
+                strength = values.get("strength", player.get("strength", player.get("overall", 50)))
+                value = market_value(
+                    strength, player.get("potential", config.MAX_PLAYER_LEVEL), age
+                )
+                values.update(value=value, market_value=value)
                 repo.update(collection, {"_id": player["_id"]}, {"$set": values})
                 if values.get("status") == "retired" and collection == "players":
                     ContractService.terminate(repo, player["_id"], reason="retired")
@@ -193,3 +237,45 @@ class PlayerAgingService:
             except HTTPException as exc:
                 if exc.status_code != 409:
                     raise
+
+
+def bootstrap_player_attributes(repo):
+    config = GameConfig.from_rules(repo.rules())
+    for collection in ("players", "youth_players"):
+        for player in repo.many(
+            collection,
+            {
+                "$or": [
+                    {"potential": {"$exists": False}},
+                    {"morale": {"$exists": False}},
+                    {"integration": {"$exists": False}},
+                ]
+            },
+            limit=None,
+        ):
+            strength = player.get("strength", player.get("overall", 50))
+            potential = player.get(
+                "potential",
+                PlayerGeneratorService(config, str(player["_id"])).potential(
+                    strength, collection == "youth_players"
+                ),
+            )
+            value = market_value(strength, potential, player["age"])
+            repo.update(
+                collection,
+                {"_id": player["_id"]},
+                {
+                    "$set": {
+                        "potential": potential,
+                        "morale": player.get("morale", 50),
+                        "integration": player.get("integration", 40),
+                        "joined_at": player.get("joined_at", player.get("created_at", utcnow())),
+                        "value": value,
+                        "market_value": value,
+                    }
+                },
+            )
+    chemistry = ChemistryService()
+    for club in repo.many("clubs", {}, limit=None):
+        if not repo.find("club_chemistry", {"_id": club["_id"]}):
+            chemistry.save(repo, club["_id"], {})

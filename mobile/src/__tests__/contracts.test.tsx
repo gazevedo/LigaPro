@@ -71,3 +71,10 @@ test('market filters free players', async () => {
   await fireEvent.press(screen.getByText('Jogadores livres'));
   await waitFor(() => expect(marketService.search).toHaveBeenLastCalledWith({ status: 'free_agent' }));
 });
+
+test('player profile displays morale band and only the potential hint', async () => {
+  jest.mocked(marketService.player).mockResolvedValue({ ...player, morale: 15, potential_hint: 'Em avaliação' });
+  await render(<PlayerDetailsScreen {...props()} />);
+  await screen.findByText('Moral: 15/100 · Muito baixa');
+  expect(screen.getByText('Potencial: Em avaliação')).toBeTruthy();
+});
