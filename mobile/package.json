@@ -33,8 +33,9 @@
     "jest": "~30.5.2",
     "jest-expo": "~57.0.5",
     "@types/jest": "^30.0.0",
-    "@testing-library/react-native": "^13.3.0",
+    "@testing-library/react-native": "^14.0.1",
     "react-test-renderer": "19.2.3",
-    "@react-native/jest-preset": "0.86.3"
+    "@react-native/jest-preset": "0.86.3",
+    "test-renderer": "~1.2.0"
   }
 }

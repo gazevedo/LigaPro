@@ -9,39 +9,39 @@ import { RootStackParamList } from '../navigation/types';
 jest.mock('../services/settingsService', () => ({ settingsService: { list: jest.fn() } }));
 const list = jest.mocked(settingsService.list);
 beforeEach(() => jest.clearAllMocks());
-test('splash shows connection error and retry', () => {
+test('splash shows connection error and retry', async () => {
   const initialize = jest.fn();
   useAppStore.setState({ error: 'Offline', loading: false, initialize });
-  render(<SplashScreen />);
+  await render(<SplashScreen />);
   expect(screen.getByText('Offline')).toBeTruthy();
-  fireEvent.press(screen.getByText('Tentar novamente'));
+  await fireEvent.press(screen.getByText('Tentar novamente'));
   expect(initialize).toHaveBeenCalledTimes(1);
 });
-test('home navigates only to settings; game buttons disabled', () => {
+test('home navigates only to settings; game buttons disabled', async () => {
   const navigate = jest.fn();
   const props = { navigation: { navigate }, route: { key: 'Home', name: 'Home' } } as unknown as NativeStackScreenProps<RootStackParamList, 'Home'>;
-  render(<HomeScreen {...props} />);
+  await render(<HomeScreen {...props} />);
   expect(screen.getByRole('button', { name: 'Novo Jogo' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Carregar Jogo' })).toBeDisabled();
-  fireEvent.press(screen.getByText('Configurações'));
+  await fireEvent.press(screen.getByText('Configurações'));
   expect(navigate).toHaveBeenCalledWith('Settings');
 });
 test('settings displays API values', async () => {
   list.mockResolvedValueOnce([{ id: '123', key: 'language', value: 'pt-BR',
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }]);
-  render(<SettingsScreen />);
+  await render(<SettingsScreen />);
   expect(await screen.findByText('language: "pt-BR"')).toBeTruthy();
 });
 test('settings shows empty state', async () => {
   list.mockResolvedValueOnce([]);
-  render(<SettingsScreen />);
+  await render(<SettingsScreen />);
   expect(await screen.findByText('Nenhuma configuração cadastrada.')).toBeTruthy();
 });
 test('settings retries after error', async () => {
   list.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce([]);
-  render(<SettingsScreen />);
+  await render(<SettingsScreen />);
   await screen.findByText('Offline');
-  fireEvent.press(screen.getByText('Tentar novamente'));
+  await fireEvent.press(screen.getByText('Tentar novamente'));
   await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
   expect(await screen.findByText('Nenhuma configuração cadastrada.')).toBeTruthy();
 });
