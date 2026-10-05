@@ -130,4 +130,6 @@ class GameConfig:
 
 
 def legacy_position(position):
-    return {"GK": "GOL", "MID": "MED", "ATT": "ATA"}.get(position, position)
+    return {"GK": "GOL", "CB": "DEF", "FB": "DEF", "MID": "MED", "ATT": "ATA"}.get(
+        position, position
+    )

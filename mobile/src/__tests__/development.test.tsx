@@ -7,7 +7,7 @@ jest.mock('../services/developmentService', () => ({ developmentService: {
   training: jest.fn(), youth: jest.fn(), train: jest.fn(), promote: jest.fn(),
 } }));
 const player = { id: 'p1', name: 'Pedro Silva', age: 21, position: 'MID', strength: 50,
-  overall: 50, training_level: 99, country_id: 'BR', value: 100000,
+  overall: 50, training_progress: 99, country_id: 'BR', value: 100000,
   owner_club_id: 'c1', current_club_id: 'c1' };
 let accountNumber = 0;
 beforeEach(() => {
@@ -16,13 +16,13 @@ beforeEach(() => {
 });
 test('training uses server strength and reloads after each valid click', async () => {
   jest.mocked(developmentService.training).mockResolvedValueOnce([player])
-    .mockResolvedValueOnce([{ ...player, strength: 51, overall: 51, training_level: 0 }]);
+    .mockResolvedValueOnce([{ ...player, strength: 51, overall: 51, training_progress: 0 }]);
   jest.mocked(developmentService.train).mockResolvedValue({ ...player, strength: 51 });
   await render(<TrainingScreen />);
   await screen.findByText('Força: 50 · Treino: 99/100');
   await fireEvent.press(screen.getByText('Treinar Pedro Silva'));
   await screen.findByText('Força: 51 · Treino: 0/100');
-  expect(developmentService.train).toHaveBeenCalledWith('p1');
+  expect(developmentService.train).toHaveBeenCalledWith('p1', 'passing');
 });
 test('training displays rejection without changing the player', async () => {
   jest.mocked(developmentService.training).mockResolvedValue([player]);
@@ -45,8 +45,8 @@ test('youth permits promotion at eighteen and reloads the academy', async () => 
 });
 
 test('training hides exact potential and disables players at their ceiling', async () => {
-  jest.mocked(developmentService.training).mockResolvedValue([{ ...player, can_train: false, potential_hint: 'Em avaliação' }]);
+  jest.mocked(developmentService.training).mockResolvedValue([{ ...player, can_train: false }]);
   await render(<TrainingScreen />);
   expect(await screen.findByRole('button', { name: 'Treinar Pedro Silva' })).toBeDisabled();
-  await screen.findByText('Limite de desenvolvimento atingido.');
+  await screen.findByText('Jogador indisponível ou no limite de desenvolvimento.');
 });

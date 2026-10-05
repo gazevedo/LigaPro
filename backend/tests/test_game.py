@@ -71,8 +71,8 @@ def test_create_club_and_initial_data(client):
     assert len(squad["players"]) == 25
     assert len(squad["lineup"]["starters"]) == 11
     assert len(squad["lineup"]["reserves"]) == 14
-    assert set(p["position"] for p in squad["players"]) == {"GK", "DEF", "MID", "ATT"}
-    assert client.get("/api/finance", headers=headers).json()["balance"] == 10500000
+    assert set(p["position"] for p in squad["players"]) == {"GK", "FB", "CB", "MID", "ATT"}
+    assert client.get("/api/finance", headers=headers).json()["balance"] == 10000000
     assert len(client.get("/api/finance/sponsors", headers=headers).json()["contracts"]) == 1
     assert (
         client.post(
@@ -227,10 +227,14 @@ def test_atomic_sale_and_conflicting_offers(client, clubs):
     assert client.post(f"/api/market/offers/{offer['id']}/accept", headers=buyer).status_code == 403
     response = client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller)
     assert response.status_code == 200, response.text
+    assert (
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 200
+    )
     moved = client.get(f"/api/players/{player['id']}", headers=buyer).json()
     assert moved["owner_club_id"] == moved["current_club_id"] == second["id"]
-    assert client.get("/api/finance", headers=seller).json()["balance"] == 10600000
-    assert client.get("/api/finance", headers=buyer).json()["balance"] == 10400000
+    assert client.get("/api/finance", headers=seller).json()["balance"] == 10100000
+    assert client.get("/api/finance", headers=buyer).json()["balance"] == 9900000
     assert app.state.database.transfer_history.count_documents({}) == 1
     assert (
         app.state.database.transfer_offers.find_one({"_id": ObjectId(conflict["id"])})["status"]
@@ -252,17 +256,21 @@ def test_sale_rolls_back_without_balance(client, clubs):
         {"_id": ObjectId(second["id"])}, {"$set": {"balance": 0}}
     )
     assert (
-        client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 409
+        client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 200
+    )
+    assert (
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 409
     )
     assert (
         client.get(f"/api/players/{player['id']}", headers=buyer).json()["owner_club_id"]
         == first["id"]
     )
     assert app.state.database.transfer_history.count_documents({}) == 0
-    assert client.get("/api/finance", headers=seller).json()["balance"] == 10500000
+    assert client.get("/api/finance", headers=seller).json()["balance"] == 10000000
     assert (
         app.state.database.transfer_offers.find_one({"_id": ObjectId(offer["id"])})["status"]
-        == "pending"
+        == "player_accepted"
     )
 
 
@@ -271,6 +279,10 @@ def test_loan_returns_without_user_online(client, clubs):
     player, _, offer = listing_offer(client, clubs, "loan")
     assert (
         client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 200
+    )
+    assert (
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 200
     )
     moved = client.get(f"/api/players/{player['id']}", headers=buyer).json()
     assert moved["owner_club_id"] == first["id"] and moved["current_club_id"] == second["id"]
@@ -292,7 +304,7 @@ def test_market_filters_cancel_and_ownership(client, clubs):
         f"/api/market/players?name={player['name']}&position={player['position']}"
         f"&age_min={player['age']}&age_max={player['age']}"
         f"&overall_min={player['overall']}&overall_max={player['overall']}"
-        "&value_min=100000&value_max=100000&country_id=BR&type=sale"
+        f"&value_min={player['value']}&value_max={player['value']}&country_id=BR&type=sale"
     )
     assert len(client.get(query, headers=buyer).json()) == 1
     assert client.get("/api/market/players?age_min=40", headers=buyer).json() == []
@@ -330,7 +342,11 @@ def test_concurrent_accept_does_not_double_charge(client, clubs):
             )
         )
     assert sorted(results) == [200, 409]
-    assert client.get("/api/finance", headers=buyer).json()["balance"] == 10400000
+    assert (
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 200
+    )
+    assert client.get("/api/finance", headers=buyer).json()["balance"] == 9900000
     assert app.state.database.transfer_history.count_documents({}) == 1
 
 
@@ -344,7 +360,7 @@ def test_due_investment_is_idempotent(client, clubs):
     repo = GameRepository(app.state.database)
     process_due(repo)
     process_due(repo)
-    assert client.get("/api/finance", headers=seller).json()["balance"] == 10501000
+    assert client.get("/api/finance", headers=seller).json()["balance"] == 10001000
     assert (
         app.state.database.financial_transactions.count_documents({"category": "bank_settlement"})
         == 1

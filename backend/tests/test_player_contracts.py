@@ -120,11 +120,11 @@ def test_salary_catches_up_offline_once_and_records_history(client):
         db.contract_history.count_documents(
             {"contract_id": contract["_id"], "action": "salary_paid"}
         )
-        == 1
+        == 3
     )
     finance = client.get("/api/finance", headers=headers).json()
-    assert len(finance["salary_history"]) == 1
-    assert finance["salary_history"][0]["amount"] == -3 * contract["salary"]
+    assert len(finance["salary_history"]) == 3
+    assert sum(t["amount"] for t in finance["salary_history"]) == -3 * contract["salary"]
     paid = db.player_contracts.find_one({"_id": contract["_id"]})
     assert paid["next_salary_at"] == paid["paid_until"] + period
 
@@ -142,7 +142,7 @@ def test_expiring_then_expired_free_agent_and_idempotence(client):
     db = app.state.database
     assert db.player_contracts.find_one({"_id": contract["_id"]})["status"] == "expired"
     free = db.players.find_one({"_id": player["_id"]})
-    assert free["status"] == "free_agent"
+    assert free["status"] == "available"
     assert free["owner_club_id"] is None and free["current_club_id"] is None
     lineup = db.lineups.find_one({"_id": ObjectId(club["id"])})
     assert player["_id"] not in lineup["starters"] + lineup["reserves"]
@@ -153,7 +153,7 @@ def test_expiring_then_expired_free_agent_and_idempotence(client):
     response = client.get("/api/market/players?status=free_agent", headers=headers)
     assert response.status_code == 200
     assert str(player["_id"]) in {p["id"] for p in response.json()}
-    assert all(p["status"] == "free_agent" for p in response.json())
+    assert all(p["status"] == "available" for p in response.json())
     assert (
         client.post(
             f"/api/players/{player['_id']}/contract/renew",
@@ -174,25 +174,25 @@ def test_free_agent_signing_is_atomic_and_adds_salary(client):
     response = client.post(
         f"/api/market/players/{player['_id']}/sign",
         headers=second,
-        json={"salary": 7000, "seasons": 2},
+        json={"salary": 50000, "seasons": 2},
     )
     assert response.status_code == 201, response.text
     assert (
         client.post(
             f"/api/market/players/{player['_id']}/sign",
             headers=headers,
-            json={"salary": 7000, "seasons": 2},
+            json={"salary": 50000, "seasons": 2},
         ).status_code
         == 409
     )
     db = app.state.database
     acquired = db.players.find_one({"_id": player["_id"]})
     assert acquired["owner_club_id"] == ObjectId(second_club["id"])
-    assert acquired["status"] == "active"
+    assert acquired["status"] == "available"
     assert player["_id"] in db.lineups.find_one({"_id": ObjectId(second_club["id"])})["reserves"]
     assert (
         client.get("/api/finance", headers=second).json()["monthly_payroll"]
-        == before["monthly_payroll"] + 7000
+        == before["monthly_payroll"] + 50000
     )
     assert db.player_contracts.count_documents({"player_id": player["_id"]}) == 2
 
@@ -207,7 +207,7 @@ def test_salary_obligations_do_not_block_expiration_when_balance_is_low(client):
         db.club_finances.find_one({"_id": ObjectId(club["id"])})["balance"]
         == -12 * contract["salary"]
     )
-    assert db.players.find_one({"_id": player["_id"]})["status"] == "free_agent"
+    assert db.players.find_one({"_id": player["_id"]})["status"] == "available"
     assert (
         client.post(
             f"/api/market/players/{player['_id']}/sign",
@@ -266,7 +266,7 @@ def test_concurrent_free_agent_signing_has_one_owner(client):
         return client.post(
             f"/api/market/players/{player['_id']}/sign",
             headers=headers,
-            json={"salary": 5000, "seasons": 2},
+            json={"salary": 50000, "seasons": 2},
         ).status_code
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -316,6 +316,12 @@ def test_sale_moves_contract_while_loan_keeps_owner_payroll(client):
         ).json()
         response = client.post(f"/api/market/offers/{offer['id']}/accept", headers=headers)
         assert response.status_code == 200, response.text
+        assert (
+            client.post(
+                f"/api/market/negotiations/{offer['id']}/confirm", headers=second
+            ).status_code
+            == 200
+        )
         contract = db.player_contracts.find_one({"player_id": identity, "status": "active"})
         assert contract["expires_at"] == original["expires_at"]
         if kind == "sale":

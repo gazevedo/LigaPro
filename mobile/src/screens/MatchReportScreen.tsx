@@ -14,7 +14,8 @@ export function MatchReportScreen({ route }: NativeStackScreenProps<RootStackPar
     <Button title="Atualizar relatório" onPress={() => void load(route.params.id)} />
     {report && <>
       <Text style={{ fontSize: 22 }}>{report.home_name} {report.match.home_goals} × {report.match.away_goals} {report.away_name}</Text>
-      <Text>Rodada {report.match.round} · {new Date(report.match.date).toLocaleString('pt-BR')}</Text>
+      <Text>{report.match.phase ? `Copa Nacional · ${report.match.phase}` : `Rodada ${report.match.round}`} · {new Date(report.match.date).toLocaleString('pt-BR')}</Text>
+      {report.match.extra_time && <Text>Partida com prorrogação · 120 minutos</Text>}{report.match.shootout_score && <Text>Pênaltis: {report.match.shootout_score[report.match.home_club_id]} × {report.match.shootout_score[report.match.away_club_id]}</Text>}{report.match.winner_club_id && <Text>Classificado: {report.match.winner_club_id === report.match.home_club_id ? report.home_name : report.away_name}</Text>}
       <Text>Notas dos jogadores que atuaram · escala de 5,0 a 10,0</Text>
       {([['home', report.home_name, report.match.home_club_id], ['away', report.away_name, report.match.away_club_id]] as const).map(([side, name, club]) => <View key={side} style={{ gap: 8 }}><Text style={{ fontWeight: 'bold' }}>{name}</Text>{report.ratings.filter(r => r.club_id === club).map(r => <View key={r.id}>
         <Text>{r.name} · {r.position} · nota {r.rating.toFixed(1).replace('.', ',')} · {r.minutes} min</Text>

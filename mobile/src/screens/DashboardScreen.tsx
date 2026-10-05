@@ -1,3 +1,4 @@
+import { CupSummary } from '../components/CupSummary';
 import { Button, Text } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -5,7 +6,7 @@ import { useClubStore } from '../stores/clubStore';
 import { GamePage } from '../components/GameUI';
 export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Dashboard'>) {
   const club = useClubStore(state => state.data?.club);
-  return <GamePage><Text style={{ fontSize: 24 }}>{club?.name}</Text>
+  return <GamePage><Text style={{ fontSize: 24 }}>{club?.name}</Text><CupSummary />
     <Button title="Clube" onPress={() => club && navigation.navigate('Club', { id: club.id })} />
     <Button title="Estatísticas" onPress={() => navigation.navigate('Statistics')} />
     <Button title="Táticas" onPress={() => navigation.navigate('Tactics')} />

@@ -6,11 +6,14 @@ from math import floor
 from bson import ObjectId
 from fastapi import HTTPException
 
+from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
 from app.config.team_performance import MoraleConfig
 from app.models.game import public, utcnow
 from app.services.chemistry import ChemistryService
+from app.services.market_value import MarketValueService
 from app.services.player_morale import PlayerMoraleService
+from app.services.salary import SalaryService
 
 OPEN_STATUSES = ["active", "expiring"]
 
@@ -58,16 +61,21 @@ class ContractService:
     @classmethod
     def initial(cls, repo, players, config=None, now=None):
         config, now = config or GameConfig.from_rules(repo.rules()), now or utcnow()
+        salaries = (
+            SalaryService.normalize(players, EconomyConfig.from_rules(repo.rules()))
+            if len(players) == 25
+            else [SalaryService.reference(p) for p in players]
+        )
         contracts = [
             cls.document(
                 p["_id"],
                 p["owner_club_id"],
-                max(1000, int(p.get("strength", p.get("overall", 50))) * 100),
+                salaries[index],
                 2,
                 config,
                 now,
             )
-            for p in players
+            for index, p in enumerate(players)
         ]
         if contracts:
             repo.insert_many("player_contracts", contracts)
@@ -86,6 +94,24 @@ class ContractService:
                     }
                     for c in contracts
                 ],
+            )
+        for contract in contracts:
+            repo.update(
+                "players",
+                {"_id": contract["player_id"]},
+                {
+                    "$set": {
+                        "salary": contract["salary"],
+                        "contract_status": contract["status"],
+                        "contract_expires_at": contract["expires_at"],
+                    }
+                },
+            )
+        for club_id in {c["club_id"] for c in contracts}:
+            repo.update(
+                "club_finances",
+                {"_id": club_id},
+                {"$set": {"monthly_payroll": cls.payroll(repo, club_id)}},
             )
         return contracts
 
@@ -116,7 +142,18 @@ class ContractService:
         contracts = repo.many(
             "player_contracts", {"club_id": club_id, "status": {"$in": OPEN_STATUSES}}, limit=None
         )
-        return sum(c["salary"] for c in contracts)
+        total = sum(c["salary"] for c in contracts)
+        loans = repo.many(
+            "player_loans",
+            {"status": "active", "$or": [{"owner_club_id": club_id}, {"current_club_id": club_id}]},
+            limit=None,
+        )
+        for loan in loans:
+            current = ContractService.current(repo, loan["player_id"])
+            if current:
+                share = round(current["salary"] * loan.get("salary_share", 0))
+                total += share if loan["current_club_id"] == club_id else -share
+        return total
 
     @classmethod
     def capacity(cls, repo, club_id, salary, replaced_salary=0):
@@ -129,24 +166,67 @@ class ContractService:
         until = min(until, contract["expires_at"])
         if until <= contract["paid_until"]:
             return
-        amount = round(
-            contract["salary"]
-            * (until - contract["paid_until"]).total_seconds()
-            / contract["salary_period_seconds"]
+        start = contract["paid_until"]
+        cursor = start
+        period = timedelta(seconds=contract["salary_period_seconds"])
+        paid = 0
+        loans = repo.many(
+            "player_loans",
+            {
+                "player_id": contract["player_id"],
+                "owner_club_id": contract["club_id"],
+                "starts_at": {"$lt": until},
+                "ends_at": {"$gt": start},
+            },
+            limit=None,
         )
-        if amount:
-            repo.money(
-                contract["club_id"], -amount, "player_salary", contract["_id"], allow_overdraft=True
+        while cursor < until:
+            completed = floor(
+                (cursor - contract["started_at"]).total_seconds() / period.total_seconds()
             )
-            cls.history(
-                repo,
-                contract,
-                "salary_paid",
-                utcnow(),
-                amount=amount,
-                period_start=contract["paid_until"],
-                period_end=until,
+            boundary = contract["started_at"] + (completed + 1) * period
+            boundaries = [
+                date
+                for loan in loans
+                for date in (loan["starts_at"], loan["ends_at"])
+                if cursor < date < min(until, boundary)
+            ]
+            end = min([until, boundary, *boundaries])
+            cumulative = round(
+                contract["salary"] * (end - start).total_seconds() / period.total_seconds()
             )
+            amount = cumulative - paid
+            if amount:
+                loan = next(
+                    (item for item in loans if item["starts_at"] <= cursor < item["ends_at"]), None
+                )
+                share = round(amount * loan.get("salary_share", 0)) if loan else 0
+                allocations = [(contract["club_id"], amount - share)]
+                if share:
+                    allocations.append((loan["current_club_id"], share))
+                for payer, cost in allocations:
+                    if cost:
+                        repo.money(
+                            payer,
+                            -cost,
+                            "salary",
+                            contract["_id"],
+                            allow_overdraft=EconomyConfig.from_rules(
+                                repo.rules()
+                            ).ALLOW_NEGATIVE_CASH,
+                            effective_at=end - timedelta(microseconds=1),
+                        )
+                cls.history(
+                    repo,
+                    contract,
+                    "salary_paid",
+                    utcnow(),
+                    amount=amount,
+                    period_start=cursor,
+                    period_end=end,
+                )
+            paid = cumulative
+            cursor = end
         repo.update(
             "player_contracts",
             {"_id": contract["_id"]},
@@ -166,6 +246,11 @@ class ContractService:
                 {"$set": {"status": "terminated", "ended_at": now, "updated_at": now}},
             )
             cls.history(repo, contract, "terminated", now, reason=reason)
+            repo.update(
+                "players",
+                {"_id": player_id},
+                {"$set": {"salary": 0, "contract_status": "terminated"}},
+            )
         return contract
 
     def get(self, user, identity):
@@ -212,6 +297,18 @@ class ContractService:
             )
             repo.insert("player_contracts", contract)
             self.history(repo, contract, "renewed", now, previous_contract_id=current["_id"])
+            repo.update(
+                "players",
+                {"_id": player["_id"]},
+                {
+                    "$set": {
+                        "salary": contract["salary"],
+                        "contract_status": "active",
+                        "contract_expires_at": contract["expires_at"],
+                    }
+                },
+            )
+            MarketValueService().recalculate(repo, [player], "renewal", now=now)
             return public(contract)
 
         return self.repo.transaction(operation)
@@ -227,9 +324,9 @@ class ContractService:
         return self.repo.transaction(operation)
 
     @classmethod
-    def sign_for_club(cls, repo, club, player, salary, seasons):
+    def sign_for_club(cls, repo, club, player, salary, seasons, now=None):
         if (
-            player.get("status") != "free_agent"
+            player.get("status") == "retired"
             or player.get("owner_club_id") is not None
             or player.get("current_club_id") is not None
             or cls.current(repo, player["_id"])
@@ -237,7 +334,12 @@ class ContractService:
             raise HTTPException(409, "Jogador não está livre.")
         repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
         cls.capacity(repo, club["_id"], salary)
-        now = utcnow()
+        from app.services.negotiation import PlayerContractDecisionService
+
+        decision = PlayerContractDecisionService.evaluate(player, club, salary, seasons * 12)
+        if not decision["accepted"]:
+            raise HTTPException(409, decision["reason"])
+        now = now or utcnow()
         contract = cls.document(
             player["_id"],
             club["_id"],
@@ -252,8 +354,12 @@ class ContractService:
             {"_id": player["_id"]},
             {
                 "$set": {
-                    "status": "active",
-                    "integration": 0,
+                    "status": player.get("status", "available")
+                    if player.get("status") in {"injured", "suspended"}
+                    else "available",
+                    "salary": salary,
+                    "contract_status": "active",
+                    "contract_expires_at": contract["expires_at"],
                     "joined_at": now,
                     "owner_club_id": club["_id"],
                     "current_club_id": club["_id"],
@@ -265,26 +371,46 @@ class ContractService:
         PlayerMoraleService().change(repo, player, MoraleConfig().transfer)
         cls.history(repo, contract, "signed", now)
         repo.event(club["_id"], "transfer", "Contratação de jogador livre", reference=player["_id"])
+        MarketValueService().recalculate(
+            repo, [repo.find("players", {"_id": player["_id"]})], "transfer"
+        )
         return public(contract)
 
     @classmethod
-    def transfer(cls, repo, player_id, buyer_id):
-        now = utcnow()
+    def transfer(cls, repo, player_id, buyer_id, salary=None, months=None, now=None):
+        now = now or utcnow()
         current = cls.current(repo, player_id)
         if not current or current["expires_at"] <= now:
             raise HTTPException(409, "Jogador sem contrato vigente.")
-        cls.capacity(repo, buyer_id, current["salary"])
+        salary = current["salary"] if salary is None else salary
+        cls.capacity(repo, buyer_id, salary)
         cls.terminate(repo, player_id, now, "transfer")
         contract = cls.document(
-            player_id, buyer_id, current["salary"], 1, GameConfig.from_rules(repo.rules()), now
+            player_id, buyer_id, salary, 1, GameConfig.from_rules(repo.rules()), now
         )
-        contract["expires_at"] = current["expires_at"]
+        contract["expires_at"] = (
+            current["expires_at"]
+            if months is None
+            else now + timedelta(seconds=current["salary_period_seconds"] * months)
+        )
         contract["salary_period_seconds"] = current["salary_period_seconds"]
         contract["expiring_at"] = contract["expires_at"] - timedelta(
             seconds=contract["salary_period_seconds"]
         )
         contract["next_salary_at"] = now + timedelta(seconds=contract["salary_period_seconds"])
         repo.insert("player_contracts", contract)
+        repo.update(
+            "players",
+            {"_id": player_id},
+            {
+                "$set": {
+                    "salary": salary,
+                    "contract_status": "active",
+                    "contract_expires_at": contract["expires_at"],
+                    "player_transfer_status": "not_for_sale",
+                }
+            },
+        )
         cls.history(repo, contract, "transferred", now, previous_contract_id=current["_id"])
 
     @classmethod
@@ -314,7 +440,19 @@ class ContractService:
         repo.update(
             "players",
             {"_id": player["_id"]},
-            {"$set": {"status": "free_agent", "owner_club_id": None, "current_club_id": None}},
+            {
+                "$set": {
+                    "status": player.get("status")
+                    if player.get("status") in {"injured", "suspended"}
+                    else "available",
+                    "owner_club_id": None,
+                    "current_club_id": None,
+                    "player_transfer_status": "available",
+                    "contract_status": "expired",
+                    "contract_expires_at": contract["expires_at"],
+                    "salary": 0,
+                }
+            },
         )
         repo.update_many(
             "player_loans",
@@ -331,8 +469,14 @@ class ContractService:
         )
         repo.update_many(
             "transfer_offers",
-            {"listing_id": {"$in": [item["_id"] for item in listings]}, "status": "pending"},
+            {
+                "listing_id": {"$in": [item["_id"] for item in listings]},
+                "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
+            },
             {"$set": {"status": "closed"}},
+        )
+        MarketValueService().recalculate(
+            repo, [repo.find("players", {"_id": player["_id"]})], "expiry", now=now
         )
         from app.services.game import MarketService
 
@@ -388,6 +532,17 @@ class ContractService:
                     "updated_at": now,
                 }
                 repo.update("player_contracts", {"_id": identity}, {"$set": changes})
+                repo.update(
+                    "players",
+                    {"_id": current["player_id"]},
+                    {
+                        "$set": {
+                            "contract_status": status,
+                            "contract_expires_at": current["expires_at"],
+                            "salary": current["salary"],
+                        }
+                    },
+                )
                 if status != current["status"]:
                     self.history(repo, current, "expiring", now)
 
@@ -426,7 +581,7 @@ class ContractService:
             ],
             "salary_history": self.repo.many(
                 "financial_transactions",
-                {"club_id": club_id, "category": "player_salary"},
+                {"club_id": club_id, "category": {"$in": ["player_salary", "salary"]}},
                 sort=[("created_at", -1)],
             ),
         }

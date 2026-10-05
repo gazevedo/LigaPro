@@ -6,9 +6,11 @@ from fastapi import HTTPException
 from app.config.game import GameConfig
 from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.models.game import utcnow
-from app.models.player import market_value, player_public
+from app.models.player import FORBIDDEN, SKILLS, market_value, normalize_player, player_public
 from app.services.chemistry import ChemistryService
+from app.services.market_value import MarketValueService
 from app.services.player_contracts import ContractService
+from app.services.salary import SalaryService
 
 
 class PlayerGeneratorService:
@@ -26,15 +28,16 @@ class PlayerGeneratorService:
         age = self.rng.randint(14, 17) if youth else self.rng.randint(18, 30)
         potential = self.potential(strength, youth)
         value = market_value(strength, potential, age)
-        return {
+        document = {
             "_id": ObjectId(),
             "name": f"{first} {last}",
-            "position": position or self.rng.choice(("GK", "DEF", "MID", "ATT")),
+            "position": position or self.rng.choice(("GK", "FB", "CB", "MID", "ATT")),
             "age": age,
             "potential": potential,
             "morale": MoraleConfig().initial,
             "integration": ChemistryConfig().initial,
             "joined_at": utcnow(),
+            "model_version": 22,
             "strength": strength,
             "overall": strength,
             "training_level": 0,
@@ -47,6 +50,30 @@ class PlayerGeneratorService:
             "current_club_id": club_id,
             "created_at": utcnow(),
         }
+        document.update(normalize_player(document))
+        document["innate_characteristics"] = self.rng.sample(
+            ["reflexes", "positioning", "penalty_saving"]
+            if document["position"] == "GK"
+            else [
+                "passing",
+                "playmaking",
+                "heading",
+                "crossing",
+                "tackling",
+                "dribbling",
+                "finishing",
+                "marking",
+                "stamina",
+                "speed",
+            ],
+            2,
+        )
+        document["preferred_side"] = self.rng.choice(("left", "right", "both"))
+        document["stars"] = 0
+        document["salary_reference"] = SalaryService.reference(document)
+        for key in FORBIDDEN - ({"potential"} if youth else set()):
+            document.pop(key, None)
+        return document
 
     def potential(self, strength, youth=False):
         ceiling = max(strength, self.config.MAX_PLAYER_LEVEL)
@@ -56,11 +83,18 @@ class PlayerGeneratorService:
         return self.rng.randint(low, high)
 
     def squad(self, club_id, country_id):
-        return [
-            self.player(club_id, country_id, position)
-            for position, count in self.config.INITIAL_POSITION_COUNTS
-            for _ in range(count)
-        ]
+        players = []
+        for position, count in self.config.INITIAL_POSITION_COUNTS:
+            for index in range(count):
+                role = (
+                    "FB"
+                    if position == "DEF" and index < count // 2
+                    else "CB"
+                    if position == "DEF"
+                    else position
+                )
+                players.append(self.player(club_id, country_id, role))
+        return players
 
     def youth(self, club_id, country_id):
         return [
@@ -76,90 +110,137 @@ class TrainingService:
     def get(self, user, youth=False):
         club = self.repo.owned(user.id)
         collection = "youth_players" if youth else "players"
-        return [
-            player_public(player)
-            for player in self.repo.many(
-                collection,
-                {"current_club_id": club["_id"], "status": {"$nin": ["retired", "promoted"]}},
-                limit=None,
+        from app.services.physical_condition import PhysicalConditionService
+
+        if not youth:
+            self.repo.transaction(
+                lambda repo: PhysicalConditionService().prepare(repo, club["_id"], utcnow())
             )
+        players = self.repo.many(
+            collection,
+            {"current_club_id": club["_id"], "status": {"$nin": ["retired", "promoted"]}},
+            limit=None,
+        )
+        progress = {
+            row["_id"]: row.get("progress", 0)
+            for row in self.repo.many(
+                "player_training", {"_id": {"$in": [p["_id"] for p in players]}}, limit=None
+            )
+        }
+        return [
+            {**player_public(player), "training_progress": progress.get(player["_id"], 0)}
+            for player in players
         ]
 
-    def train(self, user, identity):
+    def train(self, user, identity, skill=None):
         def operation(repo):
+            from app.services.physical_condition import PhysicalConditionService
+
             club = repo.owned(user.id)
-            config = GameConfig.from_rules(repo.rules())
-            if not ObjectId.is_valid(identity):
-                raise HTTPException(404, "Jogador não encontrado.")
-            for collection in ("players", "youth_players"):
-                player = repo.find(collection, {"_id": ObjectId(identity)})
-                if player:
-                    break
-            else:
-                raise HTTPException(404, "Jogador não encontrado.")
-            if player["current_club_id"] != club["_id"]:
-                raise HTTPException(403, "Jogador de outro clube.")
-            if player.get("status") == "retired":
-                raise HTTPException(409, "Jogador aposentado.")
-            strength = player.get("strength", player.get("overall", 50))
-            if strength >= min(
-                config.MAX_PLAYER_LEVEL, player.get("potential", config.MAX_PLAYER_LEVEL)
-            ):
-                raise HTTPException(409, "Jogador atingiu o limite de desenvolvimento.")
-            level = player.get("training_level", 0) + 1
-            if level >= 100:
-                strength, level = strength + 1, 0
-            value = market_value(
-                strength, player.get("potential", config.MAX_PLAYER_LEVEL), player["age"]
-            )
-            return player_public(
-                repo.update(
-                    collection,
-                    {"_id": player["_id"]},
-                    {
-                        "$set": {
-                            "training_level": level,
-                            "strength": strength,
-                            "overall": strength,
-                            "value": value,
-                            "market_value": value,
-                        }
-                    },
-                )
-            )
+            PhysicalConditionService().prepare(repo, club["_id"], utcnow())
+            return self.train_for_club(repo, club, identity, skill)
 
         return self.repo.transaction(operation)
+
+    @staticmethod
+    def train_for_club(repo, club, identity, skill=None):
+        if not ObjectId.is_valid(identity):
+            raise HTTPException(404, "Jogador não encontrado.")
+        collection = "players"
+        player = repo.find(collection, {"_id": ObjectId(identity)})
+        if not player:
+            collection = "youth_players"
+            player = repo.find(collection, {"_id": ObjectId(identity)})
+        if not player:
+            raise HTTPException(404, "Jogador não encontrado.")
+        if player["current_club_id"] != club["_id"]:
+            raise HTTPException(403, "Jogador de outro clube.")
+        if player.get("status") in {"retired", "injured", "suspended"}:
+            raise HTTPException(409, "Jogador indisponível para treino normal.")
+        skills = normalize_player(player)["individual_skills"]
+        skill = skill or {
+            "GK": "goalkeeping",
+            "CB": "tackling",
+            "FB": "speed",
+            "DEF": "tackling",
+            "MID": "playmaking",
+            "ATT": "finishing",
+        }.get(player["position"], "passing")
+        if skill not in SKILLS:
+            raise HTTPException(422, "Habilidade inválida.")
+        ceiling = player.get("potential", 100) if collection == "youth_players" else 100
+        if skills[skill] >= ceiling:
+            raise HTTPException(409, "Jogador atingiu o limite de desenvolvimento.")
+        progress = repo.find("player_training", {"_id": player["_id"]}) or {"progress": 0}
+        level = progress["progress"] + 1
+        changes = {}
+        if level >= 100:
+            level = 0
+            skills[skill] += 1
+            strength = min(ceiling, max(1, round(sum(skills.values()) / len(skills))))
+            changes.update(individual_skills=skills, strength=strength, overall=strength)
+        repo.database.player_training.update_one(
+            {"_id": player["_id"]},
+            {
+                "$set": {
+                    "player_id": player["_id"],
+                    "progress": level,
+                    "last_skill": skill,
+                    "updated_at": utcnow(),
+                }
+            },
+            upsert=True,
+            session=repo.session,
+        )
+        if changes:
+            updated = repo.update(collection, {"_id": player["_id"]}, {"$set": changes})
+            repo.update(
+                collection,
+                {"_id": player["_id"]},
+                {"$set": {"salary_reference": SalaryService.reference(updated)}},
+            )
+            MarketValueService().recalculate(repo, [updated], "training", collection=collection)
+        return {
+            **player_public(repo.find(collection, {"_id": player["_id"]})),
+            "training_progress": level,
+        }
 
     def promote(self, user, identity):
-        def operation(repo):
-            club = repo.owned(user.id)
-            player = repo.document("youth_players", identity)
-            if player["current_club_id"] != club["_id"]:
-                raise HTTPException(403, "Jogador de outro clube.")
-            if player.get("status") != "active":
-                raise HTTPException(409, "Jogador indisponível.")
-            if player["age"] < GameConfig.from_rules(repo.rules()).YOUTH_PROMOTION_AGE:
-                raise HTTPException(409, "Jogador ainda não tem idade para promoção.")
-            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
-            professional = {
-                **player,
-                "promoted_at": utcnow(),
-                "morale": min(100, player.get("morale", 50) + MoraleConfig().promotion),
-                "integration": 0,
-                "joined_at": utcnow(),
-            }
-            ChemistryService().recruit(repo, club["_id"])
-            repo.insert("players", professional)
-            ContractService.initial(repo, [professional])
-            repo.update(
-                "youth_players",
-                {"_id": player["_id"]},
-                {"$set": {"status": "promoted", "promoted_at": professional["promoted_at"]}},
-            )
-            repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
-            return player_public(professional)
+        return self.repo.transaction(
+            lambda repo: self.promote_for_club(repo, repo.owned(user.id), identity)
+        )
 
-        return self.repo.transaction(operation)
+    @staticmethod
+    def promote_for_club(repo, club, identity):
+        player = repo.document("youth_players", identity)
+        if player["current_club_id"] != club["_id"]:
+            raise HTTPException(403, "Jogador de outro clube.")
+        if player.get("status") not in {"active", "available"}:
+            raise HTTPException(409, "Jogador indisponível.")
+        if player["age"] < GameConfig.from_rules(repo.rules()).YOUTH_PROMOTION_AGE:
+            raise HTTPException(409, "Jogador ainda não tem idade para promoção.")
+        repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+        professional = {
+            **player,
+            "promoted_at": utcnow(),
+            "morale": min(100, player.get("morale", 50) + MoraleConfig().promotion),
+            "joined_at": utcnow(),
+            "model_version": 22,
+        }
+        for key in FORBIDDEN:
+            professional.pop(key, None)
+        ChemistryService().recruit(repo, club["_id"])
+        ContractService.capacity(repo, club["_id"], SalaryService.reference(professional))
+        repo.insert("players", professional)
+        ContractService.initial(repo, [professional])
+        repo.update(
+            "youth_players",
+            {"_id": player["_id"]},
+            {"$set": {"status": "promoted", "promoted_at": professional["promoted_at"]}},
+        )
+        repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
+        MarketValueService().recalculate(repo, [professional], "promotion")
+        return player_public(repo.find("players", {"_id": player["_id"]}))
 
 
 class PlayerAgingService:
@@ -183,18 +264,24 @@ class PlayerAgingService:
                 values = {"age": age}
                 if age >= config.PLAYER_DECLINE_AGE:
                     if rng.random() < self.probability(age, config.DECLINE_PROBABILITIES):
-                        strength = max(0, player.get("strength", player.get("overall", 50)) - 1)
+                        strength = max(1, player.get("strength", player.get("overall", 50)) - 1)
                         values.update(strength=strength, overall=strength)
                     if rng.random() < self.probability(age, config.RETIREMENT_PROBABILITIES):
                         values.update(
-                            status="retired", retired_at=utcnow(), retired_season_id=season_id
+                            status="retired",
+                            retired=True,
+                            retired_at=utcnow(),
+                            retired_season_id=season_id,
                         )
-                strength = values.get("strength", player.get("strength", player.get("overall", 50)))
-                value = market_value(
-                    strength, player.get("potential", config.MAX_PLAYER_LEVEL), age
+                updated = repo.update(collection, {"_id": player["_id"]}, {"$set": values})
+                repo.update(
+                    collection,
+                    {"_id": player["_id"]},
+                    {"$set": {"salary_reference": SalaryService.reference(updated)}},
                 )
-                values.update(value=value, market_value=value)
-                repo.update(collection, {"_id": player["_id"]}, {"$set": values})
+                MarketValueService().recalculate(
+                    repo, [updated], "aging", season_id, collection=collection
+                )
                 if values.get("status") == "retired" and collection == "players":
                     ContractService.terminate(repo, player["_id"], reason="retired")
                     if player["current_club_id"] is not None:
@@ -240,41 +327,54 @@ class PlayerAgingService:
 
 
 def bootstrap_player_attributes(repo):
-    config = GameConfig.from_rules(repo.rules())
     for collection in ("players", "youth_players"):
-        for player in repo.many(
-            collection,
-            {
-                "$or": [
-                    {"potential": {"$exists": False}},
-                    {"morale": {"$exists": False}},
-                    {"integration": {"$exists": False}},
-                ]
-            },
-            limit=None,
-        ):
-            strength = player.get("strength", player.get("overall", 50))
-            potential = player.get(
-                "potential",
-                PlayerGeneratorService(config, str(player["_id"])).potential(
-                    strength, collection == "youth_players"
-                ),
-            )
-            value = market_value(strength, potential, player["age"])
-            repo.update(
-                collection,
-                {"_id": player["_id"]},
-                {
-                    "$set": {
-                        "potential": potential,
-                        "morale": player.get("morale", 50),
-                        "integration": player.get("integration", 40),
-                        "joined_at": player.get("joined_at", player.get("created_at", utcnow())),
-                        "value": value,
-                        "market_value": value,
-                    }
-                },
-            )
+        for player in repo.many(collection, {"model_version": {"$ne": 22}}, limit=None):
+
+            def operation(tx, document=player, target=collection):
+                values = normalize_player(document)
+                values.update(
+                    model_version=22,
+                    joined_at=document.get("joined_at", document.get("created_at", utcnow())),
+                    updated_at=utcnow(),
+                    salary_reference=SalaryService.reference({**document, **values}),
+                )
+                contract = (
+                    ContractService.current(tx, document["_id"]) if target == "players" else None
+                )
+                if contract:
+                    values.update(
+                        salary=contract["salary"],
+                        contract_status=contract["status"],
+                        contract_expires_at=contract["expires_at"],
+                    )
+                elif target == "players":
+                    values.update(salary=0, contract_status="expired", contract_expires_at=None)
+                if document.get("training_level"):
+                    tx.database.player_training.update_one(
+                        {"_id": document["_id"]},
+                        {
+                            "$setOnInsert": {
+                                "player_id": document["_id"],
+                                "progress": document["training_level"],
+                            }
+                        },
+                        upsert=True,
+                        session=tx.session,
+                    )
+                removed = FORBIDDEN - ({"potential"} if target == "youth_players" else set())
+                tx.update(
+                    target,
+                    {"_id": document["_id"]},
+                    {"$set": values, "$unset": {key: "" for key in removed}},
+                )
+                MarketValueService().recalculate(
+                    tx,
+                    [tx.find(target, {"_id": document["_id"]})],
+                    "model_migration",
+                    collection=target,
+                )
+
+            repo.transaction(operation)
     chemistry = ChemistryService()
     for club in repo.many("clubs", {}, limit=None):
         if not repo.find("club_chemistry", {"_id": club["_id"]}):

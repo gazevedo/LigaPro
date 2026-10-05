@@ -1,7 +1,5 @@
 from hashlib import sha256
 
-from pymongo import UpdateOne
-
 from app.config.team_performance import ChemistryConfig
 from app.models.game import utcnow
 
@@ -43,10 +41,7 @@ class ChemistryService:
 
     def available(self, repo, club_id, players):
         state = self.get(repo, club_id)
-        integration = sum(p.get("integration", self.config.initial) for p in players) / max(
-            1, len(players)
-        )
-        return min(state["value"], integration)
+        return state["value"]
 
     def after_match(self, repo, match, result, summaries):
         for side in ("home", "away"):
@@ -70,10 +65,8 @@ class ChemistryService:
             players = repo.many(
                 "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
             )
-            by_id = {row["player_id"]: row for row in summaries if row["club_id"] == str(club_id)}
-            updates, tenured = [], 0
+            tenured = 0
             for player in players:
-                row = by_id.get(str(player["_id"]))
                 tenure = max(
                     0,
                     (
@@ -83,15 +76,8 @@ class ChemistryService:
                 )
                 time_gain = int(tenure >= 86400)
                 tenured += time_gain
-                played_gain = row["minutes"] // 15 if row else 0
-                value = min(
-                    100, player.get("integration", self.config.initial) + time_gain + played_gain
-                )
-                updates.append(UpdateOne({"_id": player["_id"]}, {"$set": {"integration": value}}))
             if players and tenured >= len(players) / 2:
                 gain += 1
-            if updates:
-                repo.database.players.bulk_write(updates, session=repo.session)
             final = next(t for t in result["final_lineups"] if t["id"] == team["id"])
             self.save(
                 repo,

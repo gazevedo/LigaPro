@@ -12,6 +12,7 @@ from app.repositories.game import GameRepository
 from app.schemas.game import ClubInput
 from app.services.competition import CompetitionService, SeasonFinalizationService
 from app.services.game import ClubService
+from app.services.player_contracts import ContractService
 from app.services.player_development import TrainingService
 
 
@@ -32,9 +33,9 @@ def test_division_bots_random_players_and_schedule(client):
     assert sum(row["is_bot"] for row in table["standings"]) == 19
     players = client.get("/api/training", headers=headers).json()
     assert len(players) == 25
-    assert {p["position"] for p in players} == {"GK", "DEF", "MID", "ATT"}
+    assert {p["position"] for p in players} == {"GK", "FB", "CB", "MID", "ATT"}
     assert len({p["strength"] for p in players}) > 1
-    assert all(p["training_level"] == 0 and p["disease"] is None for p in players)
+    assert all(p["training_progress"] == 0 and p["disease"] is None for p in players)
     assert db.matches.count_documents({}) == 380
     matches = client.get("/api/competition/matches", headers=headers).json()
     assert len(matches) == 38
@@ -86,7 +87,7 @@ def test_bot_replacement_inherits_sport_only_and_keeps_audit(client):
     assert audit["old_club_id"] == bot["club_id"]
     assert audit["inherited_standing"]["points"] == 5
     assert db.players.count_documents({"current_club_id": ObjectId(newcomer["id"])}) == 25
-    assert db.club_finances.find_one({"_id": ObjectId(newcomer["id"])})["balance"] == 10500000
+    assert db.club_finances.find_one({"_id": ObjectId(newcomer["id"])})["balance"] == 10000000
     assert db.clubs.find_one({"_id": bot["club_id"]})["active"] is False
 
 
@@ -122,13 +123,14 @@ def test_training_youth_promotion_and_permissions(client):
     create(client, stranger)
     player = client.get("/api/training", headers=headers).json()[0]
     db = app.state.database
-    db.players.update_one(
-        {"_id": ObjectId(player["id"])}, {"$set": {"training_level": 99, "potential": 100}}
-    )
+    db.player_training.insert_one({"_id": ObjectId(player["id"]), "progress": 99})
     trained = client.post(f"/api/players/{player['id']}/train", headers=headers)
     assert trained.status_code == 200
-    assert trained.json()["strength"] == player["strength"] + 1
-    assert trained.json()["training_level"] == 0
+    assert (
+        trained.json()["individual_skills"]["goalkeeping"]
+        == player["individual_skills"]["goalkeeping"] + 1
+    )
+    assert trained.json()["training_progress"] == 0
     assert trained.json()["overall"] == trained.json()["strength"]
     assert client.post(f"/api/players/{player['id']}/train", headers=stranger).status_code == 403
     assert client.post("/api/players/invalid/train", headers=headers).status_code == 404
@@ -150,16 +152,16 @@ def test_concurrent_training_loses_no_clicks(client):
     user, club = add_club()
     repo = GameRepository(app.state.database)
     player = repo.find("players", {"current_club_id": ObjectId(club["id"])})
-    app.state.database.players.update_one(
-        {"_id": player["_id"]}, {"$set": {"training_level": 98, "potential": 100}}
-    )
+    app.state.database.player_training.insert_one({"_id": player["_id"], "progress": 98})
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(
             executor.map(lambda _: TrainingService(repo).train(user, str(player["_id"])), range(2))
         )
     final = repo.find("players", {"_id": player["_id"]})
-    assert final["training_level"] == 0
-    assert final["strength"] == player["strength"] + 1
+    assert app.state.database.player_training.find_one({"_id": player["_id"]})["progress"] == 0
+    assert (
+        final["individual_skills"]["goalkeeping"] == player["individual_skills"]["goalkeeping"] + 1
+    )
 
 
 def test_match_runs_offline_with_persisted_snapshot_once(client):
@@ -186,6 +188,47 @@ def test_season_finalization_plays_all_matches_ages_and_is_idempotent(client):
     season = CompetitionService.current(repo)
     player = repo.find("players", {"current_club_id": ObjectId(club["id"])})
     youth = repo.find("youth_players", {"current_club_id": ObjectId(club["id"])})
+    bot = db.clubs.find_one({"is_bot": True, "active": True})
+    lineup = db.lineups.find_one({"_id": bot["_id"]})
+    free = db.players.find_one({"_id": {"$in": lineup["reserves"]}, "position": "GK"})
+    repo.transaction(lambda tx: ContractService.terminate(tx, free["_id"]))
+    db.players.update_one(
+        {"_id": free["_id"]}, {"$set": {"current_club_id": None, "owner_club_id": None}}
+    )
+    junior = db.youth_players.find_one({"current_club_id": bot["_id"]})
+    db.youth_players.update_one(
+        {"_id": junior["_id"]},
+        {
+            "$set": {
+                "age": 18,
+                "position": "MID",
+                "strength": 65,
+                "overall": 65,
+                "individual_skills": {
+                    skill: 65
+                    for skill in (
+                        "goalkeeping",
+                        "speed",
+                        "technique",
+                        "passing",
+                        "tackling",
+                        "playmaking",
+                        "finishing",
+                    )
+                },
+            }
+        },
+    )
+    important = db.player_contracts.find_one({"player_id": lineup["starters"][0]})
+    db.player_contracts.update_one(
+        {"_id": important["_id"]},
+        {
+            "$set": {
+                "expiring_at": season["starts_at"],
+                "expires_at": season["starts_at"] + timedelta(days=3),
+            }
+        },
+    )
     finalizer = SeasonFinalizationService(repo)
     finalizer.finalize(season["_id"], season["ends_at"])
     finalizer.finalize(season["_id"], season["ends_at"])
@@ -196,11 +239,49 @@ def test_season_finalization_plays_all_matches_ages_and_is_idempotent(client):
     assert all(row["games"] == 38 for row in old_rows)
     assert all(row["wins"] + row["draws"] + row["losses"] == 38 for row in old_rows)
     assert all(row["points"] == row["wins"] * 3 + row["draws"] for row in old_rows)
-    assert len(db.clubs.find_one({"_id": completed["champion_club_id"]})["trophies"]) == 1
+    assert (
+        sum(
+            t["name"] == "Campeão da Série A"
+            for t in db.clubs.find_one({"_id": completed["champion_club_id"]})["trophies"]
+        )
+        == 1
+    )
     assert repo.find("players", {"_id": player["_id"]})["age"] == player["age"] + 1
     assert repo.find("youth_players", {"_id": youth["_id"]})["age"] == youth["age"] + 1
     assert len(TrainingService(repo).get(user, youth=True)) == 4
     assert db.seasons.count_documents({"status": "active"}) == 1
+    bots = list(db.clubs.find({"is_bot": True, "active": True}))
+    assert not db.club_finances.find_one(
+        {"_id": {"$in": [b["_id"] for b in bots]}, "balance": {"$lt": 0}}
+    )
+    for checked_bot in bots:
+        lineup = db.lineups.find_one({"_id": checked_bot["_id"]})
+        assert len(lineup["starters"]) == 11
+        assert len(set(lineup["starters"])) == 11
+        assert (
+            db.players.count_documents(
+                {
+                    "_id": {"$in": lineup["starters"]},
+                    "current_club_id": checked_bot["_id"],
+                    "status": {"$nin": ["retired", "injured", "suspended"]},
+                }
+            )
+            == 11
+        )
+    assert db.bot_decisions.count_documents({"decision_type": "training"}) > 0
+    assert db.bot_decisions.count_documents({"decision_type": "tactics"}) > 0
+    assert (
+        db.bot_decisions.count_documents({"club_id": bot["_id"], "decision_type": "free_agent"}) > 0
+    )
+    assert (
+        db.bot_decisions.count_documents(
+            {"club_id": bot["_id"], "decision_type": "youth_promotion"}
+        )
+        > 0
+    )
+    assert (
+        db.bot_decisions.count_documents({"club_id": bot["_id"], "decision_type": "contract"}) > 0
+    )
     upcoming = CompetitionService.current(repo)
     assert upcoming["number"] == 2
     assert upcoming["starts_at"] == season["ends_at"]
@@ -289,21 +370,31 @@ def test_transfer_acceptance_enforces_windows_without_partial_writes(client, mon
     player, _, offer = listing_offer(client, (seller, buyer, first, second))
     repo = GameRepository(app.state.database)
     season = CompetitionService.current(repo)
+    assert (
+        client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 200
+    )
+    repo.update(
+        "transfer_offers",
+        {"_id": ObjectId(offer["id"])},
+        {"$set": {"expires_at": season["starts_at"] + timedelta(days=16)}},
+    )
     monkeypatch.setattr(
-        "app.services.competition.utcnow", lambda: season["starts_at"] + timedelta(days=2)
+        "app.services.negotiation.utcnow", lambda: season["starts_at"] + timedelta(days=2)
     )
     assert (
-        client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 409
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 409
     )
     assert repo.find("players", {"_id": ObjectId(player["id"])})["current_club_id"] == ObjectId(
         first["id"]
     )
-    assert repo.find("club_finances", {"_id": ObjectId(second["id"])})["balance"] == 10500000
+    assert repo.find("club_finances", {"_id": ObjectId(second["id"])})["balance"] == 10000000
     monkeypatch.setattr(
-        "app.services.competition.utcnow", lambda: season["starts_at"] + timedelta(days=15)
+        "app.services.negotiation.utcnow", lambda: season["starts_at"] + timedelta(days=15)
     )
     assert (
-        client.post(f"/api/market/offers/{offer['id']}/accept", headers=seller).status_code == 200
+        client.post(f"/api/market/negotiations/{offer['id']}/confirm", headers=buyer).status_code
+        == 200
     )
 
 
@@ -331,7 +422,7 @@ def test_old_positions_and_overall_remain_compatible(client):
     )
     player = squad["players"][0]
     result = TrainingService(repo).train(user, player["id"])
-    assert result["strength"] == player["overall"] and result["training_level"] == 1
+    assert result["strength"] == player["overall"] and result["training_progress"] == 1
     assert len(CompetitionService.match_team(repo, cid).lineup) == 11
 
 
@@ -355,7 +446,19 @@ def test_finalization_failure_rolls_back_and_can_resume(client, monkeypatch):
     assert db.seasons.count_documents({}) == 1
     assert CompetitionService.current(repo)["_id"] == season["_id"]
     assert repo.find("players", {"_id": player["_id"]})["age"] == player["age"]
-    assert not any(c["trophies"] for c in repo.many("clubs", {}, limit=None))
+    assert not any(
+        t["name"] == "Campeão da Série A"
+        for c in repo.many("clubs", {}, limit=None)
+        for t in c["trophies"]
+    )
+    assert (
+        sum(
+            t["name"] == "Copa Nacional"
+            for c in repo.many("clubs", {}, limit=None)
+            for t in c["trophies"]
+        )
+        == 1
+    )
     monkeypatch.setattr(PlayerAgingService, "process", original)
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(
@@ -368,7 +471,7 @@ def test_finalization_failure_rolls_back_and_can_resume(client, monkeypatch):
         )
     assert repo.find("players", {"_id": player["_id"]})["age"] == player["age"] + 1
     assert db.seasons.count_documents({}) == 2
-    assert sum(len(c["trophies"]) for c in repo.many("clubs", {}, limit=None)) == 1
+    assert sum(len(c["trophies"]) for c in repo.many("clubs", {}, limit=None)) == 2
 
 
 def test_existing_club_bootstrap_preserves_administrative_data(client):

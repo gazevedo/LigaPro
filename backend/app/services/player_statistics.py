@@ -57,6 +57,8 @@ def match_player_summaries(result):
         kind, club_id, identity = event["type"], event["team_id"], event.get("player_id")
         if club_id not in active:
             continue
+        if kind == "injury" and event.get("cannot_continue") and identity in rows:
+            leave(identity, event["minute"], club_id)
         if kind == "substitution":
             outgoing, incoming = event["out_player_id"], event["in_player_id"]
             if outgoing not in rows or incoming not in documents:
@@ -110,7 +112,7 @@ def match_player_summaries(result):
             rows[event["goalkeeper_id"]]["saves"] += 1
     for club_id, participants in active.items():
         for identity in list(participants):
-            leave(identity, 90, club_id)
+            leave(identity, result.get("duration", 90), club_id)
     for row in rows.values():
         row["matches"] = int(row["minutes"] > 0)
         row["clean_sheets"] = int(
@@ -253,7 +255,12 @@ class PlayerStatisticsService:
         )
 
     def report(self, user, identity):
-        club, match = self.repo.owned(user.id), self.repo.document("matches", identity)
+        club = self.repo.owned(user.id)
+        if not ObjectId.is_valid(identity):
+            raise HTTPException(404, "Registro não encontrado.")
+        match = self.repo.find("matches", {"_id": ObjectId(identity)}) or self.repo.document(
+            "competition_matches", identity
+        )
         involved = club["_id"] in {match["home_club_id"], match["away_club_id"]}
         inherited = (
             self.repo.find(
@@ -307,6 +314,11 @@ class PlayerStatisticsService:
                         "home_goals",
                         "away_goals",
                     )
+                }
+                | {key: match[key] for key in ("phase", "winner_club_id") if key in match}
+                | {
+                    key: match.get("result", {}).get(key)
+                    for key in ("extra_time", "shootout_score")
                 },
                 "home_name": clubs.get(match["home_club_id"], {}).get("name", "Mandante"),
                 "away_name": clubs.get(match["away_club_id"], {}).get("name", "Visitante"),

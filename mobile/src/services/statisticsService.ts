@@ -8,7 +8,7 @@ export interface Statistics {
   recent_matches?: { id: string; round: number; date: string; home_goals: number; away_goals: number }[];
 }
 export interface MatchReport {
-  match: { id: string; round: number; date: string; home_club_id: string; away_club_id: string; home_goals: number; away_goals: number };
+  match: { phase?: string; extra_time?: boolean; shootout_score?: Record<string, number> | null; winner_club_id?: string; id: string; round: number; date: string; home_club_id: string; away_club_id: string; home_goals: number; away_goals: number };
   home_name: string; away_name: string;
   ratings: { id: string; player_id: string; club_id: string; name: string; position: string; rating: number; minutes: number; events_summary: Record<string, number | string> }[];
 }

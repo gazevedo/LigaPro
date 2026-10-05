@@ -15,6 +15,7 @@ from app.database.mongo import create_client
 from app.repositories.game import GameRepository
 from app.services.competition import CompetitionService
 from app.services.game import process_due
+from app.services.monthly_finance import bootstrap_economy
 from app.services.player_contracts import ContractService
 from app.services.player_development import bootstrap_player_attributes
 
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
         CompetitionService(repository).bootstrap()
         ContractService(repository).bootstrap()
         bootstrap_player_attributes(repository)
+        bootstrap_economy(repository)
 
         async def maintenance():
             while True:

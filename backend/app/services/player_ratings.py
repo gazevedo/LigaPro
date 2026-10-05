@@ -36,6 +36,7 @@ class PlayerRatingService:
             {
                 "_id": ObjectId(),
                 "match_id": match["_id"],
+                "match_date": match["date"],
                 "player_id": ObjectId(row["player_id"]),
                 "club_id": ObjectId(row["club_id"]),
                 "rating": cls.calculate(row, result),

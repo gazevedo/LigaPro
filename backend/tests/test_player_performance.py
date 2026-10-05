@@ -4,9 +4,9 @@ from copy import deepcopy
 from bson import ObjectId
 from test_game import account, create
 
+from app.config.game import legacy_position
 from app.main import app
 from app.repositories.game import GameRepository
-from app.services.bot_market import BotMarketService
 from app.services.chemistry import ChemistryService
 from app.services.competition import CompetitionService
 from app.services.match_engine import MatchEngine
@@ -30,19 +30,20 @@ def test_potential_is_hidden_everywhere_and_training_respects_ceiling(client):
     headers, club, match, home, away = setup(client)
     db = app.state.database
     player_id = ObjectId(home.lineup[1].id)
-    db.players.update_one(
-        {"_id": player_id},
-        {"$set": {"strength": 50, "overall": 50, "potential": 50, "training_level": 99}},
+    db.player_training.insert_one({"_id": player_id, "progress": 99})
+    db.players.update_one({"_id": player_id}, {"$set": {"individual_skills.passing": 99}})
+    trained = client.post(
+        f"/api/players/{player_id}/train", headers=headers, json={"skill": "passing"}
     )
-    response = client.post(f"/api/players/{player_id}/train", headers=headers)
-    assert response.status_code == 409
-    assert db.players.find_one({"_id": player_id})["training_level"] == 99
-    db.players.update_one({"_id": player_id}, {"$set": {"strength": 49, "overall": 49}})
-    trained = client.post(f"/api/players/{player_id}/train", headers=headers)
     assert trained.status_code == 200, trained.text
-    assert trained.json()["strength"] == 50
-    assert trained.json()["can_train"] is False
+    assert trained.json()["individual_skills"]["passing"] == 100
     assert "potential" not in trained.json()
+    assert (
+        client.post(
+            f"/api/players/{player_id}/train", headers=headers, json={"skill": "passing"}
+        ).status_code
+        == 409
+    )
     for path in ("/api/training", "/api/youth", "/api/market/players"):
         rows = client.get(path, headers=headers).json()
         assert rows and all("potential" not in player for player in rows)
@@ -56,7 +57,7 @@ def test_potential_is_hidden_everywhere_and_training_respects_ceiling(client):
     assert promoted.status_code == 200
     assert "potential" not in promoted.json()
     assert promoted.json()["morale"] == 55
-    assert promoted.json()["integration"] == 0
+    assert "integration" not in promoted.json()
 
 
 def test_win_loss_streak_goals_absence_and_bounds(client):
@@ -115,7 +116,8 @@ def test_chemistry_repeated_lineup_changes_recruitment_and_limits(client):
         replacement = next(
             identity
             for identity in reserves
-            if by_id[identity]["position"] == by_id[starters[i]]["position"]
+            if legacy_position(by_id[identity]["position"])
+            == legacy_position(by_id[starters[i]]["position"])
         )
         reserves.remove(replacement)
         reserves.append(starters[i])
@@ -249,40 +251,27 @@ def test_season_club_separation_career_totals_and_report_permissions(client):
     )
 
 
-def test_legacy_player_attributes_and_funded_bot_uses_potential(client):
-    headers, club, match, home, away = setup(client)
-    db, repo = app.state.database, GameRepository(app.state.database)
-    player_id = ObjectId(home.lineup[1].id)
+def test_legacy_player_model_migration_preserves_contract_and_removes_potential(client):
+    headers, club, _, home, _ = setup(client)
+    db = app.state.database
+    player_id = ObjectId(home.lineup[0].id)
+    contract = db.player_contracts.find_one({"player_id": player_id})
     db.players.update_one(
-        {"_id": player_id}, {"$unset": {"potential": "", "morale": "", "integration": ""}}
+        {"_id": player_id},
+        {
+            "$set": {"potential": 99, "integration": 40, "training_level": 55},
+            "$unset": {"model_version": "", "morale": ""},
+        },
     )
+    repo = GameRepository(db)
     bootstrap_player_attributes(repo)
     player = db.players.find_one({"_id": player_id})
-    assert player["strength"] <= player["potential"] <= 100
+    assert (
+        "potential" not in player and "integration" not in player and "training_level" not in player
+    )
     assert player["morale"] == 50
-    assert player["integration"] == 40
-    bot = db.clubs.find_one({"is_bot": True})
-    db.club_finances.update_one({"_id": bot["_id"]}, {"$set": {"balance": 10_000_000}})
-    prototype = db.players.find_one({"current_club_id": ObjectId(club["id"])})
-    candidates = []
-    for strength, potential in ((60, 60), (50, 100)):
-        candidate = {
-            **prototype,
-            "_id": ObjectId(),
-            "strength": strength,
-            "overall": strength,
-            "potential": potential,
-            "status": "free_agent",
-            "owner_club_id": None,
-            "current_club_id": None,
-        }
-        db.players.insert_one(candidate)
-        candidates.append(candidate)
-    BotMarketService(repo).process_due()
-    hired = db.players.find_one({"_id": candidates[1]["_id"]})
-    assert hired["owner_club_id"] == bot["_id"]
-    assert hired["integration"] == 0
-    assert db.players.find_one({"_id": candidates[0]["_id"]})["status"] == "free_agent"
-    assert db.player_contracts.find_one({"player_id": hired["_id"], "status": "active"})
-    BotMarketService(repo).process_due()
-    assert db.players.find_one({"_id": candidates[0]["_id"]})["status"] == "free_agent"
+    assert len(player["individual_skills"]) == 7
+    assert db.player_training.find_one({"_id": player_id})["progress"] == 55
+    assert db.player_contracts.find_one({"_id": contract["_id"]}) == contract
+    bootstrap_player_attributes(repo)
+    assert db.players.find_one({"_id": player_id}) == player

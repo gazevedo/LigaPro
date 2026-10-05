@@ -45,7 +45,10 @@ class TacticsService:
             lineup = repo.find("lineups", {"_id": club["_id"]})
             players = repo.many(
                 "players",
-                {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                {
+                    "current_club_id": club["_id"],
+                    "status": {"$nin": ["retired", "injured", "suspended"]},
+                },
                 limit=None,
             )
             by_id = {p["_id"]: p for p in players}

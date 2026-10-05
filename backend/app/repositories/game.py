@@ -23,7 +23,12 @@ class GameRepository:
         result = list(
             self.database.financial_transactions.aggregate(
                 [
-                    {"$match": {"club_id": club_id, "category": "ticket_income"}},
+                    {
+                        "$match": {
+                            "club_id": club_id,
+                            "category": {"$in": ["ticket_income", "ticketing"]},
+                        }
+                    },
                     {"$group": {"_id": None, "amount": {"$sum": "$amount"}}},
                 ],
                 session=self.session,
@@ -43,6 +48,7 @@ class GameRepository:
                             "$match": {
                                 "$expr": {"$eq": ["$player_id", "$$player"]},
                                 "status": "active",
+                                "negotiation_only": {"$ne": True},
                             }
                         }
                     ],
@@ -96,13 +102,20 @@ class GameRepository:
         setting = self.find("app_settings", {"key": "game_rules"})
         return {**DEFAULT_RULES, **(setting["value"] if setting else {})}
 
-    def money(self, club_id, amount, category, reference=None, *, allow_overdraft=False):
+    def money(
+        self, club_id, amount, category, reference=None, *, allow_overdraft=False, effective_at=None
+    ):
         query = {"_id": club_id}
         if amount < 0 and not allow_overdraft:
             query["balance"] = {"$gte": -amount}
-        if not self.update("club_finances", query, {"$inc": {"balance": amount}}):
+        balance = {"$add": [{"$ifNull": ["$balance", 0]}, amount]}
+        if not self.update(
+            "club_finances",
+            query,
+            [{"$set": {"balance": balance, "cash_balance": balance, "updated_at": utcnow()}}],
+        ):
             raise HTTPException(409, "Saldo insuficiente.")
-        now = utcnow()
+        now = effective_at or utcnow()
         self.insert(
             "financial_transactions",
             {
@@ -165,6 +178,25 @@ class GameRepository:
             [("match_id", 1), ("player_id", 1)], unique=True
         )
         self.database.player_match_ratings.create_index([("player_id", 1), ("match_id", 1)])
+        self.database.club_finance_months.create_index([("club_id", 1), ("end", 1)], unique=True)
+        self.database.player_market_value_history.create_index(
+            [("player_id", 1), ("created_at", -1)]
+        )
+        self.database.club_fan_history.create_index([("club_id", 1), ("created_at", -1)])
+        self.database.club_ranking_history.create_index([("club_id", 1), ("created_at", -1)])
+        self.database.competitions.create_index([("season_id", 1), ("name", 1)], unique=True)
+        self.database.competition_entries.create_index(
+            [("competition_id", 1), ("club_id", 1)], unique=True
+        )
+        self.database.competition_rounds.create_index(
+            [("competition_id", 1), ("number", 1)], unique=True
+        )
+        self.database.competition_matches.create_index(
+            [("competition_id", 1), ("status", 1), ("date", 1)]
+        )
+        self.database.player_injuries.create_index([("player_id", 1), ("status", 1)])
+        self.database.bot_decisions.create_index([("club_id", 1), ("created_at", -1)])
+        self.database.transfer_offers.create_index([("status", 1), ("expires_at", 1)])
         self.database.youth_players.create_index("current_club_id")
         self.database.calendar_events.create_index([("reference_id", 1), ("club_id", 1)])
         indexes = {

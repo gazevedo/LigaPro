@@ -19,6 +19,7 @@ import { useStadiumStore } from '../stores/stadiumStore';
 import { useMarketStore } from '../stores/marketStore';
 import { useAuthStore } from '../stores/authStore';
 import { domainStore } from '../stores/domainStore';
+jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn().mockResolvedValue({ competition: null, entry: null, matches: [] }) } }));
 jest.mock('../services/competitionService', () => ({ competitionService: { get: jest.fn().mockResolvedValue(null) } }));
 jest.mock('../services/squadService', () => ({ squadService: { get: jest.fn(), save: jest.fn() } }));
 jest.mock('../services/clubService', () => ({ clubService: { catalog: jest.fn(), status: jest.fn(), create: jest.fn(), get: jest.fn() } }));

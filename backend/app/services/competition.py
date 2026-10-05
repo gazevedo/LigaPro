@@ -6,10 +6,17 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
+from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
 from app.models.game import public, utcnow
 from app.services.chemistry import ChemistryService
+from app.services.club_prestige import ClubRankingService, ClubReputationService
+from app.services.cup import CupService
+from app.services.fan_base import FanBaseService
+from app.services.market_value import MarketValueService
 from app.services.match_engine import MatchEngine, MatchPlayer, MatchTeam, arrange_formation
+from app.services.monthly_finance import MonthlyFinanceService
+from app.services.physical_condition import InjuryService, PhysicalConditionService
 from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
 from app.services.player_morale import PlayerMoraleService
@@ -146,7 +153,17 @@ class CompetitionService:
         repo.insert_many("players", players)
         starters = []
         for position, count in (("GK", 1), ("DEF", 4), ("MID", 4), ("ATT", 2)):
-            starters.extend([p["_id"] for p in players if p["position"] == position][:count])
+            starters.extend(
+                [
+                    p["_id"]
+                    for p in players
+                    if (
+                        p["position"] in {"CB", "FB", "DEF"}
+                        if position == "DEF"
+                        else p["position"] == position
+                    )
+                ][:count]
+            )
         repo.insert(
             "lineups",
             {
@@ -168,8 +185,21 @@ class CompetitionService:
             },
         )
         repo.insert("club_finances", {"_id": club_id, "balance": 0})
+        MonthlyFinanceService.initialize(repo, club_id, bot["created_at"])
+        FanBaseService.initialize(repo, club_id)
+        rules = repo.rules()
+        repo.insert(
+            "stadiums",
+            {
+                "_id": club_id,
+                "capacity": rules["initial_capacity"],
+                "ticket_price": rules["ticket_price"],
+                "facilities": {},
+            },
+        )
         ChemistryService().save(repo, club_id, {})
-        ContractService.initial(repo, players, config)
+        ContractService.initial(repo, players, config, bot["created_at"])
+        MarketValueService().recalculate(repo, players, "initial")
         return bot
 
     @staticmethod
@@ -323,6 +353,45 @@ class CompetitionService:
             repo.update(
                 "clubs", {"_id": club["_id"]}, {"$set": {"division_tier": division["tier"]}}
             )
+            cup = repo.find(
+                "competitions",
+                {"season_id": season["_id"], "name": "Copa Nacional", "status": "active"},
+            )
+            if cup:
+                entry = repo.find(
+                    "competition_entries",
+                    {"competition_id": cup["_id"], "club_id": old_club_id, "status": "active"},
+                )
+                if entry:
+                    repo.update(
+                        "competition_entries",
+                        {"_id": entry["_id"]},
+                        {"$set": {"club_id": club["_id"]}},
+                    )
+                    for side in ("home", "away"):
+                        repo.update_many(
+                            "competition_matches",
+                            {
+                                "competition_id": cup["_id"],
+                                "status": "scheduled",
+                                f"{side}_club_id": old_club_id,
+                            },
+                            {"$set": {f"{side}_club_id": club["_id"]}},
+                        )
+                    repo.update_many(
+                        "competition_rounds",
+                        {"competition_id": cup["_id"], "byes": old_club_id},
+                        {"$set": {"byes.$": club["_id"]}},
+                    )
+                    repo.update_many(
+                        "calendar_events",
+                        {
+                            "club_id": old_club_id,
+                            "date": {"$gte": now or utcnow()},
+                            "type": "match",
+                        },
+                        {"$set": {"club_id": club["_id"]}},
+                    )
             return slot
         tier = len(divisions)
         division = repo.insert(
@@ -398,7 +467,9 @@ class CompetitionService:
     def match_team(repo, club_id):
         lineup = repo.find("lineups", {"_id": club_id})
         documents = repo.many(
-            "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
+            "players",
+            {"current_club_id": club_id, "status": {"$nin": ["retired", "injured", "suspended"]}},
+            limit=None,
         )
         if len(documents) < 11:
             return None
@@ -431,6 +502,13 @@ class CompetitionService:
     def play(self, identity, now=None):
         pending = self.repo.find("matches", {"_id": identity, "status": "scheduled"}, {"date": 1})
         if pending and pending["date"] <= (now or utcnow()):
+            from app.services.game import MarketService
+
+            MarketService.return_loans(self.repo, pending["date"])
+            MonthlyFinanceService.process_due(self.repo, pending["date"])
+            from app.services.bot_manager import BotManagerService
+
+            BotManagerService(self.repo).process_due(pending["date"])
             ContractService(self.repo).process_due(pending["date"])
 
         def operation(repo):
@@ -440,6 +518,18 @@ class CompetitionService:
                 return
             for club_id in sorted([match["home_club_id"], match["away_club_id"]]):
                 repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
+            for club_id in (match["home_club_id"], match["away_club_id"]):
+                PhysicalConditionService().prepare(repo, club_id, match["date"])
+                from app.services.bot_manager import BotManagerService
+
+                if repo.find("clubs", {"_id": club_id}).get("is_bot"):
+                    BotManagerService.prepare(repo, club_id, match["date"])
+                else:
+                    try:
+                        MarketService.repair_lineup(repo, club_id)
+                    except HTTPException as exc:
+                        if exc.status_code != 409:
+                            raise
             home, away = (
                 self.match_team(repo, match[f"{side}_club_id"]) for side in ("home", "away")
             )
@@ -466,6 +556,8 @@ class CompetitionService:
             if summaries:
                 PlayerMoraleService().after_match(repo, match, result, summaries)
                 ChemistryService().after_match(repo, match, result, summaries)
+                PhysicalConditionService().after_match(repo, match, result, summaries)
+                InjuryService.after_match(repo, match, result)
             repo.update(
                 "matches",
                 {"_id": identity},
@@ -510,22 +602,61 @@ class CompetitionService:
                         }
                     },
                 )
+            FanBaseService.after_match(repo, match, home_goals, away_goals)
+            for club_id, goals, against in (
+                (match["home_club_id"], home_goals, away_goals),
+                (match["away_club_id"], away_goals, home_goals),
+            ):
+                ClubRankingService.result(
+                    repo, club_id, 3 if goals > against else 1 if goals == against else 0
+                )
             self.refresh_positions(repo, match["season_id"], match["division_id"])
+            ClubRankingService.refresh(repo, match["season_id"], identity)
+            MarketValueService().recalculate(
+                repo,
+                repo.many(
+                    "players",
+                    {"current_club_id": {"$in": [match["home_club_id"], match["away_club_id"]]}},
+                    limit=None,
+                ),
+                "round",
+                identity,
+                match["date"],
+            )
             return public(repo.find("matches", {"_id": identity}))
 
         return self.repo.transaction(operation)
+
+    def play_due(self, season, now):
+        self.repo.transaction(lambda repo: (self.lock(repo), CupService.ensure(repo, season)))
+        while True:
+            query = {"season_id": season["_id"], "status": "scheduled", "date": {"$lte": now}}
+            league = self.repo.many(
+                "matches",
+                query,
+                limit=1,
+                sort=[("date", 1), ("_id", 1)],
+                projection={"date": 1},
+            )
+            cup = self.repo.many(
+                "competition_matches",
+                query,
+                limit=1,
+                sort=[("date", 1), ("_id", 1)],
+                projection={"date": 1},
+            )
+            if not league and not cup:
+                break
+            if cup and (not league or cup[0]["date"] < league[0]["date"]):
+                CupService(self.repo).play(cup[0]["_id"], now)
+            else:
+                self.play(league[0]["_id"], now)
 
     def process_due(self, now=None):
         self.ensure_lock(self.repo)
         now = now or utcnow()
         while season := self.current(self.repo):
-            for match in self.repo.many(
-                "matches",
-                {"season_id": season["_id"], "status": "scheduled", "date": {"$lte": now}},
-                limit=None,
-                sort=[("date", 1), ("_id", 1)],
-            ):
-                self.play(match["_id"], now)
+            self.play_due(season, now)
             if season["ends_at"] > now:
                 break
             SeasonFinalizationService(self.repo).finalize(season["_id"], now)
@@ -543,13 +674,8 @@ class SeasonFinalizationService:
         season = self.repo.find("seasons", {"_id": season_id})
         if not season or season["status"] == "completed" or season["ends_at"] > now:
             return
-        for match in self.repo.many(
-            "matches",
-            {"season_id": season_id, "status": "scheduled"},
-            limit=None,
-            sort=[("date", 1), ("_id", 1)],
-        ):
-            service.play(match["_id"], now)
+        service.play_due(season, now)
+        MonthlyFinanceService.process_due(self.repo, season["ends_at"])
 
         def operation(repo):
             service.lock(repo)
@@ -572,8 +698,49 @@ class SeasonFinalizationService:
                 "season_number": current["number"],
             }
             repo.update("clubs", {"_id": champion}, {"$push": {"trophies": trophy}})
+            economy = EconomyConfig.from_rules(repo.rules())
             for tier, rows in tables.items():
                 for position, row in enumerate(rows, 1):
+                    identity = row["club_id"]
+                    repo.money(identity, economy.prize(position, tier), "prize", season_id)
+                    title = position == 1
+                    promotion = destinations[identity] < tier
+                    relegation = destinations[identity] > tier
+                    FanBaseService.change(
+                        repo,
+                        identity,
+                        "season",
+                        season_id,
+                        satisfaction=10
+                        if title or promotion
+                        else -10
+                        if relegation
+                        else 2
+                        if position <= 6
+                        else 0,
+                        growth=0.08
+                        if title
+                        else 0.05
+                        if promotion
+                        else -0.05
+                        if relegation
+                        else 0.01
+                        if position <= 6
+                        else 0,
+                    )
+                    ClubReputationService.season(repo, identity, tier, position, title)
+                    old_prestige = repo.find("clubs", {"_id": identity}).get(
+                        "recent_title_points", 0
+                    )
+                    repo.update(
+                        "clubs",
+                        {"_id": identity},
+                        {"$set": {"recent_title_points": round(old_prestige * 0.5)}},
+                    )
+                    if title:
+                        repo.update(
+                            "clubs", {"_id": identity}, {"$inc": {"recent_title_points": 100}}
+                        )
                     repo.update(
                         "clubs",
                         {"_id": row["club_id"]},
@@ -589,7 +756,13 @@ class SeasonFinalizationService:
                             },
                         },
                     )
+            ClubRankingService.refresh(repo, season_id, season_id)
             PlayerAgingService().process(repo, season_id, config)
+            from app.services.bot_manager import BotManagerService
+
+            for club_id in destinations:
+                PhysicalConditionService().prepare(repo, club_id, current["ends_at"])
+                BotManagerService.prepare(repo, club_id, current["ends_at"])
             repo.update(
                 "seasons",
                 {"_id": season_id},

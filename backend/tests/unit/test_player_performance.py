@@ -1,6 +1,5 @@
 import unittest
 from copy import deepcopy
-from statistics import pvariance
 
 from test_match_engine import team
 
@@ -46,30 +45,31 @@ def sample_result():
 
 
 class PlayerPerformanceTests(unittest.TestCase):
-    def test_generated_potential_and_youth_distribution(self):
-        adults, youths = [], []
-        for youth, group in ((False, adults), (True, youths)):
-            generator = PlayerGeneratorService(seed=42)
-            for _ in range(2000):
-                player = generator.player("club", "BR", youth=youth)
-                self.assertTrue(player["strength"] <= player["potential"] <= 100)
-                group.append(player["potential"])
-        self.assertGreater(sum(x >= 80 for x in youths), sum(x >= 80 for x in adults) * 3)
-        self.assertGreater(pvariance(youths), pvariance(adults))
+    def test_generated_potential_only_in_youth(self):
+        generator = PlayerGeneratorService(seed=42)
+        adults = [generator.player("club", "BR") for _ in range(2000)]
+        youths = [generator.player("club", "BR", youth=True) for _ in range(2000)]
+        self.assertTrue(all("potential" not in player for player in adults))
+        self.assertTrue(all(player["strength"] <= player["potential"] <= 100 for player in youths))
+        self.assertGreater(sum(p["potential"] >= 80 for p in youths), 300)
         player = PlayerGeneratorService(GameConfig(MAX_PLAYER_LEVEL=20), 4).player(
             "club", "BR", youth=True
         )
-        self.assertEqual(player["strength"], 20)
         self.assertEqual(player["potential"], 20)
 
-    def test_potential_is_internal_and_affects_market_and_bot_decisions(self):
-        common = {"strength": 50, "potential": 60, "age": 18, "status": "active"}
-        promise = {**common, "potential": 90}
-        self.assertGreater(market_value(50, 90, 18), market_value(50, 60, 18))
-        self.assertNotIn("potential", player_public(promise))
-        self.assertTrue(player_public(promise)["can_train"])
-        self.assertFalse(player_public({**promise, "strength": 90})["can_train"])
-        self.assertGreater(
+    def test_professional_potential_does_not_affect_pricing_or_bots(self):
+        common = {
+            "strength": 50,
+            "potential": 60,
+            "age": 18,
+            "position": "MID",
+            "status": "available",
+        }
+        self.assertEqual(market_value(50, 90, 18), market_value(50, 60, 18))
+        self.assertNotIn("potential", player_public(common))
+        self.assertTrue(player_public(common)["can_train"])
+        self.assertFalse(player_public({**common, "strength": 100})["can_train"])
+        self.assertLess(
             BotMarketService.score({"strength": 50, "potential": 100}),
             BotMarketService.score({"strength": 60, "potential": 60}),
         )

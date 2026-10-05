@@ -38,3 +38,12 @@ test('report shows permission rejection and permits retry', async () => {
   await fireEvent.press(screen.getByText('Atualizar relatório'));
   await screen.findByText('Pedro · ATT · nota 8,4 · 60 min');
 });
+
+test('cup report displays extra time, shootout and qualified club', async () => {
+  jest.mocked(statisticsService.report).mockResolvedValue({ match: { id: 'cup-final', round: 5, phase: 'Final', date: '2026-01-01T12:00:00Z', home_club_id: 'home', away_club_id: 'away', home_goals: 1, away_goals: 1, extra_time: true, shootout_score: { home: 5, away: 4 }, winner_club_id: 'home' }, home_name: 'Campeão', away_name: 'Visitante', ratings: [] });
+  const props = { route: { params: { id: 'cup-final' } } } as unknown as NativeStackScreenProps<RootStackParamList, 'MatchReport'>;
+  await render(<MatchReportScreen {...props} />);
+  await screen.findByText('Pênaltis: 5 × 4');
+  expect(screen.getByText('Partida com prorrogação · 120 minutos')).toBeTruthy();
+  expect(screen.getByText('Classificado: Campeão')).toBeTruthy();
+});

@@ -1,3 +1,4 @@
+import { CupSummary } from '../components/CupSummary';
 import { competitionService } from '../services/competitionService';
 import { domainStore } from '../stores/domainStore';
 import { useEffect, useState } from 'react';
@@ -19,7 +20,7 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
   useEffect(() => { void action.run(async () => setClub(await clubService.get(route.params.id))); }, [route.params.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <GamePage loading={action.busy} error={action.error}>{club?.id === route.params.id && <>
     <Text style={{ fontSize: 24, backgroundColor: club.badge?.color }}>{club.badge?.symbol ?? '🛡'} {club.name}</Text><Text>Escudo: {club.badge_id} · País: {club.country?.name ?? club.country_id}</Text>
-    <Text>Criado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text><Text>Ranking: {club.ranking}</Text>
+    <Text>Criado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text><Text>Ranking: {club.ranking_position ?? 0} · Pontos: {club.ranking_points ?? club.ranking}</Text><Text>Reputação: {club.reputation ?? 10}/100</Text><Text>Torcida: {club.supporters ?? 1000} · Satisfação: {club.fan_satisfaction ?? 50}/100</Text>
     <Text>Campeonatos: {club.competition_positions.length ? JSON.stringify(club.competition_positions) : 'Nenhum campeonato ativo'}</Text>
     <Text>Troféus: {club.trophies.length ? JSON.stringify(club.trophies) : 'Nenhum troféu'}</Text>
     {own === club.id && competition.error && <Text accessibilityRole="alert">{competition.error}</Text>}
@@ -31,6 +32,7 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
       </Text>)}
       <Button title="Atualizar classificação" onPress={() => void loadCompetition()} />
     </>}
+    {own === club.id && <CupSummary report={id => navigation.navigate('MatchReport', { id })} />}
     {own === club.id && <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />}
   </>}<Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></GamePage>;
 }

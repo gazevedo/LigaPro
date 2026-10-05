@@ -58,7 +58,7 @@ class CompetitionRulesTests(unittest.TestCase):
         generator = PlayerGeneratorService(GameConfig(MAX_PLAYER_LEVEL=30), seed=1)
         squad = generator.squad("club", "BR")
         self.assertEqual(
-            Counter(p["position"] for p in squad), {"GK": 3, "DEF": 8, "MID": 8, "ATT": 6}
+            Counter(p["position"] for p in squad), {"GK": 3, "FB": 4, "CB": 4, "MID": 8, "ATT": 6}
         )
         self.assertTrue(all(p["strength"] <= 30 for p in squad))
         youth = generator.youth("club", "BR")

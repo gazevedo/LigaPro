@@ -10,7 +10,11 @@ from app.config.team_performance import MoraleConfig
 from app.models.game import FACILITIES, public, utcnow
 from app.models.player import player_public
 from app.services.chemistry import ChemistryService
+from app.services.club_prestige import ClubRankingService
 from app.services.competition import CompetitionService
+from app.services.fan_base import FanBaseService
+from app.services.market_value import MarketValueService
+from app.services.monthly_finance import MonthlyFinanceService
 from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerGeneratorService
 from app.services.player_morale import PlayerMoraleService
@@ -53,6 +57,11 @@ class ClubService:
                     "ranking",
                     "competition_positions",
                     "trophies",
+                    "supporters",
+                    "fan_satisfaction",
+                    "ranking_points",
+                    "ranking_position",
+                    "reputation",
                 ]
             }
         )
@@ -125,7 +134,8 @@ class ClubService:
                 },
             )
             repo.insert("club_finances", {"_id": club_id, "balance": 0})
-            repo.money(club_id, rules["initial_balance"], "initial_funding")
+            MonthlyFinanceService.initialize(repo, club_id, now)
+            FanBaseService.initialize(repo, club_id)
             repo.insert(
                 "sponsor_contracts",
                 {
@@ -138,14 +148,16 @@ class ClubService:
                     "ends_at": now + timedelta(days=rules["sponsor_days"]),
                 },
             )
-            repo.money(club_id, rules["sponsor_value"], "sponsor")
+
             ChemistryService().save(repo, club_id, {})
             ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
             competition = CompetitionService(repo)
             competition.enroll(repo, club, now)
             season = competition.current(repo)
             competition.generate_youth(repo, club, season, competition.season_config(season))
-            return self.response(club)
+            ClubRankingService.refresh(repo, season["_id"])
+            MarketValueService().recalculate(repo, players, "initial", now=now)
+            return self.response(repo.find("clubs", {"_id": club_id}))
 
         try:
             return self.repo.transaction(operation)
@@ -191,9 +203,19 @@ class SquadService:
                 {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
                 limit=None,
             )
-            if set(ids) != {str(p["_id"]) for p in players}:
+            if set(ids) != {
+                str(p["_id"]) for p in players if p.get("status") not in {"injured", "suspended"}
+            }:
                 raise HTTPException(
                     422, "Escalação deve incluir exatamente os jogadores do plantel."
+                )
+            selected = set(data.starters + data.reserves)
+            if any(
+                p.get("status") in {"injured", "suspended"} and str(p["_id"]) in selected
+                for p in players
+            ):
+                raise HTTPException(
+                    422, "Lesionados e suspensos não podem ser titulares ou reservas."
                 )
             positions = Counter(
                 legacy_position(p["position"]) for p in players if str(p["_id"]) in data.starters
@@ -253,22 +275,25 @@ class StadiumService:
         )
 
     def upgrade(self, user, facility):
+
+        self.repo.transaction(
+            lambda repo: self.upgrade_for_club(repo, repo.owned(user.id), facility)
+        )
+        return self.get(user)
+
+    @staticmethod
+    def upgrade_for_club(repo, club, facility):
         if facility not in FACILITIES:
             raise HTTPException(404, "Construção não encontrada.")
-
-        def operation(repo):
-            club = repo.owned(user.id)
-            stadium = repo.find("stadiums", {"_id": club["_id"]})
-            cost = stadium["facilities"][facility] * repo.rules()["upgrade_base_cost"]
-            repo.money(club["_id"], -cost, "stadium_upgrade")
-            increments = {f"facilities.{facility}": 1}
-            if facility == "stands":
-                increments["capacity"] = 1000
-            repo.update("stadiums", {"_id": club["_id"]}, {"$inc": increments})
-            repo.event(club["_id"], "stadium", FACILITIES[facility])
-
-        self.repo.transaction(operation)
-        return self.get(user)
+        stadium = repo.find("stadiums", {"_id": club["_id"]})
+        level = stadium["facilities"].get(facility, 1)
+        cost = level * repo.rules()["upgrade_base_cost"]
+        repo.money(club["_id"], -cost, "stadium")
+        update = {"$set": {f"facilities.{facility}": level + 1}}
+        if facility == "stands":
+            update["$inc"] = {"capacity": 1000}
+        repo.update("stadiums", {"_id": club["_id"]}, update)
+        repo.event(club["_id"], "stadium", FACILITIES[facility])
 
 
 class FinanceService:
@@ -281,6 +306,7 @@ class FinanceService:
             {
                 **self.repo.find("club_finances", {"_id": club["_id"]}),
                 **ContractService(self.repo).finance(club["_id"]),
+                **MonthlyFinanceService.summary(self.repo, club["_id"]),
                 "transactions": self.repo.many(
                     "financial_transactions", {"club_id": club["_id"]}, sort=[("created_at", -1)]
                 ),
@@ -365,6 +391,11 @@ class FinanceService:
                 "capacity": stadium["capacity"],
                 "history": self.repo.many("ticket_history", {"club_id": club["_id"]}),
                 "income": self.repo.ticket_income(club["_id"]),
+                "estimated_attendance": FanBaseService.attendance(club, stadium),
+                "attendance_share": FanBaseService.ATTENDANCE_SHARE,
+                "supporters": club.get("supporters", 1000),
+                "fan_satisfaction": club.get("fan_satisfaction", 50),
+                "reputation": club.get("reputation", 10),
             }
         )
 
@@ -417,7 +448,7 @@ class FinanceService:
                     "ends_at": now + timedelta(days=rules["sponsor_days"]),
                 },
             )
-            repo.money(club["_id"], rules["sponsor_value"], "sponsor", contract["_id"])
+            # Fixed sponsorship is credited only by the monthly close.
             return public(contract)
 
         return self.repo.transaction(operation)
@@ -458,7 +489,16 @@ class MarketService:
         query = {"status": {"$ne": "retired"}}
         for key in ["position", "country_id", "status"]:
             if filters.get(key):
-                query[key] = filters[key]
+                if key == "status" and filters[key] == "free_agent":
+                    query["owner_club_id"] = None
+                elif key == "position" and filters[key] in {"DEF", "GOL", "MED", "ATA"}:
+                    query[key] = (
+                        {"$in": ["DEF", "FB", "CB"]}
+                        if filters[key] == "DEF"
+                        else {"GOL": "GK", "MED": "MID", "ATA": "ATT"}[filters[key]]
+                    )
+                else:
+                    query[key] = filters[key]
         if filters.get("name"):
             import re
 
@@ -475,7 +515,9 @@ class MarketService:
 
     def mine(self, user):
         club = self.repo.owned(user.id)
-        listings = self.repo.many("transfer_listings", {"seller_club_id": club["_id"]})
+        listings = self.repo.many(
+            "transfer_listings", {"seller_club_id": club["_id"], "negotiation_only": {"$ne": True}}
+        )
         return public(
             {
                 "listings": listings,
@@ -494,65 +536,117 @@ class MarketService:
         )
 
     def list_player(self, user, data):
-        def operation(repo):
-            club, player = repo.owned(user.id), repo.document("players", data.player_id)
-            if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
-                raise HTTPException(
-                    403, "Só é possível anunciar jogadores próprios e presentes no clube."
-                )
-            if player.get("status") == "retired":
-                raise HTTPException(409, "Jogador aposentado.")
-            lineup = repo.find("lineups", {"_id": club["_id"]})
-            if player["_id"] in lineup["starters"]:
-                raise HTTPException(409, "Mova o jogador para a reserva antes de anunciá-lo.")
-            PlayerMoraleService().change(repo, player, MoraleConfig().future_transfer)
-            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
-            return public(
-                repo.insert(
-                    "transfer_listings",
-                    {
-                        "_id": ObjectId(),
-                        "player_id": player["_id"],
-                        "seller_club_id": club["_id"],
-                        "type": data.type,
-                        "price": data.price,
-                        "duration_days": data.duration_days,
-                        "status": "active",
-                        "created_at": utcnow(),
-                    },
-                )
-            )
-
         try:
-            return self.repo.transaction(operation)
+            return self.repo.transaction(
+                lambda repo: self.list_for_club(repo, repo.owned(user.id), data)
+            )
         except DuplicateKeyError as exc:
             raise HTTPException(409, "Jogador já anunciado.") from exc
 
+    @staticmethod
+    def list_for_club(repo, club, data):
+        player = repo.document("players", data.player_id)
+        if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
+            raise HTTPException(
+                403, "Só é possível anunciar jogadores próprios e presentes no clube."
+            )
+        if player.get("status") == "retired":
+            raise HTTPException(409, "Jogador aposentado.")
+        value = player.get("market_value", player.get("value", 50000))
+        asking = (
+            max(
+                round(value * 0.9 / 10000) * 10000,
+                min(round(value * 1.1 / 10000) * 10000, round(data.price / 10000) * 10000),
+            )
+            if data.type == "sale"
+            else data.price
+        )
+        lineup = repo.find("lineups", {"_id": club["_id"]})
+        if player["_id"] in lineup["starters"]:
+            raise HTTPException(409, "Mova o jogador para a reserva antes de anunciá-lo.")
+        repo.update(
+            "players",
+            {"_id": player["_id"]},
+            {
+                "$set": {
+                    "player_transfer_status": "listed" if data.type == "sale" else "loan_listed",
+                    "asking_price": asking,
+                }
+            },
+        )
+        PlayerMoraleService().change(repo, player, MoraleConfig().future_transfer)
+        repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+        return public(
+            repo.insert(
+                "transfer_listings",
+                {
+                    "_id": ObjectId(),
+                    "player_id": player["_id"],
+                    "seller_club_id": club["_id"],
+                    "type": data.type,
+                    "price": asking,
+                    "duration_days": data.duration_days,
+                    "status": "active",
+                    "created_at": utcnow(),
+                },
+            )
+        )
+
     def offer(self, user, data):
+        # Keep the earlier request shape, but use the same staged settlement.
+        from math import ceil
+
+        from app.schemas.game import NegotiationInput
+        from app.services.negotiation import NegotiationService
+
         def operation(repo):
-            club, listing = repo.owned(user.id), repo.document("transfer_listings", data.listing_id)
-            if listing["status"] != "active" or listing["seller_club_id"] == club["_id"]:
-                raise HTTPException(409, "Anúncio indisponível ou do próprio clube.")
-            if repo.find("club_finances", {"_id": club["_id"]})["balance"] < data.amount:
-                raise HTTPException(409, "Saldo insuficiente.")
-            repo.update("transfer_listings", {"_id": listing["_id"]}, {"$inc": {"revision": 1}})
-            if repo.find(
-                "transfer_offers",
-                {"listing_id": listing["_id"], "buyer_club_id": club["_id"], "status": "pending"},
-            ):
-                raise HTTPException(409, "Já existe proposta pendente deste clube.")
+            club = repo.owned(user.id)
+            listing = repo.document("transfer_listings", data.listing_id)
+            if listing["status"] != "active":
+                raise HTTPException(409, "Anúncio indisponível.")
+            player = repo.document("players", str(listing["player_id"]))
+            contract = ContractService.current(repo, player["_id"])
+            if not contract:
+                raise HTTPException(409, "Jogador sem contrato vigente.")
+            months = max(
+                1,
+                min(
+                    60,
+                    ceil(
+                        (contract["expires_at"] - utcnow()).total_seconds()
+                        / contract["salary_period_seconds"]
+                    ),
+                ),
+            )
+            loan_months = max(
+                1,
+                min(
+                    12,
+                    ceil(
+                        listing["duration_days"]
+                        * 12
+                        / GameConfig.from_rules(repo.rules()).SEASON_DURATION_DAYS
+                    ),
+                ),
+            )
+            offer = NegotiationService.send_for_club(
+                repo,
+                club,
+                NegotiationInput(
+                    player_id=str(player["_id"]),
+                    offer_type=listing["type"],
+                    transfer_value=data.amount,
+                    salary_offer=contract["salary"],
+                    contract_months=months,
+                    loan_months=loan_months,
+                    salary_share=0,
+                ),
+            )
             return public(
-                repo.insert(
+                repo.update(
                     "transfer_offers",
-                    {
-                        "_id": ObjectId(),
-                        "listing_id": listing["_id"],
-                        "seller_club_id": listing["seller_club_id"],
-                        "buyer_club_id": club["_id"],
-                        "amount": data.amount,
-                        "status": "pending",
-                        "created_at": utcnow(),
-                    },
+                    {"_id": ObjectId(offer["id"])},
+                    {"$set": {"keep_existing_contract": True}},
                 )
             )
 
@@ -561,7 +655,9 @@ class MarketService:
     @staticmethod
     def repair_lineup(repo, club_id):
         players = repo.many(
-            "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
+            "players",
+            {"current_club_id": club_id, "status": {"$nin": ["retired", "injured", "suspended"]}},
+            limit=None,
         )
         lineup = repo.find("lineups", {"_id": club_id})
         available = {p["_id"] for p in players}
@@ -614,122 +710,193 @@ class MarketService:
         raise HTTPException(409, "Transferência deixaria o clube sem escalação válida.")
 
     def accept(self, user, identity):
-        def operation(repo):
-            CompetitionService.require_transfer_window(repo)
-            club, offer = repo.owned(user.id), repo.document("transfer_offers", identity)
-            listing = repo.document("transfer_listings", str(offer["listing_id"]))
-            if offer["seller_club_id"] != club["_id"]:
-                raise HTTPException(403, "Proposta de outro clube.")
-            if offer["status"] != "pending" or listing["status"] != "active":
-                raise HTTPException(409, "Proposta ou anúncio encerrado.")
-            player = repo.document("players", str(listing["player_id"]))
-            if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
-                raise HTTPException(409, "Jogador indisponível.")
-            if player.get("status") == "retired":
-                raise HTTPException(409, "Jogador aposentado.")
-            contract = ContractService.current(repo, player["_id"])
-            if not contract or contract["expires_at"] <= utcnow():
-                raise HTTPException(409, "Jogador sem contrato vigente.")
-            # Lock both rosters; simultaneous lineup/transfer changes are retried by MongoDB.
-            for club_id in sorted([club["_id"], offer["buyer_club_id"]]):
-                repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
-            repo.money(
+        from app.services.negotiation import NegotiationService
+
+        return NegotiationService(self.repo).act(user, identity, "accept")
+
+    @staticmethod
+    def complete_for_club(repo, club, identity, now=None, terms=None):
+        CompetitionService.require_transfer_window(repo, now)
+        offer = repo.document("transfer_offers", identity)
+        listing = repo.document("transfer_listings", str(offer["listing_id"]))
+        if offer["seller_club_id"] != club["_id"]:
+            raise HTTPException(403, "Proposta de outro clube.")
+        if (
+            offer["status"] != ("player_accepted" if terms else "pending")
+            or listing["status"] != "active"
+        ):
+            raise HTTPException(409, "Proposta ou anúncio encerrado.")
+        player = repo.document("players", str(listing["player_id"]))
+        if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
+            raise HTTPException(409, "Jogador indisponível.")
+        if player.get("status") == "retired":
+            raise HTTPException(409, "Jogador aposentado.")
+        contract = ContractService.current(repo, player["_id"])
+        if not contract or contract["expires_at"] <= (now or utcnow()):
+            raise HTTPException(409, "Jogador sem contrato vigente.")
+        # Lock both rosters; simultaneous lineup/transfer changes are retried by MongoDB.
+        for club_id in sorted([club["_id"], offer["buyer_club_id"]]):
+            repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
+        repo.money(
+            offer["buyer_club_id"],
+            -offer["amount"],
+            "player_purchase" if listing["type"] == "sale" else "other_expense",
+            offer["_id"],
+        )
+        repo.money(
+            club["_id"],
+            offer["amount"],
+            "player_sale" if listing["type"] == "sale" else "other_income",
+            offer["_id"],
+        )
+        ownership = {
+            "current_club_id": offer["buyer_club_id"],
+            "joined_at": (now or utcnow()),
+        }
+        ChemistryService().recruit(repo, offer["buyer_club_id"])
+        PlayerMoraleService().change(repo, player, MoraleConfig().transfer)
+        if listing["type"] == "sale":
+            ContractService.transfer(
+                repo,
+                player["_id"],
                 offer["buyer_club_id"],
-                -offer["amount"],
-                "player_purchase" if listing["type"] == "sale" else "player_loan",
-                offer["_id"],
+                salary=terms.get("salary_offer") if terms else None,
+                months=terms.get("contract_months")
+                if terms and not terms.get("keep_existing_contract")
+                else None,
+                now=now,
             )
-            repo.money(
-                club["_id"],
-                offer["amount"],
-                "player_sale" if listing["type"] == "sale" else "player_loan_income",
-                offer["_id"],
-            )
-            ownership = {
-                "current_club_id": offer["buyer_club_id"],
-                "integration": 0,
-                "joined_at": utcnow(),
-            }
-            ChemistryService().recruit(repo, offer["buyer_club_id"])
-            PlayerMoraleService().change(repo, player, MoraleConfig().transfer)
-            if listing["type"] == "sale":
-                ContractService.transfer(repo, player["_id"], offer["buyer_club_id"])
-                ownership["owner_club_id"] = offer["buyer_club_id"]
-            else:
-                loan = repo.insert(
-                    "player_loans",
-                    {
-                        "_id": ObjectId(),
-                        "player_id": player["_id"],
-                        "owner_club_id": club["_id"],
-                        "current_club_id": offer["buyer_club_id"],
-                        "starts_at": utcnow(),
-                        "ends_at": utcnow() + timedelta(days=listing["duration_days"]),
-                        "status": "active",
-                    },
-                )
-                for club_id in [club["_id"], offer["buyer_club_id"]]:
-                    repo.event(
-                        club_id,
-                        "transfer",
-                        "Retorno previsto de empréstimo",
-                        loan["ends_at"],
-                        loan["_id"],
-                    )
-            repo.update("players", {"_id": player["_id"]}, {"$set": ownership})
-            # A club must retain its own complete roster when borrowed players return.
-            permanent = repo.many(
-                "players",
-                {
-                    "owner_club_id": club["_id"],
-                    "current_club_id": club["_id"],
-                    "status": {"$ne": "retired"},
-                },
-                limit=None,
-            )
-            counts = Counter(legacy_position(p["position"]) for p in permanent)
-            if not any(
-                counts["GOL"] >= 1 and all(counts[p] >= n for p, n in f.items())
-                for f in repo.rules()["formations"].values()
+            ownership["owner_club_id"] = offer["buyer_club_id"]
+        else:
+            if (
+                terms
+                and (now or utcnow())
+                + timedelta(seconds=contract["salary_period_seconds"] * terms["loan_months"])
+                > contract["expires_at"]
             ):
-                raise HTTPException(
-                    409, "O clube deve manter jogadores próprios para uma escalação válida."
-                )
-            for club_id in [club["_id"], offer["buyer_club_id"]]:
-                self.repair_lineup(repo, club_id)
-                repo.event(
-                    club_id,
-                    "transfer",
-                    f"Transferência de {player['name']}",
-                    reference=offer["_id"],
-                )
-            repo.insert(
-                "transfer_history",
+                raise HTTPException(409, "Empréstimo ultrapassa o contrato vigente.")
+            ContractService.settle_salary(repo, contract, now or utcnow())
+            ContractService.capacity(
+                repo,
+                offer["buyer_club_id"],
+                round(contract["salary"] * (terms.get("salary_share", 0) if terms else 0)),
+            )
+            loan = repo.insert(
+                "player_loans",
                 {
                     "_id": ObjectId(),
                     "player_id": player["_id"],
-                    "seller_club_id": club["_id"],
-                    "buyer_club_id": offer["buyer_club_id"],
-                    "type": listing["type"],
-                    "amount": offer["amount"],
-                    "created_at": utcnow(),
+                    "owner_club_id": club["_id"],
+                    "current_club_id": offer["buyer_club_id"],
+                    "starts_at": (now or utcnow()),
+                    "salary_share": terms.get("salary_share", 0) if terms else 0,
+                    "ends_at": (now or utcnow())
+                    + timedelta(
+                        days=(
+                            terms["loan_months"]
+                            * GameConfig.from_rules(repo.rules()).SEASON_DURATION_DAYS
+                            / 12
+                        )
+                        if terms
+                        else listing["duration_days"]
+                    ),
+                    "status": "active",
                 },
             )
-            repo.update(
-                "transfer_listings", {"_id": listing["_id"]}, {"$set": {"status": "closed"}}
-            )
-            repo.update_many(
-                "transfer_offers",
-                {"listing_id": listing["_id"], "status": "pending"},
-                {"$set": {"status": "closed"}},
-            )
-            return public(
-                repo.update(
-                    "transfer_offers", {"_id": offer["_id"]}, {"$set": {"status": "accepted"}}
+            for club_id in [club["_id"], offer["buyer_club_id"]]:
+                repo.event(
+                    club_id,
+                    "transfer",
+                    "Retorno previsto de empréstimo",
+                    loan["ends_at"],
+                    loan["_id"],
                 )
+        repo.update("players", {"_id": player["_id"]}, {"$set": ownership})
+        # A club must retain its own complete roster when borrowed players return.
+        permanent = repo.many(
+            "players",
+            {
+                "owner_club_id": club["_id"],
+                "current_club_id": club["_id"],
+                "status": {"$ne": "retired"},
+            },
+            limit=None,
+        )
+        counts = Counter(legacy_position(p["position"]) for p in permanent)
+        if not any(
+            counts["GOL"] >= 1 and all(counts[p] >= n for p, n in f.items())
+            for f in repo.rules()["formations"].values()
+        ):
+            raise HTTPException(
+                409, "O clube deve manter jogadores próprios para uma escalação válida."
             )
+        for club_id in [club["_id"], offer["buyer_club_id"]]:
+            MarketService.repair_lineup(repo, club_id)
+            repo.event(
+                club_id,
+                "transfer",
+                f"Transferência de {player['name']}",
+                reference=offer["_id"],
+            )
+        repo.insert(
+            "transfer_history",
+            {
+                "_id": ObjectId(),
+                "player_id": player["_id"],
+                "seller_club_id": club["_id"],
+                "buyer_club_id": offer["buyer_club_id"],
+                "type": listing["type"],
+                "amount": offer["amount"],
+                "created_at": (now or utcnow()),
+            },
+        )
+        repo.update("transfer_listings", {"_id": listing["_id"]}, {"$set": {"status": "closed"}})
+        repo.update_many(
+            "transfer_offers",
+            {
+                "listing_id": listing["_id"],
+                "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
+            },
+            {"$set": {"status": "closed"}},
+        )
+        MarketValueService().recalculate(
+            repo, [repo.find("players", {"_id": player["_id"]})], "transfer", offer["_id"]
+        )
+        return public(
+            repo.update("transfer_offers", {"_id": offer["_id"]}, {"$set": {"status": "accepted"}})
+        )
 
-        return self.repo.transaction(operation)
+    @staticmethod
+    def return_loans(repo, now):
+        for loan in repo.many("player_loans", {"status": "active", "ends_at": {"$lte": now}}):
+
+            def return_player(repo, identity=loan["_id"]):
+                current = repo.find("player_loans", {"_id": identity, "status": "active"})
+                if not current:
+                    return
+                for club_id in sorted([current["owner_club_id"], current["current_club_id"]]):
+                    repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
+                repo.update(
+                    "players",
+                    {"_id": current["player_id"]},
+                    {
+                        "$set": {
+                            "current_club_id": current["owner_club_id"],
+                            "joined_at": now,
+                        }
+                    },
+                )
+                ChemistryService().recruit(repo, current["owner_club_id"])
+                for club_id in [current["owner_club_id"], current["current_club_id"]]:
+                    try:
+                        MarketService.repair_lineup(repo, club_id)
+                    except HTTPException as exc:
+                        if exc.status_code != 409:
+                            raise
+                    repo.event(club_id, "transfer", "Retorno de empréstimo", reference=identity)
+                repo.update("player_loans", {"_id": identity}, {"$set": {"status": "returned"}})
+
+            repo.transaction(return_player)
 
     def close(self, user, collection, identity):
         def operation(repo):
@@ -742,13 +909,20 @@ class MarketService:
             if club["_id"] not in allowed:
                 raise HTTPException(403, "Negociação de outro clube.")
             status = "active" if collection == "transfer_listings" else "pending"
-            if document["status"] != status:
+            if document["status"] not in (
+                {"pending", "counter_offer", "player_accepted"}
+                if document.get("negotiation_version") == 2
+                else {status}
+            ):
                 raise HTTPException(409, "Negociação já encerrada.")
             repo.update(collection, {"_id": document["_id"]}, {"$set": {"status": "cancelled"}})
             if collection == "transfer_listings":
                 repo.update_many(
                     "transfer_offers",
-                    {"listing_id": document["_id"], "status": "pending"},
+                    {
+                        "listing_id": document["_id"],
+                        "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
+                    },
                     {"$set": {"status": "closed"}},
                 )
             return {"status": "cancelled"}
@@ -759,36 +933,15 @@ class MarketService:
 def process_due(repository):
     now = utcnow()
     CompetitionService(repository).process_due(now)
+    MonthlyFinanceService.process_due(repository, now)
     ContractService(repository).process_due(now)
-    from app.services.bot_market import BotMarketService
+    from app.services.bot_manager import BotManagerService
 
-    BotMarketService(repository).process_due()
-    for loan in repository.many("player_loans", {"status": "active", "ends_at": {"$lte": now}}):
+    BotManagerService(repository).process_due(now)
+    from app.services.negotiation import NegotiationService
 
-        def return_player(repo, identity=loan["_id"]):
-            current = repo.find("player_loans", {"_id": identity, "status": "active"})
-            if not current:
-                return
-            for club_id in sorted([current["owner_club_id"], current["current_club_id"]]):
-                repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
-            repo.update(
-                "players",
-                {"_id": current["player_id"]},
-                {
-                    "$set": {
-                        "current_club_id": current["owner_club_id"],
-                        "integration": 0,
-                        "joined_at": now,
-                    }
-                },
-            )
-            ChemistryService().recruit(repo, current["owner_club_id"])
-            for club_id in [current["owner_club_id"], current["current_club_id"]]:
-                MarketService.repair_lineup(repo, club_id)
-                repo.event(club_id, "transfer", "Retorno de empréstimo", reference=identity)
-            repo.update("player_loans", {"_id": identity}, {"$set": {"status": "returned"}})
-
-        repository.transaction(return_player)
+    NegotiationService.expire(repository, now)
+    MarketService.return_loans(repository, now)
     for contract in repository.many(
         "bank_contracts", {"status": "active", "ends_at": {"$lte": now}}
     ):

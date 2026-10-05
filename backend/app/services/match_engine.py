@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from math import isfinite
 from random import Random
 
+from app.config.physical import PhysicalConfig
 from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.services.discipline import DuelResolver, FoulResolver, PenaltyService
 
@@ -130,6 +131,8 @@ class MatchPlayer:
     side: str = "center"
     skills: dict = field(default_factory=dict)
     traits: tuple = ()
+    age: int = 24
+    physical_condition: float = 100
 
     def __post_init__(self):
         self.position = ALIASES.get(self.position, self.position)
@@ -140,7 +143,13 @@ class MatchPlayer:
             raise ValueError("Unknown preferred side")
         if self.side not in {"left", "right", "center"}:
             raise ValueError("Unknown lineup side")
-        values = [self.strength, self.energy, self.morale, *self.skills.values()]
+        values = [
+            self.strength,
+            self.energy,
+            self.morale,
+            self.physical_condition,
+            *self.skills.values(),
+        ]
         if any(not isfinite(x) or not 0 <= x <= 100 for x in values):
             raise ValueError("Player attributes must be finite and between 0 and 100")
         if set(self.skills) - SKILLS:
@@ -158,8 +167,10 @@ class MatchPlayer:
             morale=document.get("morale", 50),
             preferred_side=document.get("preferred_side", "both"),
             side=side,
-            skills=dict(document.get("skills", {})),
-            traits=tuple(document.get("traits", ())),
+            skills=dict(document.get("individual_skills", document.get("skills", {}))),
+            traits=tuple(document.get("innate_characteristics", document.get("traits", ()))),
+            age=document.get("age", 24),
+            physical_condition=document.get("physical_condition", 100),
         )
 
 
@@ -313,6 +324,7 @@ class PlayerEffectiveStrengthCalculator:
         self.mode = mode
         self.fit = PositionFitCalculator(config)
         self.morale = MoraleConfig()
+        self.physical = PhysicalConfig()
 
     def calculate(self, player, *skills):
         value = (
@@ -324,7 +336,14 @@ class PlayerEffectiveStrengthCalculator:
         morale = self.morale.modifier(player.morale)
         related = sum(skill in player.traits for skill in skills) if player.traits else 0
         # Traits apply only to the requested phase, never to general team strength.
-        return value * energy * morale * self.fit.calculate(player) * (1 + 0.02 * related)
+        return (
+            value
+            * energy
+            * morale
+            * self.physical.modifier(player.physical_condition)
+            * self.fit.calculate(player)
+            * (1 + 0.02 * related)
+        )
 
 
 class SectorContributionCalculator:
@@ -450,9 +469,10 @@ class FinishingResolver:
 
 
 class MatchEngine:
-    def __init__(self, config=None, mode="classic"):
+    def __init__(self, config=None, mode="classic", physical_config=None):
         self.config = config or MatchConfig()
         self.mode = mode
+        self.physical_config = physical_config or PhysicalConfig()
         self.calculator = PlayerEffectiveStrengthCalculator(self.config, mode)
         self.sectors = SectorContributionCalculator(self.calculator)
         self.goalkeeper = GoalkeeperResolver(self.calculator)
@@ -475,7 +495,9 @@ class MatchEngine:
         wings = favored if focus == "wings" else not favored
         return rng.choice(["left", "right"]) if wings else "center"
 
-    def simulate(self, home, away, seed, *, capture_snapshot=True, commands=None):
+    def simulate(self, home, away, seed, *, capture_snapshot=True, commands=None, minutes=90):
+        if minutes not in {90, 120}:
+            raise ValueError("Match duration must be 90 or 120 minutes")
         # Revalidate mutable inputs and isolate fatigue/cards from caller data.
         commands = deepcopy(commands or [])
         validate_commands(commands, {home.id, away.id})
@@ -505,6 +527,9 @@ class MatchEngine:
             else None
         )
         rng = Random(seed)
+        injury_rng = Random(str(seed) + ":injuries")
+        injury_config = self.physical_config
+        injured = [set(), set()]
         events, scores = [], [0, 0]
         dismissed, yellows = [set(), set()], [{}, {}]
         marking_names = ["light", "heavy", "very_heavy"]
@@ -534,7 +559,7 @@ class MatchEngine:
                     substitutions[index] >= MAX_SUBSTITUTIONS
                     or outgoing is None
                     or incoming is None
-                    or outgoing.id in dismissed[index]
+                    or (outgoing.id in dismissed[index] and outgoing.id not in injured[index])
                 ):
                     events.append(
                         {
@@ -551,6 +576,8 @@ class MatchEngine:
                 )
                 active.lineup[active.lineup.index(outgoing)] = incoming
                 active.reserves.remove(incoming)
+                dismissed[index].discard(outgoing.id)
+                injured[index].discard(outgoing.id)
                 substitutions[index] += 1
                 events.append(
                     {**base, "type": "substitution", **payload, "energy": incoming.energy}
@@ -591,14 +618,24 @@ class MatchEngine:
             }
             for _ in teams
         ]
-        for start in range(0, 90, self.config.block_minutes):
+        regulation_score = None
+        for start in [
+            *range(0, 90, self.config.block_minutes),
+            *range(90, minutes, self.config.block_minutes),
+        ]:
+            if start == 90:
+                regulation_score = {home.id: scores[0], away.id: scores[1]}
             while pending and pending[0]["minute"] <= start:
                 apply_command(pending.pop(0), start)
             for index, active in enumerate(teams):
                 if not active.is_bot:
                     continue
                 if start in {0, 45, 65, 80}:
-                    preset = bot_preset(active, teams[1 - index], scores[index] - scores[1 - index])
+                    from app.services.bot_manager import BotMatchManager
+
+                    preset = BotMatchManager.preset(
+                        active, teams[1 - index], scores[index] - scores[1 - index]
+                    )
                     style, marking, focus = BOT_PRESETS[preset]
                     if sum(yellows[index].values()) >= 3 or dismissed[index]:
                         marking = "light"
@@ -628,8 +665,14 @@ class MatchEngine:
                         ]
                         if not options:
                             break
-                        outgoing, incoming = min(
-                            options, key=lambda pair: (pair[0].energy, -pair[1].strength)
+                        outgoing, incoming = max(
+                            options,
+                            key=lambda pair: BotMatchManager.replacement_score(
+                                pair[0],
+                                pair[1],
+                                yellows[index].get(pair[0].id, 0),
+                                scores[index] - scores[1 - index],
+                            ),
                         )
                         apply_command(
                             {
@@ -642,8 +685,74 @@ class MatchEngine:
                             },
                             start,
                         )
-            minute = min(90, start + self.config.block_minutes)
+            minute = min(90 if start < 90 else minutes, start + self.config.block_minutes)
             duration = minute - start
+            for index, active_team in enumerate(teams):
+                for player in list(active_team.lineup):
+                    if player.id in dismissed[index]:
+                        continue
+                    dangerous = any(
+                        e["type"] == "foul"
+                        and e.get("victim_id") == player.id
+                        and e["minute"] >= start
+                        for e in events
+                    )
+                    risk = injury_config.risk(
+                        player.physical_condition,
+                        player.age,
+                        active_team.marking,
+                        dangerous,
+                        duration,
+                    )
+                    if injury_rng.random() >= risk:
+                        continue
+                    severity = injury_rng.choices(
+                        ["minor", "moderate", "serious"], weights=injury_config.severity_weights
+                    )[0]
+                    matches_out = injury_rng.randint(
+                        *({"minor": (1, 2), "moderate": (3, 6), "serious": (7, 12)}[severity])
+                    )
+                    events.append(
+                        {
+                            "minute": start,
+                            "type": "injury",
+                            "team_id": active_team.id,
+                            "player_id": player.id,
+                            "severity": severity,
+                            "injury_type": {
+                                "minor": "contusão",
+                                "moderate": "distensão",
+                                "serious": "lesão ligamentar",
+                            }[severity],
+                            "matches_out": matches_out,
+                            "cannot_continue": True,
+                        }
+                    )
+                    dismissed[index].add(player.id)
+                    injured[index].add(player.id)
+                    presence_cache.clear()
+                    if active_team.is_bot and substitutions[index] < MAX_SUBSTITUTIONS:
+                        options = [
+                            p
+                            for p in active_team.reserves
+                            if p.position == player.position
+                            or {p.position, player.assigned_position} <= {"FB", "CB"}
+                        ]
+                        if not options:
+                            options = list(active_team.reserves)
+                        if options:
+                            incoming = max(options, key=lambda p: p.strength * p.energy / 100)
+                            apply_command(
+                                {
+                                    "team_id": active_team.id,
+                                    "type": "substitution",
+                                    "payload": {
+                                        "out_player_id": player.id,
+                                        "in_player_id": incoming.id,
+                                    },
+                                },
+                                start,
+                            )
             for index, active_team in enumerate(teams):
                 for player in active_team.lineup:
                     if player.id not in dismissed[index]:
@@ -749,6 +858,7 @@ class MatchEngine:
                     severity=foul["severity"],
                     penalty_area=foul["penalty_area"],
                     opponent_player_id=challenger.id,
+                    victim_id=challenger.id,
                 )
                 if foul["card"] == "direct_red":
                     event("direct_red", culprit, team_id=opponent.id)
@@ -866,14 +976,76 @@ class MatchEngine:
             "score": {home.id: scores[0], away.id: scores[1]},
             "events": events,
             "statistics": {
-                team.id: {**stat, "possession": stat["possession_minutes"] / 90}
+                team.id: {**stat, "possession": stat["possession_minutes"] / minutes}
                 for team, stat in zip(teams, stats)
             },
         }
+        if minutes == 120:
+            result.update(duration=120, regulation_score=regulation_score)
         if capture_snapshot:
             final = [asdict(t) for t in teams]
             for index, lineup in enumerate(final):
                 lineup["lineup"] = [p for p in lineup["lineup"] if p["id"] not in dismissed[index]]
-                lineup["dismissed_player_ids"] = sorted(dismissed[index])
+                lineup["dismissed_player_ids"] = sorted(dismissed[index] - injured[index])
+                lineup["injured_player_ids"] = sorted(injured[index])
             result.update(snapshot=snapshot, final_lineups=final)
         return result
+
+    def simulate_knockout(self, home, away, seed, *, commands=None):
+        result = self.simulate(home, away, seed, commands=commands)
+        if result["score"][home.id] == result["score"][away.id]:
+            result = self.simulate(home, away, seed, commands=commands, minutes=120)
+            result["extra_time"] = True
+        score = result["score"]
+        if score[home.id] != score[away.id]:
+            result["winner_id"] = home.id if score[home.id] > score[away.id] else away.id
+            return result
+        rng = Random(str(seed) + ":shootout")
+        final = result["final_lineups"]
+        participants = [[MatchPlayer(**p) for p in team["lineup"]] for team in final]
+        shootout = {home.id: 0, away.id: 0}
+        kicks = {home.id: 0, away.id: 0}
+        events = []
+        ids = [home.id, away.id]
+        pair = 0
+        while True:
+            for index, team_id in enumerate(ids):
+                players = sorted(participants[index], key=lambda p: -p.strength)
+                taker = players[pair % len(players)] if players else None
+                rival = participants[1 - index]
+                keeper = next((p for p in rival if p.assigned_position == "GK"), None)
+                probability = max(
+                    0.55,
+                    min(
+                        0.90,
+                        0.73
+                        + ((taker.strength if taker else 0) - (keeper.strength if keeper else 0))
+                        * 0.0015,
+                    ),
+                )
+                scored = rng.random() < probability
+                shootout[team_id] += int(scored)
+                kicks[team_id] += 1
+                events.append(
+                    {"team_id": team_id, "player_id": taker.id if taker else None, "scored": scored}
+                )
+                if pair < 5:
+                    remaining = {identity: max(0, 5 - kicks[identity]) for identity in ids}
+                    if (
+                        shootout[ids[0]] > shootout[ids[1]] + remaining[ids[1]]
+                        or shootout[ids[1]] > shootout[ids[0]] + remaining[ids[0]]
+                    ):
+                        result.update(
+                            shootout_score=shootout,
+                            shootout_events=events,
+                            winner_id=max(ids, key=lambda identity: shootout[identity]),
+                        )
+                        return result
+            if pair >= 4 and shootout[ids[0]] != shootout[ids[1]]:
+                result.update(
+                    shootout_score=shootout,
+                    shootout_events=events,
+                    winner_id=max(ids, key=lambda identity: shootout[identity]),
+                )
+                return result
+            pair += 1

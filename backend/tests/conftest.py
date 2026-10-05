@@ -1,5 +1,6 @@
 import os
 import secrets
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -18,7 +19,11 @@ from app.main import app  # noqa: E402
 
 @pytest.fixture(scope="session")
 def client():
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    # Tests advance game time explicitly; the real-time worker must not mutate fixtures.
+    with (
+        patch("app.main.process_due"),
+        TestClient(app, raise_server_exceptions=False) as test_client,
+    ):
         yield test_client
     mongo = MongoClient(os.environ["MONGODB_CONNECTION_STRING"])
     mongo.drop_database(os.environ["MONGODB_DATABASE_NAME"])

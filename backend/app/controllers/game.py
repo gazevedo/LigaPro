@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import get_current_user
 from app.database.mongo import get_database
@@ -8,16 +8,21 @@ from app.repositories.game import GameRepository
 from app.schemas.game import (
     CalendarFilter,
     ClubInput,
+    CounterOfferInput,
     LineupInput,
     ListingInput,
     MatchCommandInput,
     MoneyInput,
+    NegotiationInput,
     OfferInput,
     PlayerContractInput,
     TacticsInput,
     TicketInput,
+    TrainingInput,
+    TransferStatusInput,
 )
 from app.services.competition import CompetitionService
+from app.services.cup import CupService
 from app.services.game import (
     CalendarService,
     ClubService,
@@ -133,7 +138,7 @@ def calendar(user: User, repo: Repo, filters: Annotated[CalendarFilter, Query()]
 def search(
     repo: Repo,
     name: str | None = Query(None, max_length=60),
-    position: Literal["GOL", "GK", "DEF", "MED", "MID", "ATA", "ATT"] | None = None,
+    position: Literal["GOL", "GK", "DEF", "FB", "CB", "MED", "MID", "ATA", "ATT"] | None = None,
     country_id: str | None = None,
     status: Literal["free_agent"] | None = None,
     type: Literal["sale", "loan"] | None = None,
@@ -200,8 +205,8 @@ def training(user: User, repo: Repo):
 
 
 @router.post("/players/{identity}/train")
-def train(identity: str, user: User, repo: Repo):
-    return TrainingService(repo).train(user, identity)
+def train(identity: str, user: User, repo: Repo, data: TrainingInput | None = None):
+    return TrainingService(repo).train(user, identity, data.skill if data else None)
 
 
 @router.get("/youth")
@@ -263,3 +268,76 @@ def player_statistics(identity: str, repo: Repo):
 @router.get("/competition/matches/{identity}")
 def match_report(identity: str, user: User, repo: Repo):
     return PlayerStatisticsService(repo).report(user, identity)
+
+
+@router.get("/competition/cup")
+def cup(user: User, repo: Repo):
+    return CupService(repo).summary(user)
+
+
+@router.get("/clubs/ranking/current")
+def club_ranking(repo: Repo):
+    from app.models.game import public
+
+    return public(
+        repo.many(
+            "clubs",
+            {"active": {"$ne": False}, "ranking_position": {"$gt": 0}},
+            sort=[("ranking_position", 1)],
+            projection={"name": 1, "ranking_points": 1, "ranking_position": 1, "reputation": 1},
+        )
+    )
+
+
+@router.post("/market/negotiations", status_code=201)
+def negotiate(data: NegotiationInput, user: User, repo: Repo):
+    from app.services.negotiation import NegotiationService
+
+    return NegotiationService(repo).send(user, data)
+
+
+@router.post("/market/negotiations/{identity}/counter")
+def counter(identity: str, data: CounterOfferInput, user: User, repo: Repo):
+    from app.services.negotiation import NegotiationService
+
+    return NegotiationService(repo).act(user, identity, "counter", data)
+
+
+@router.post("/market/negotiations/{identity}/{action}")
+def negotiation_action(
+    identity: str,
+    action: Literal["accept", "reject", "confirm", "accept_counter"],
+    user: User,
+    repo: Repo,
+):
+    from app.services.negotiation import NegotiationService
+
+    return NegotiationService(repo).act(user, identity, action)
+
+
+@router.put("/players/{identity}/transfer-status")
+def transfer_status(identity: str, data: TransferStatusInput, user: User, repo: Repo):
+    from app.models.player import player_public
+    from app.services.market_value import MarketValueService
+
+    def operation(tx):
+        club = tx.owned(user.id)
+        player = tx.document("players", identity)
+        if player["owner_club_id"] != club["_id"]:
+            raise HTTPException(403, "Jogador de outro clube.")
+        if tx.find("transfer_listings", {"player_id": player["_id"], "status": "active"}):
+            raise HTTPException(409, "Retire o anúncio antes de alterar a disponibilidade.")
+        return player_public(
+            tx.update(
+                "players",
+                {"_id": player["_id"]},
+                {
+                    "$set": {
+                        "player_transfer_status": data.status,
+                        "asking_price": MarketValueService.asking_price(player, data.status),
+                    }
+                },
+            )
+        )
+
+    return repo.transaction(operation)

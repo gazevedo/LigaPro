@@ -81,3 +81,35 @@ class MatchCommandInput(Input):
 class PlayerContractInput(Input):
     salary: int = Field(gt=0, le=1_000_000_000, strict=True)
     seasons: int = Field(ge=1, le=5, strict=True)
+
+
+class TrainingInput(Input):
+    skill: (
+        Literal[
+            "goalkeeping", "speed", "technique", "passing", "tackling", "playmaking", "finishing"
+        ]
+        | None
+    ) = None
+
+
+class NegotiationInput(Input):
+    player_id: str
+    offer_type: Literal["sale", "loan"] = "sale"
+    transfer_value: int = Field(ge=0, le=1_000_000_000, strict=True)
+    salary_offer: int = Field(gt=0, le=1_000_000_000, strict=True)
+    contract_months: int = Field(default=24, ge=1, le=60, strict=True)
+    loan_months: int = Field(default=6, ge=1, le=12, strict=True)
+    salary_share: float = Field(default=0.5, ge=0, le=1)
+    expected_starter: bool = True
+
+
+class CounterOfferInput(Input):
+    transfer_value: int = Field(ge=0, le=1_000_000_000, strict=True)
+    salary_offer: int | None = Field(default=None, gt=0, le=1_000_000_000, strict=True)
+    contract_months: int | None = Field(default=None, ge=1, le=60, strict=True)
+    loan_months: int | None = Field(default=None, ge=1, le=12, strict=True)
+    salary_share: float | None = Field(default=None, ge=0, le=1)
+
+
+class TransferStatusInput(Input):
+    status: Literal["available", "not_for_sale"]

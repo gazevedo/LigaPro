@@ -1,0 +1,64 @@
+{
+  "seed": 210025,
+  "pricing": {
+    "samples": 10000,
+    "currency": "BRL",
+    "median": 9600.0,
+    "p90": 29800.0,
+    "p99": 74700.0,
+    "average_salary": 630.17,
+    "distribution": "80% strength 40\u201365, 18.5% 66\u201382, 1.5% 90\u2013100; age 18\u201335; stars 0"
+  },
+  "physical": {
+    "matches": 10000,
+    "groups": {
+      "condition_100_age_22": {
+        "matches": 1250,
+        "injuries": 42,
+        "injuries_per_match": 0.0336
+      },
+      "condition_80_age_22": {
+        "matches": 1250,
+        "injuries": 37,
+        "injuries_per_match": 0.0296
+      },
+      "condition_60_age_22": {
+        "matches": 1250,
+        "injuries": 66,
+        "injuries_per_match": 0.0528
+      },
+      "condition_35_age_22": {
+        "matches": 1250,
+        "injuries": 125,
+        "injuries_per_match": 0.1
+      },
+      "condition_100_age_36": {
+        "matches": 1250,
+        "injuries": 61,
+        "injuries_per_match": 0.0488
+      },
+      "condition_80_age_36": {
+        "matches": 1250,
+        "injuries": 68,
+        "injuries_per_match": 0.0544
+      },
+      "condition_60_age_36": {
+        "matches": 1250,
+        "injuries": 87,
+        "injuries_per_match": 0.0696
+      },
+      "condition_35_age_36": {
+        "matches": 1250,
+        "injuries": 152,
+        "injuries_per_match": 0.1216
+      }
+    },
+    "severity": {
+      "minor": 470,
+      "moderate": 143,
+      "serious": 25
+    },
+    "injuries_per_match": 0.0638,
+    "mean_matches_out": 2.448
+  }
+}
