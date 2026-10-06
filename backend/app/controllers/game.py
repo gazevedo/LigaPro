@@ -412,3 +412,26 @@ def history(user: User, repo: Repo):
     from app.services.game_history import HistoryService
 
     return HistoryService.get(repo, repo.owned(user.id)["_id"])
+
+
+@router.get("/matches/upcoming")
+def upcoming_matches(user: User, repo: Repo):
+    from app.services.live_match import MATCH_COLLECTIONS
+
+    club = repo.owned(user.id)
+    query = {
+        "status": {"$in": ["scheduled", "live"]},
+        "$or": [{"home_club_id": club["_id"]}, {"away_club_id": club["_id"]}],
+    }
+    rows = [
+        match
+        for collection in MATCH_COLLECTIONS
+        for match in repo.many(
+            collection,
+            query,
+            limit=5,
+            sort=[("date", 1)],
+            projection={"date": 1, "round": 1, "status": 1, "home_club_id": 1, "away_club_id": 1},
+        )
+    ]
+    return public(sorted(rows, key=lambda m: m["date"])[:5])

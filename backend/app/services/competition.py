@@ -462,17 +462,21 @@ class CompetitionService:
         club = self.repo.owned(user.id)
         season = self.current(self.repo)
         slot = self.repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
-        return public(
-            self.repo.many(
-                "matches",
-                {
-                    "season_id": season["_id"],
-                    "$or": [{"home_slot_id": slot["_id"]}, {"away_slot_id": slot["_id"]}],
-                },
-                limit=None,
-                sort=[("round", 1)],
-            )
+        rows = self.repo.many(
+            "matches",
+            {
+                "season_id": season["_id"],
+                "$or": [{"home_slot_id": slot["_id"]}, {"away_slot_id": slot["_id"]}],
+            },
+            limit=None,
+            sort=[("round", 1)],
+            projection={"result": 0, "seed": 0},
         )
+        for row in rows:
+            row["commands"] = [
+                c for c in row.get("commands", []) if c["team_id"] == str(club["_id"])
+            ]
+        return public(rows)
 
     @staticmethod
     def match_team(repo, club_id):
@@ -510,7 +514,7 @@ class CompetitionService:
             ChemistryService().available(repo, club_id, pool_documents),
         )
 
-    def play(self, identity, now=None):
+    def play(self, identity, now=None, result_override=None):
         pending = self.repo.find("matches", {"_id": identity, "status": "scheduled"}, {"date": 1})
         if pending and pending["date"] <= (now or utcnow()):
             from app.services.game import MarketService
@@ -524,12 +528,19 @@ class CompetitionService:
 
         def operation(repo):
             self.lock(repo)
-            match = repo.find("matches", {"_id": identity, "status": "scheduled"})
+            match = repo.find(
+                "matches",
+                {"_id": identity, "status": "live" if result_override is not None else "scheduled"},
+            )
             if not match or match["date"] > (now or utcnow()):
                 return
             for club_id in sorted([match["home_club_id"], match["away_club_id"]]):
                 repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
-            for club_id in (match["home_club_id"], match["away_club_id"]):
+            for club_id in (
+                ()
+                if result_override is not None
+                else (match["home_club_id"], match["away_club_id"])
+            ):
                 PhysicalConditionService().prepare(repo, club_id, match["date"])
                 from app.services.bot_manager import BotManagerService
 
@@ -544,9 +555,17 @@ class CompetitionService:
             home, away = (
                 self.match_team(repo, match[f"{side}_club_id"]) for side in ("home", "away")
             )
-            if home and away:
-                result = MatchEngine().simulate(
-                    home, away, match["seed"], commands=match.get("commands", [])
+            if result_override is not None:
+                result = result_override
+                home_goals = result["score"][str(match["home_club_id"])]
+                away_goals = result["score"][str(match["away_club_id"])]
+            elif home and away:
+                result = (
+                    result_override
+                    if result_override is not None
+                    else MatchEngine().simulate(
+                        home, away, match["seed"], commands=match.get("commands", [])
+                    )
                 )
                 home_goals = result["score"][home.id]
                 away_goals = result["score"][away.id]
@@ -644,7 +663,16 @@ class CompetitionService:
     def play_due(self, season, now):
         self.repo.transaction(lambda repo: (self.lock(repo), CupService.ensure(repo, season)))
         while True:
-            query = {"season_id": season["_id"], "status": "scheduled", "date": {"$lte": now}}
+            from app.services.live_match import busy_clubs
+
+            busy = busy_clubs(self.repo)
+            query = {
+                "season_id": season["_id"],
+                "status": "scheduled",
+                "date": {"$lte": now},
+                "home_club_id": {"$nin": list(busy)},
+                "away_club_id": {"$nin": list(busy)},
+            }
             league = self.repo.many(
                 "matches",
                 query,
@@ -688,7 +716,10 @@ class CompetitionService:
         now = now or utcnow()
         while season := self.current(self.repo):
             self.play_due(season, now)
-            if season["ends_at"] > now:
+            if season["ends_at"] > now or any(
+                self.repo.find(collection, {"season_id": season["_id"], "status": "live"})
+                for collection in ["matches", "competition_matches", "friendly_matches"]
+            ):
                 break
             SeasonFinalizationService(self.repo).finalize(season["_id"], now)
 
@@ -713,7 +744,10 @@ class SeasonFinalizationService:
             current = repo.find("seasons", {"_id": season_id, "status": "active"})
             if not current:
                 return
-            if repo.find("matches", {"season_id": season_id, "status": "scheduled"}):
+            if any(
+                repo.find(collection, {"season_id": season_id, "status": "live"})
+                for collection in ["matches", "competition_matches", "friendly_matches"]
+            ) or repo.find("matches", {"season_id": season_id, "status": "scheduled"}):
                 raise HTTPException(409, "Temporada ainda possui partidas pendentes.")
             config = service.season_config(current)
             divisions = repo.many("divisions", {}, limit=None, sort=[("tier", 1)])

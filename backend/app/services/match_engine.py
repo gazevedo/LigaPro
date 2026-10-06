@@ -259,7 +259,7 @@ def bot_preset(team, opponent, difference):
     return "balanced"
 
 
-def validate_commands(commands, team_ids):
+def validate_commands(commands, team_ids, duration=90):
     for command in commands:
         if not isinstance(command, dict) or set(command) != {
             "team_id",
@@ -271,8 +271,8 @@ def validate_commands(commands, team_ids):
         if command["team_id"] not in team_ids:
             raise ValueError("Unknown command team")
         minute = command["minute"]
-        if type(minute) is not int or not 0 <= minute < 90:
-            raise ValueError("Command minute must be between 0 and 89")
+        if type(minute) is not int or not 0 <= minute < duration:
+            raise ValueError(f"Command minute must be between 0 and {duration - 1}")
         payload = command["payload"]
         if not isinstance(payload, dict) or not payload:
             raise ValueError("Empty command payload")
@@ -496,11 +496,39 @@ class MatchEngine:
         return rng.choice(["left", "right"]) if wings else "center"
 
     def simulate(self, home, away, seed, *, capture_snapshot=True, commands=None, minutes=90):
+        iterator = self.progressive(
+            home,
+            away,
+            seed,
+            capture_snapshot=capture_snapshot,
+            commands=commands,
+            minutes=minutes,
+            emit_state=False,
+        )
+        try:
+            next(iterator)
+        except StopIteration as done:
+            return done.value
+        raise RuntimeError("Unexpected progressive frame in offline simulation")
+
+    def progressive(
+        self,
+        home,
+        away,
+        seed,
+        *,
+        capture_snapshot=True,
+        commands=None,
+        minutes=90,
+        emit_state=True,
+        fallback=True,
+        knockout=False,
+    ):
         if minutes not in {90, 120}:
             raise ValueError("Match duration must be 90 or 120 minutes")
         # Revalidate mutable inputs and isolate fatigue/cards from caller data.
         commands = deepcopy(commands or [])
-        validate_commands(commands, {home.id, away.id})
+        validate_commands(commands, {home.id, away.id}, minutes)
         pending = sorted(commands, key=lambda command: command["minute"])
         teams = [copy(home), copy(away)]
         for team in teams:
@@ -530,7 +558,10 @@ class MatchEngine:
         injury_rng = Random(str(seed) + ":injuries")
         injury_config = self.physical_config
         injured = [set(), set()]
-        events, scores = [], [0, 0]
+        events, scores = (
+            [{"minute": 0, "type": "kickoff", "team_id": home.id, "player_id": None}],
+            [0, 0],
+        )
         dismissed, yellows = [set(), set()], [{}, {}]
         marking_names = ["light", "heavy", "very_heavy"]
         presence_cache = {}
@@ -624,6 +655,40 @@ class MatchEngine:
             *range(0, 90, self.config.block_minutes),
             *range(90, minutes, self.config.block_minutes),
         ]:
+            if knockout and start == 90 and scores[0] != scores[1]:
+                minutes = 90
+                break
+            if start == 45:
+                events.append(
+                    {"minute": 45, "type": "halftime", "team_id": home.id, "player_id": None}
+                )
+            if emit_state:
+                incoming = yield {
+                    "minute": start,
+                    "score": {home.id: scores[0], away.id: scores[1]},
+                    "statistics": {
+                        team.id: {
+                            **deepcopy(stat),
+                            "possession": stat["possession_minutes"] / max(1, start),
+                        }
+                        for team, stat in zip(teams, stats)
+                    },
+                    "events": deepcopy(events),
+                    "lineups": [asdict(t) for t in teams],
+                    "discipline": [
+                        {"dismissed": sorted(d), "yellow_cards": dict(y), "injured": sorted(i)}
+                        for d, y, i in zip(dismissed, yellows, injured)
+                    ],
+                    "substitutions": list(substitutions),
+                    "rng_state": rng.getstate(),
+                    "injury_rng_state": injury_rng.getstate(),
+                }
+                if incoming:
+                    validate_commands(incoming, {home.id, away.id}, minutes)
+                    pending.extend(deepcopy(incoming))
+                    pending.sort(key=lambda c: c["minute"])
+                    if snapshot is not None:
+                        snapshot["commands"].extend(deepcopy(incoming))
             if start == 90:
                 regulation_score = {home.id: scores[0], away.id: scores[1]}
             while pending and pending[0]["minute"] <= start:
@@ -686,6 +751,20 @@ class MatchEngine:
                             },
                             start,
                         )
+            from app.services.match_fallback import AutoMatchFallbackService
+
+            for index, active in enumerate(teams):
+                keeper = AutoMatchFallbackService.restore_keeper(active, dismissed[index])
+                if keeper:
+                    presence_cache.clear()
+                    events.append(
+                        {
+                            "minute": start,
+                            "type": "keeper_fallback",
+                            "team_id": active.id,
+                            "player_id": keeper.id,
+                        }
+                    )
             minute = min(90 if start < 90 else minutes, start + self.config.block_minutes)
             duration = minute - start
             for index, active_team in enumerate(teams):
@@ -732,17 +811,11 @@ class MatchEngine:
                     dismissed[index].add(player.id)
                     injured[index].add(player.id)
                     presence_cache.clear()
-                    if active_team.is_bot and substitutions[index] < MAX_SUBSTITUTIONS:
-                        options = [
-                            p
-                            for p in active_team.reserves
-                            if p.position == player.position
-                            or {p.position, player.assigned_position} <= {"FB", "CB"}
-                        ]
-                        if not options:
-                            options = list(active_team.reserves)
-                        if options:
-                            incoming = max(options, key=lambda p: p.strength * p.energy / 100)
+                    if (active_team.is_bot or fallback) and substitutions[
+                        index
+                    ] < MAX_SUBSTITUTIONS:
+                        incoming = AutoMatchFallbackService.replacement(active_team, player)
+                        if incoming:
                             apply_command(
                                 {
                                     "team_id": active_team.id,
@@ -975,6 +1048,9 @@ class MatchEngine:
                     "reason": "Sem bloco futuro para aplicar o comando.",
                 }
             )
+        events.append(
+            {"minute": minutes, "type": "fulltime", "team_id": home.id, "player_id": None}
+        )
         result = {
             "score": {home.id: scores[0], away.id: scores[1]},
             "events": events,
@@ -992,13 +1068,33 @@ class MatchEngine:
                 lineup["dismissed_player_ids"] = sorted(dismissed[index] - injured[index])
                 lineup["injured_player_ids"] = sorted(injured[index])
             result.update(snapshot=snapshot, final_lineups=final)
+        if knockout:
+            if minutes == 120:
+                result["extra_time"] = True
+            result = self.resolve_knockout(result, home, away, seed)
+        if emit_state:
+            result["_live_final"] = {
+                "discipline": [
+                    {"dismissed": sorted(d), "yellow_cards": dict(y), "injured": sorted(i)}
+                    for d, y, i in zip(dismissed, yellows, injured)
+                ],
+                "substitutions": list(substitutions),
+                "rng_state": rng.getstate(),
+                "injury_rng_state": injury_rng.getstate(),
+            }
         return result
 
     def simulate_knockout(self, home, away, seed, *, commands=None):
-        result = self.simulate(home, away, seed, commands=commands)
+        result = self.simulate(
+            home, away, seed, commands=[c for c in commands or [] if c["minute"] < 90]
+        )
         if result["score"][home.id] == result["score"][away.id]:
             result = self.simulate(home, away, seed, commands=commands, minutes=120)
             result["extra_time"] = True
+        return self.resolve_knockout(result, home, away, seed)
+
+    @staticmethod
+    def resolve_knockout(result, home, away, seed):
         score = result["score"]
         if score[home.id] != score[away.id]:
             result["winner_id"] = home.id if score[home.id] > score[away.id] else away.id

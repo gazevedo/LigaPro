@@ -303,6 +303,17 @@ class PlayerStatisticsService:
             )
         }
         projection = self.repo.find("match_stats", {"_id": match["_id"]}) or {}
+        events = self.repo.many(
+            "match_events", {"match_id": match["_id"]}, limit=None, sort=[("sequence", 1)]
+        ) or match.get("result", {}).get("events", [])
+        # The postgame timeline preserves the same tactical privacy as the live feed.
+        events = [dict(event) for event in events]
+        for event in events:
+            if event.get("team_id") != str(club["_id"]) and (
+                event["type"].endswith("_change") or event["type"] == "command_rejected"
+            ):
+                for key in ("value", "previous", "command", "payload", "metadata"):
+                    event.pop(key, None)
         return public(
             {
                 "match": {
@@ -340,10 +351,7 @@ class PlayerStatisticsService:
                 else "Amistoso"
                 if "division_id" not in match
                 else "Campeonato",
-                "events": self.repo.many(
-                    "match_events", {"match_id": match["_id"]}, limit=None, sort=[("sequence", 1)]
-                )
-                or match.get("result", {}).get("events", []),
+                "events": events,
                 **{
                     key: projection.get(
                         key,

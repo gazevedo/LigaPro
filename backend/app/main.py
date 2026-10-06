@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 
 from app.config.settings import get_settings
-from app.controllers import auth, game, health, settings
+from app.controllers import auth, game, health, live, settings
 from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
@@ -46,9 +46,15 @@ async def lifespan(app: FastAPI):
         bootstrap_player_attributes(repository)
         bootstrap_economy(repository)
 
+        from app.services.live_match import MatchRoomManager
+
+        app.state.match_rooms = MatchRoomManager(repository)
+        await app.state.match_rooms.recover()
+
         async def maintenance():
             while True:
                 try:
+                    await app.state.match_rooms.start_due()
                     await asyncio.to_thread(process_due, repository)
                 except Exception as exc:
                     logger.error("Game maintenance failed (%s)", type(exc).__name__)
@@ -59,6 +65,7 @@ async def lifespan(app: FastAPI):
         try:
             yield
         finally:
+            await app.state.match_rooms.close()
             task.cancel()
             try:
                 await task
@@ -96,6 +103,7 @@ def create_app() -> FastAPI:
         logger.error("Unhandled application error (%s)", type(exc).__name__)
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
+    app.include_router(live.router)
     app.include_router(game.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(health.router, prefix="/api")

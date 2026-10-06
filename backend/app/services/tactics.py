@@ -119,6 +119,6 @@ class TacticsService:
             )
             if not updated:
                 raise HTTPException(409, "A partida já começou.")
-            return public(updated["commands"])
+            return public([c for c in updated["commands"] if c["team_id"] == str(club["_id"])])
 
         return self.repo.transaction(operation)

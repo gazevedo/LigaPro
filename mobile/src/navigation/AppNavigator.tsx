@@ -1,3 +1,4 @@
+import { MatchLiveScreen } from '../screens/MatchLiveScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { StatisticsScreen } from '../screens/StatisticsScreen';
 import { MatchReportScreen } from '../screens/MatchReportScreen';
@@ -47,7 +48,8 @@ export function AppNavigator() {
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
         <Stack.Screen name="History" component={HistoryScreen} options={{ title: 'Histórico' }} />
       <Stack.Screen name="Statistics" component={StatisticsScreen} options={{ title: 'Estatísticas' }} />
-        <Stack.Screen name="MatchReport" component={MatchReportScreen} options={{ title: 'Relatório da partida' }} />
+        <Stack.Screen name="MatchLive" component={MatchLiveScreen} options={{ title: 'Partida ao vivo' }} />
+      <Stack.Screen name="MatchReport" component={MatchReportScreen} options={{ title: 'Relatório da partida' }} />
         <Stack.Screen name="Tactics" component={TacticsScreen} options={{ title: 'Táticas' }} />
         <Stack.Screen name="Squad" component={SquadScreen} options={{ title: 'Plantel' }} />
         <Stack.Screen name="Stadium" component={StadiumScreen} options={{ title: 'Estádio' }} />

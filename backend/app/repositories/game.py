@@ -151,6 +151,15 @@ class GameRepository:
         )
 
     def initialize(self):
+        self.database.match_commands.create_index(
+            [("match_id", 1), ("sequence_number", 1)], unique=True
+        )
+        self.database.match_participants.create_index(
+            [("match_id", 1), ("user_id", 1)], unique=True
+        )
+        self.database.match_live_snapshots.create_index(
+            [("match_id", 1), ("minute", 1)], unique=True
+        )
         self.database.club_loans.create_index(
             [("club_id", 1), ("status", 1), ("next_installment_at", 1)]
         )

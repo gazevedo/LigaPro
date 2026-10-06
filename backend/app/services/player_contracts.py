@@ -416,6 +416,10 @@ class ContractService:
     @classmethod
     def expire(cls, repo, contract, now):
         player = repo.find("players", {"_id": contract["player_id"]})
+        from app.services.live_match import busy_clubs
+
+        if player and player.get("current_club_id") in busy_clubs(repo):
+            return
         cls.settle_salary(repo, contract, contract["expires_at"])
         repo.update(
             "player_contracts",

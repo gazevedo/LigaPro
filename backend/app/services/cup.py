@@ -160,7 +160,7 @@ class CupService:
             {"$set": {"phase": phase}},
         )
 
-    def play(self, identity, now=None):
+    def play(self, identity, now=None, result_override=None):
         from app.services.competition import CompetitionService
         from app.services.player_contracts import ContractService
 
@@ -178,12 +178,19 @@ class CupService:
 
         def operation(repo):
             CompetitionService.lock(repo)
-            match = repo.find("competition_matches", {"_id": identity, "status": "scheduled"})
+            match = repo.find(
+                "competition_matches",
+                {"_id": identity, "status": "live" if result_override is not None else "scheduled"},
+            )
             if not match or match["date"] > now:
                 return
             for club_id in sorted([match["home_club_id"], match["away_club_id"]]):
                 repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
-            for club_id in (match["home_club_id"], match["away_club_id"]):
+            for club_id in (
+                ()
+                if result_override is not None
+                else (match["home_club_id"], match["away_club_id"])
+            ):
                 PhysicalConditionService().prepare(repo, club_id, match["date"])
                 from app.services.bot_manager import BotManagerService
 
@@ -199,7 +206,9 @@ class CupService:
                 CompetitionService.match_team(repo, match[f"{side}_club_id"])
                 for side in ("home", "away")
             ]
-            if home and away:
+            if result_override is not None:
+                result = result_override
+            elif home and away:
                 result = MatchEngine().simulate_knockout(home, away, match["seed"])
             else:
                 winner = (
@@ -267,7 +276,8 @@ class CupService:
                     },
                 )
             if not repo.find(
-                "competition_matches", {"round_id": match["round_id"], "status": "scheduled"}
+                "competition_matches",
+                {"round_id": match["round_id"], "status": {"$in": ["scheduled", "live"]}},
             ):
                 round_doc = repo.find("competition_rounds", {"_id": match["round_id"]})
                 winners = list(round_doc["byes"]) + [

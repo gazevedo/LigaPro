@@ -60,7 +60,9 @@ class MatchCommandTests(unittest.TestCase):
         )
         event = next(e for e in result["events"] if e["type"] == "marking_change")
         self.assertEqual(event["minute"], 50)
-        self.assertEqual(result["events"][-1]["type"], "command_rejected")
+        self.assertEqual(
+            [e for e in result["events"] if e["type"] == "command_rejected"][-1]["minute"], 90
+        )
         self.assertEqual(result["final_lineups"][0]["marking"], "heavy")
 
     def test_substitution_uses_actual_bench_energy_and_no_reentry(self):

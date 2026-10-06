@@ -1,3 +1,4 @@
+import { UpcomingMatches } from '../components/UpcomingMatches';
 import { CupSummary } from '../components/CupSummary';
 import { competitionService } from '../services/competitionService';
 import { domainStore } from '../stores/domainStore';
@@ -32,6 +33,7 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
       </Text>)}
       <Button title="Atualizar classificação" onPress={() => void loadCompetition()} />
     </>}
+    {own === club.id && <UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} />}
     {own === club.id && <CupSummary report={id => navigation.navigate('MatchReport', { id })} />}
     {own === club.id && <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />}
   </>}<Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></GamePage>;

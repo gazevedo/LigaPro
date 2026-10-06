@@ -137,7 +137,7 @@ class FriendlyService:
 
         return self.repo.transaction(operation)
 
-    def play(self, identity, now):
+    def play(self, identity, now, result_override=None):
         def operation(repo):
             from app.services.bot_manager import BotManagerService
             from app.services.competition import CompetitionService
@@ -149,11 +149,20 @@ class FriendlyService:
 
             CompetitionService.lock(repo)
             match = repo.find(
-                "friendly_matches", {"_id": identity, "status": "scheduled", "date": {"$lte": now}}
+                "friendly_matches",
+                {
+                    "_id": identity,
+                    "status": "live" if result_override is not None else "scheduled",
+                    "date": {"$lte": now},
+                },
             )
             if not match:
                 return
-            for club_id in [match["home_club_id"], match["away_club_id"]]:
+            for club_id in (
+                []
+                if result_override is not None
+                else [match["home_club_id"], match["away_club_id"]]
+            ):
                 PhysicalConditionService().prepare(repo, club_id, match["date"])
                 BotManagerService.prepare(repo, club_id, match["date"])
                 try:
@@ -165,7 +174,9 @@ class FriendlyService:
                 CompetitionService.match_team(repo, match[f"{side}_club_id"])
                 for side in ["home", "away"]
             ]
-            if not home or not away:
+            if result_override is not None:
+                result = result_override
+            elif not home or not away:
                 result = {
                     "walkover": True,
                     "events": [],
@@ -176,11 +187,19 @@ class FriendlyService:
                 }
             else:
                 result = MatchEngine().simulate(home, away, match["seed"])
+            if not result.get("walkover"):
+                from app.services.player_ratings import PlayerRatingService
+
                 rows = match_player_summaries(result)
+                PlayerRatingService.after_match(repo, match, result, rows)
                 PhysicalConditionService().after_match(repo, match, result, rows)
                 InjuryService.after_match(repo, match, result)
                 FanBaseService.after_match(
-                    repo, match, result["score"][home.id], result["score"][away.id], 0.65
+                    repo,
+                    match,
+                    result["score"][str(match["home_club_id"])],
+                    result["score"][str(match["away_club_id"])],
+                    0.65,
                 )
             repo.update(
                 "friendly_matches",

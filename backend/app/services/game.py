@@ -703,6 +703,10 @@ class MarketService:
             or listing["status"] != "active"
         ):
             raise HTTPException(409, "Proposta ou anúncio encerrado.")
+        from app.services.live_match import busy_clubs
+
+        if {club["_id"], offer["buyer_club_id"]} & busy_clubs(repo):
+            raise HTTPException(409, "Aguarde o fim da partida para concluir a transferência.")
         player = repo.document("players", str(listing["player_id"]))
         if player["owner_club_id"] != club["_id"] or player["current_club_id"] != club["_id"]:
             raise HTTPException(409, "Jogador indisponível.")
@@ -853,6 +857,10 @@ class MarketService:
             def return_player(repo, identity=loan["_id"]):
                 current = repo.find("player_loans", {"_id": identity, "status": "active"})
                 if not current:
+                    return
+                from app.services.live_match import busy_clubs
+
+                if {current["owner_club_id"], current["current_club_id"]} & busy_clubs(repo):
                     return
                 for club_id in sorted([current["owner_club_id"], current["current_club_id"]]):
                     repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
