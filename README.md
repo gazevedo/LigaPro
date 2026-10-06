@@ -57,11 +57,11 @@ curl http://localhost:8000/api/health
 | MongoDB | `mongodb://localhost:27017/?directConnection=true` |
 | Aplicativo web | `http://localhost:8081` |
 
-O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às transações. A API usa o hostname interno `mongodb`; clientes no host usam `localhost`. O volume `mongodb_data` persiste os dados.
+O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às transações. Com `MONGODB_CONNECTION_STRING` vazio, a API em Docker usa o hostname interno `mongodb`; clientes no host usam `localhost`. Uma URI preenchida no `.env` substitui esse padrão. O volume `mongodb_data` persiste os dados.
 
 ### Backend local para desenvolvimento
 
-Inicie apenas o MongoDB em Docker e execute a API no ambiente virtual:
+Em `backend/.env`, configure `MONGODB_CONNECTION_STRING=mongodb://localhost:27017/?directConnection=true` para o backend executado no host. Inicie apenas o MongoDB em Docker e execute a API no ambiente virtual:
 
 ```bash
 docker compose --env-file backend/.env up -d mongodb mongodb-init
@@ -73,6 +73,32 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 O backend lê `.env` do diretório de execução, portanto execute Uvicorn em `backend/`. Não use a API do Compose e Uvicorn simultaneamente na porta 8000. A versão atual requer **um único processo de API**, inclusive para partidas ao vivo.
+
+### MongoDB Atlas ou servidor externo com credenciais
+
+Edite **`backend/.env`**, nunca `.env.example`, com sua URI e nome de banco:
+
+```dotenv
+MONGODB_CONNECTION_STRING=mongodb+srv://SEU_USUARIO:SUA_SENHA_CODIFICADA@SEU_CLUSTER.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DATABASE_NAME=ligapro
+```
+
+No Atlas, crie um usuário de banco com acesso `readWrite` ao banco `ligapro` em **Database Access**, autorize o IP de saída do backend em **Network Access** e copie a URI em **Connect → Drivers**. Senha e usuário com caracteres especiais devem ser codificados para URL. Para outro servidor, use a URI autenticada fornecida por ele e um replica set com transações. Não inclua credenciais no mobile, no Git nem na conversa.
+
+Para executar a API em Docker contra esse banco, sem iniciar o MongoDB local:
+
+```bash
+docker compose --env-file backend/.env up -d --build --no-deps api
+curl http://localhost:8000/api/health
+```
+
+Depois de alterar credenciais/URI, recrie a API para aplicar a configuração:
+
+```bash
+docker compose --env-file backend/.env up -d --no-deps --force-recreate api
+```
+
+Com Uvicorn local, basta reiniciar o processo em `backend/`. Mantenha a `JWT_SECRET_KEY` privada já configurada: ela protege a sessão do jogo e é independente da senha do MongoDB. O arquivo `.env` permanece ignorado pelo Git. A autenticação do MongoDB local não é habilitada por preencher uma senha na URI; o serviço de desenvolvimento continua sem usuário/senha.
 
 ### Aplicativo web, Android e iOS
 
@@ -122,7 +148,7 @@ docker compose --env-file backend/.env down
 
 | Variável | Configuração |
 | --- | --- |
-| `MONGODB_CONNECTION_STRING` | Obrigatória. Conexão ao MongoDB; o Compose fornece a URL interna. |
+| `MONGODB_CONNECTION_STRING` | URI privada do banco. Obrigatória para Uvicorn; no Compose, vazia usa o MongoDB local. Atlas/servidor externo substitui o padrão. |
 | `MONGODB_DATABASE_NAME` | Obrigatória; exemplo `ligapro`. |
 | `JWT_SECRET_KEY` | Obrigatória, privada e com pelo menos 32 caracteres. |
 | `CORS_ORIGINS` | Array JSON; exemplo `["http://localhost:8081"]`. Sem configuração, nenhuma origem web é permitida. |

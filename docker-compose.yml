@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017/?directConnection=true
+      MONGODB_CONNECTION_STRING: ${MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/?directConnection=true}
       MONGODB_DATABASE_NAME: ${MONGODB_DATABASE_NAME:-ligapro}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:8081"]}'
       ENVIRONMENT: production
