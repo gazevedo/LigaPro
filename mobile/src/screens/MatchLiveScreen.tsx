@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Choices, GamePage } from '../components/GameUI';
+import { ActionButton as Button, Choices, GamePage } from '../components/GameUI';
 import { LiveEvent, LiveMessage, LiveState, liveMatchService } from '../services/liveMatchService';
 export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'MatchLive'>) {
   const [state, setState] = useState<LiveState | null>(null), [error, setError] = useState(''), [connected, setConnected] = useState(false), [clock, setClock] = useState(0), [overlay, setOverlay] = useState('');

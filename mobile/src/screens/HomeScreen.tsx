@@ -1,11 +1,12 @@
-import { Button, StyleSheet, View } from 'react-native';
+import { ActionButton as Button } from '../components/GameUI';
+import { StyleSheet, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export function HomeScreen({ navigation }: Props) {
   return <View style={styles.container}>
-    <Button title="Novo Jogo" disabled />
-    <Button title="Carregar Jogo" disabled />
+    <Button title="Novo Jogo" disabled onPress={() => undefined} />
+    <Button title="Carregar Jogo" disabled onPress={() => undefined} />
     <Button title="Perfil" onPress={() => navigation.navigate('Profile')} />
     <Button title="Configurações" onPress={() => navigation.navigate('Settings')} />
   </View>;

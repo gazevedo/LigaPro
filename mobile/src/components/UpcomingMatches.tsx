@@ -1,5 +1,6 @@
+import { ActionButton as Button } from './GameUI';
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { liveMatchService } from '../services/liveMatchService';
 export function UpcomingMatches({ open }: { open: (id: string) => void }) {
   const [matches, setMatches] = useState<{ id: string; round?: number; date: string; status: string }[]>([]);

@@ -1,15 +1,16 @@
+import { ClubBadge } from '../components/ClubBadge';
 import { UpcomingMatches } from '../components/UpcomingMatches';
 import { CupSummary } from '../components/CupSummary';
 import { competitionService } from '../services/competitionService';
 import { domainStore, resetDomainStores } from '../stores/domainStore';
 import { useEffect, useState } from 'react';
-import { Button, Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Club } from '../types/game';
 import { clubService } from '../services/clubService';
 import { useClubStore } from '../stores/clubStore';
-import { Field, GamePage, useAction } from '../components/GameUI';
+import { ActionButton as Button, Field, GamePage, NotificationBubble, useAction } from '../components/GameUI';
 const useCompetitionStore = domainStore(competitionService.get);
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const [club, setClub] = useState<Club | null>(null), [id, setId] = useState('');
@@ -21,11 +22,11 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
   useEffect(() => { if (own === route.params.id) void loadCompetition(); }, [own, route.params.id, loadCompetition]);
   useEffect(() => { void action.run(async () => setClub(await clubService.get(route.params.id))); }, [route.params.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <GamePage loading={action.busy} error={action.error}>{club?.id === route.params.id && <>
-    <Text style={{ fontSize: 24, backgroundColor: club.badge?.color }}>{club.badge?.symbol ?? '🛡'} {club.name}</Text><Text>Escudo: {club.badge_id} · País: {club.country?.name ?? club.country_id}</Text>
+    <View style={{ flexDirection: 'row', gap: 20, alignItems: 'center' }}><ClubBadge badge={club.badge} name={club.name} /><Text style={{ fontSize: 28, fontWeight: '800', flex: 1 }}>{club.name}</Text></View><Text>Escudo: {club.badge_id} · País: {club.country?.name ?? club.country_id}</Text>
     <Text>Criado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text><Text>Ranking: {club.ranking_position ?? 0} · Pontos: {club.ranking_points ?? club.ranking}</Text><Text>Reputação: {club.reputation ?? 10}/100</Text><Text>Torcida: {club.supporters ?? 1000} · Satisfação: {club.fan_satisfaction ?? 50}/100</Text>
     <Text>Campeonatos: {club.competition_positions.length ? JSON.stringify(club.competition_positions) : 'Nenhum campeonato ativo'}</Text>
     <Text>Troféus: {club.trophies.length ? JSON.stringify(club.trophies) : 'Nenhum troféu'}</Text>
-    {own === club.id && competition.error && <Text accessibilityRole="alert">{competition.error}</Text>}
+    {own === club.id && competition.error && <NotificationBubble message={competition.error} />}
     {own === club.id && competition.data && <>
       <Text>Temporada {competition.data.season.number} · Série {competition.data.division.name}</Text>
       <Text>Classificação · P = pontos, J = jogos, SG = saldo de gols</Text>

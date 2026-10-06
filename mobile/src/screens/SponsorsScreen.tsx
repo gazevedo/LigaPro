@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Sponsors } from '../types/game';
 import { financeService } from '../services/financeService';
-import { GamePage, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, GamePage, money, useAction } from '../components/GameUI';
 export function SponsorsScreen() {
   const [data, setData] = useState<Sponsors | null>(null), action = useAction();
   async function load() { setData(await financeService.sponsors()); }

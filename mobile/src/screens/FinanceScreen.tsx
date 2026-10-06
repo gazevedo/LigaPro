@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useFinanceStore } from '../stores/financeStore';
-import { Choices, GamePage, money } from '../components/GameUI';
+import { ActionButton as Button, Choices, GamePage, money } from '../components/GameUI';
 import { BankScreen } from './BankScreen';
 import { TicketingScreen } from './TicketingScreen';
 import { SponsorsScreen } from './SponsorsScreen';

@@ -1,4 +1,5 @@
-import { ActivityIndicator, Button, StyleSheet, Text, View } from 'react-native';
+import { ActionButton as Button, NotificationBubble } from '../components/GameUI';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
 import { useAppStore } from '../stores/appStore';
 export function SplashScreen() {
@@ -10,7 +11,7 @@ export function SplashScreen() {
   return <View style={styles.container}>
     <Text style={styles.title}>LigaPro</Text>
     {loading && <ActivityIndicator accessibilityLabel="Conectando à API" />}
-    {error && <><Text accessibilityRole="alert">{error}</Text>
+    {error && <><NotificationBubble message={error} />
       <Button title="Tentar novamente" onPress={() => { void retry(); }} /></>}
   </View>;
 }

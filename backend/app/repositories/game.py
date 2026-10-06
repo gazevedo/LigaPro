@@ -1,7 +1,8 @@
 from bson import ObjectId
 from fastapi import HTTPException
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, UpdateOne
 
+from app.models.catalog import BADGES, COUNTRIES
 from app.models.game import DEFAULT_RULES, FACILITIES, utcnow
 
 
@@ -240,14 +241,20 @@ class GameRepository:
         self.database.transfer_listings.create_index(
             "player_id", unique=True, partialFilterExpression={"status": "active"}
         )
-        for code, name in [("BR", "Brasil"), ("PT", "Portugal"), ("AR", "Argentina")]:
-            self.database.countries.update_one(
-                {"_id": code}, {"$setOnInsert": {"name": name}}, upsert=True
-            )
-        for code, color in [("blue", "#2563eb"), ("red", "#dc2626"), ("green", "#16a34a")]:
-            self.database.club_badges.update_one(
-                {"_id": code},
-                {"$setOnInsert": {"name": code, "color": color, "symbol": "🛡"}},
-                upsert=True,
-            )
+        self.database.countries.bulk_write(
+            [
+                UpdateOne({"_id": code}, {"$set": {"name": name}}, upsert=True)
+                for code, name in COUNTRIES
+            ]
+        )
+        self.database.club_badges.bulk_write(
+            [
+                UpdateOne(
+                    {"_id": badge["id"]},
+                    {"$set": {key: value for key, value in badge.items() if key != "id"}},
+                    upsert=True,
+                )
+                for badge in BADGES
+            ]
+        )
         return FACILITIES

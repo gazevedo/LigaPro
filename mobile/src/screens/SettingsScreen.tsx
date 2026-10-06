@@ -1,5 +1,6 @@
+import { ActionButton as Button, NotificationBubble } from '../components/GameUI';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { settingsService } from '../services/settingsService';
 import { AppSetting } from '../types/api';
 export function SettingsScreen() {
@@ -29,7 +30,7 @@ export function SettingsScreen() {
   }
   return <View style={styles.container}>
     {loading ? <ActivityIndicator accessibilityLabel="Carregando configurações" /> : error ?
-      <><Text accessibilityRole="alert">{error}</Text>
+      <><NotificationBubble message={error} />
         <Button title="Tentar novamente" onPress={() => { void load(); }} /></> :
       <FlatList data={settings} keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text>Nenhuma configuração cadastrada.</Text>}

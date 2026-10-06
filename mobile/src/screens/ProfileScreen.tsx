@@ -1,4 +1,5 @@
-import { Button, StyleSheet, Text, View } from 'react-native';
+import { ActionButton as Button } from '../components/GameUI';
+import { StyleSheet, Text, View } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
 export function ProfileScreen() {
   const { user, loading, logout } = useAuthStore();

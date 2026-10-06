@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Squad } from '../types/game';
 import { useSquadStore } from '../stores/squadStore';
 import { squadService } from '../services/squadService';
-import { Choices, GamePage, useAction } from '../components/GameUI';
+import { ActionButton as Button, Choices, GamePage, NotificationBubble, useAction } from '../components/GameUI';
 type Props = NativeStackScreenProps<RootStackParamList, 'Squad'>;
 export function SquadScreen({ navigation }: Props) {
   const { data, loading, error, load } = useSquadStore();
@@ -20,7 +20,7 @@ function SquadEditor({ squad, navigation }: { squad: Squad; navigation: Props['n
   const [formation, setFormation] = useState(squad.lineup.formation);
   const [starters, setStarters] = useState(squad.lineup.starters.filter(id => squad.players.some(p => p.id === id && !['injured', 'suspended', 'retired'].includes(p.status ?? ''))));
   return <View style={{ gap: 14 }}>
-    {action.error && <Text accessibilityRole="alert">{action.error}</Text>}
+    {action.error && <NotificationBubble message={action.error} />}
     <Choices values={Object.keys(squad.formations)} value={formation} onChange={setFormation} />
     <Text>Entrosamento da equipe: {squad.team_chemistry ?? 40}/100</Text>
     <Text>Titulares: {starters.length}/11 · selecione um GK (GOL) e as posições da formação</Text>

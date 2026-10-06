@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
-import { Choices, GamePage, useAction } from '../components/GameUI';
+import { Text, View } from 'react-native';
+import { ActionButton as Button, Choices, GamePage, useAction } from '../components/GameUI';
 import { developmentService } from '../services/developmentService';
 import { PlayerSkill } from '../types/game';
 import { domainStore } from '../stores/domainStore';

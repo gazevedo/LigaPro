@@ -23,7 +23,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
 import { SplashScreen } from '../screens/SplashScreen';
-import { Button, Text, View } from 'react-native';
+import { ActionButton, GamePage, palette } from '../components/GameUI';
+import { NotificationHost } from '../components/NotificationHost';
 import { useClubStore } from '../stores/clubStore';
 import { CreateClubScreen } from '../screens/CreateClubScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -43,7 +44,7 @@ export function AppNavigator() {
   }, [initialize]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <SplashScreen /> : <NavigationContainer>
-      {auth.authenticated ? (!game.data ? <View style={{ padding: 24 }}><Text>{game.error || 'Carregando clube…'}</Text><Button title="Tentar novamente" onPress={() => void game.load()} /><Button title="Sair" onPress={() => void auth.logout()} /></View> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator>
+      {auth.authenticated ? (!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: palette.background } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'LigaPro' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
         <Stack.Screen name="History" component={HistoryScreen} options={{ title: 'Histórico' }} />
@@ -68,5 +69,6 @@ export function AppNavigator() {
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Perfil' }} />
       </Stack.Navigator>) : <AuthNavigator />}
     </NavigationContainer>}
+    <NotificationHost />
   </SafeAreaProvider>;
 }

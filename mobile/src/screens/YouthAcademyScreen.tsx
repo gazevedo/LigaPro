@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { Button, Text, View } from 'react-native';
-import { GamePage, useAction } from '../components/GameUI';
+import { Text, View } from 'react-native';
+import { ActionButton as Button, GamePage, useAction } from '../components/GameUI';
 import { developmentService } from '../services/developmentService';
 import { domainStore } from '../stores/domainStore';
 const useYouthStore = domainStore(developmentService.youth);

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Player } from '../types/game';
 import { marketService } from '../services/marketService';
 import { useMarketStore } from '../stores/marketStore';
-import { Choices, Field, GamePage, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, Choices, Field, GamePage, money, useAction } from '../components/GameUI';
 export function MarketScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Market'>) {
   const [tab, setTab] = useState('Buscar'), [players, setPlayers] = useState<Player[]>([]), [filters, setFilters] = useState<Record<string, string>>({});
   const store = useMarketStore(), action = useAction();

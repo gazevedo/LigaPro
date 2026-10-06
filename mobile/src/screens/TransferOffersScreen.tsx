@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useMarketStore } from '../stores/marketStore';
 import { marketService } from '../services/marketService';
-import { Field, GamePage, cents, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, Field, GamePage, cents, money, useAction } from '../components/GameUI';
 export function TransferOffersScreen() {
   const store = useMarketStore(), action = useAction();
   const load = store.load;

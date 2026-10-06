@@ -5,5 +5,7 @@ export const clubService = {
   resign: (id: string) => apiRequest<{ club: null }>(`/clubs/${encodeURIComponent(id)}/resign`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
   catalog: () => apiRequest<Catalog>('/game/catalog'),
   get: (id: string) => apiRequest<Club>(`/clubs/${encodeURIComponent(id)}`),
-  create: (data: { name: string; country_id: string; badge_id: string }) => apiRequest<Club>('/clubs', { method: 'POST', body: JSON.stringify(data) }),
+  // Creation is an explicit, single POST. An expired session must return to login.
+  create: (data: { name: string; country_id: string; badge_id: string }) =>
+    apiRequest<Club>('/clubs', { method: 'POST', body: JSON.stringify(data) }, true, 30000, false),
 };

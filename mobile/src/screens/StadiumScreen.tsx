@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useStadiumStore } from '../stores/stadiumStore';
 import { stadiumService } from '../services/stadiumService';
-import { GamePage, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, GamePage, money, useAction } from '../components/GameUI';
 export function StadiumScreen() {
   const store = useStadiumStore(), action = useAction();
   const load = store.load;

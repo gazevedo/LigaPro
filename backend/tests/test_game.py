@@ -64,7 +64,12 @@ def listing_offer(client, clubs, kind="sale"):
 def test_create_club_and_initial_data(client):
     headers = account(client, 1)
     assert client.get("/api/game/status", headers=headers).json() == {"club": None}
-    assert len(client.get("/api/game/catalog", headers=headers).json()["countries"]) == 3
+    catalog = client.get("/api/game/catalog", headers=headers).json()
+    assert len(catalog["countries"]) == 249
+    assert {"BR", "PT", "AR", "JP", "US"} <= {item["id"] for item in catalog["countries"]}
+    assert len({item["id"] for item in catalog["countries"]}) == 249
+    assert len(catalog["badges"]) == 8
+    assert {"blue", "red", "green"} <= {item["id"] for item in catalog["badges"]}
     club = create(client, headers)
     assert client.get("/api/game/status", headers=headers).json()["club"]["id"] == club["id"]
     squad = client.get("/api/squad", headers=headers).json()
@@ -443,3 +448,18 @@ def test_ticket_income_counts_all_transactions(client, clubs):
         ]
     )
     assert client.get("/api/finance/tickets", headers=seller).json()["income"] == 20500
+
+
+def test_create_club_with_expanded_catalog(client):
+    headers = account(client, 99)
+    response = client.post(
+        "/api/clubs",
+        headers=headers,
+        json={"name": "Tokyo Stars", "country_id": "JP", "badge_id": "night"},
+    )
+    assert response.status_code == 201, response.text
+    club = response.json()
+    assert club["country"]["name"] == "Japão"
+    assert club["badge"]["pattern"] == "cross"
+    assert club["badge"]["accent"] == "#facc15"
+    assert client.get("/api/game/status", headers=headers).json()["club"]["id"] == club["id"]

@@ -110,7 +110,7 @@ npm ci
 npm run web
 ```
 
-Abra `http://localhost:8081`, cadastre uma conta e crie seu clube. O fluxo é: conexão com API → restauração da sessão → login/cadastro → criação de clube ou dashboard.
+Abra `http://localhost:8081`, cadastre uma conta e crie seu clube. O fluxo é: conexão com API → restauração da sessão → login/cadastro → criação de clube ou dashboard. O cadastro autentica automaticamente; uma conta sem clube segue diretamente para a criação, sem botão voltar.
 
 Para iniciar o servidor Expo, use `npm start`. `npm run android` e `npm run ios` iniciam o Expo para os respectivos ambientes. Para um development build nativo, use `npx expo run:android` ou `npx expo run:ios` com a ferramenta de build instalada. Google Sign-In exige esse build; não está disponível no Expo Go nem no cliente web atual.
 
@@ -188,6 +188,10 @@ Não existe client secret no aplicativo. Cadastro/login por e-mail funcionam ind
 ## Regras e funcionalidades
 
 ### Clube e demissão
+
+A criação oferece uma lista pesquisável de 249 países e territórios ISO 3166-1 e oito escudos com cores, padrões e iniciais do clube. Os identificadores antigos de países e escudos continuam válidos. Reinicie a API após atualizar para carregar o catálogo no MongoDB.
+
+O aplicativo apresenta erros e avisos em notificações em bolhas. As requisições têm limite de 30 segundos. O clube só é criado quando o usuário confirma em **Criar clube**. Se a criação exceder esse limite ou a sessão expirar, o aplicativo encerra a sessão local e volta ao login, sem reenviar a criação. No próximo login, uma conta sem clube volta à tela inicial de criação.
 
 Cada usuário administra um único clube criado por ele. A criação é transacional: gera 25 jogadores, escalação, estádio, tática, finanças e contrato de patrocínio inicial. O plantel tem 3 goleiros, 8 defensores, 8 médios e 6 atacantes; os defensores profissionais se dividem em FB/CB. Consulta de outro clube exige autenticação e omite propriedade e dados financeiros privados.
 

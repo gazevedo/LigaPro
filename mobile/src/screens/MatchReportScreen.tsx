@@ -1,9 +1,9 @@
 import { useClubStore } from '../stores/clubStore';
 import { useEffect } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { GamePage, money } from '../components/GameUI';
+import { ActionButton as Button, GamePage, money } from '../components/GameUI';
 import { domainStore } from '../stores/domainStore';
 import { statisticsService } from '../services/statisticsService';
 const useReportStore = domainStore(statisticsService.report);

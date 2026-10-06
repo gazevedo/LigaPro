@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Button, Text } from 'react-native';
+import { Text } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Player } from '../types/game';
 import { contractService, ContractView } from '../services/contractService';
 import { marketService } from '../services/marketService';
 import { useClubStore } from '../stores/clubStore';
-import { Choices, Field, GamePage, cents, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, Choices, Field, GamePage, cents, money, useAction } from '../components/GameUI';
 export function PlayerDetailsScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'PlayerDetails'>) {
   const [player, setPlayer] = useState<Player | null>(null), [listing, setListing] = useState<Player['listing']>(null), [amount, setAmount] = useState(''), [days, setDays] = useState('30'), [type, setType] = useState('sale');
   const [contract, setContract] = useState<ContractView | null>(null), [salary, setSalary] = useState(''), [seasons, setSeasons] = useState('2'), [months, setMonths] = useState('24'), [loanMonths, setLoanMonths] = useState('3'), [share, setShare] = useState('100');

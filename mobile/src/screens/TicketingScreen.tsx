@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text } from 'react-native';
+import { Text } from 'react-native';
 import { Ticketing } from '../types/game';
 import { financeService } from '../services/financeService';
-import { Field, GamePage, cents, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, Field, GamePage, cents, money, useAction } from '../components/GameUI';
 export function TicketingScreen() {
   const [data, setData] = useState<Ticketing | null>(null), [price, setPrice] = useState('');
   const action = useAction();

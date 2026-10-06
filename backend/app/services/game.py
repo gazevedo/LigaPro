@@ -77,8 +77,8 @@ class ClubService:
     def catalog(self):
         return public(
             {
-                "countries": self.repo.many("countries", {}),
-                "badges": self.repo.many("club_badges", {}),
+                "countries": self.repo.many("countries", {}, limit=None, sort=[("name", 1)]),
+                "badges": self.repo.many("club_badges", {}, limit=None),
             }
         )
 

@@ -47,3 +47,43 @@ test('logout accepts HTTP 204 without a JSON body', async () => {
   fetchMock.mockResolvedValue(response(204, undefined));
   await expect(apiRequest('/auth/logout', { method: 'POST' }, false)).resolves.toBeUndefined();
 });
+
+test('timeout produces a friendly error without retrying a mutation', async () => {
+  jest.useFakeTimers();
+  try {
+    fetchMock.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new Error('signal is aborted without reason')));
+    }));
+    const request = apiRequest('/clubs', { method: 'POST' }, true, 30000, false);
+    const rejected = expect(request).rejects.toThrow('O servidor demorou para responder.');
+    await jest.advanceTimersByTimeAsync(8000);
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(22000);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally { jest.useRealTimers(); }
+});
+
+test('the timeout also covers reading a response body', async () => {
+  jest.useFakeTimers();
+  try {
+    fetchMock.mockImplementation(async (_url, options) => ({ status: 200, ok: true,
+      json: () => new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+    }) as Response);
+    const request = apiRequest('/game/status', {}, true, 1000);
+    const rejected = expect(request).rejects.toThrow('O servidor demorou para responder.');
+    await jest.advanceTimersByTimeAsync(1000); await rejected;
+  } finally { jest.useRealTimers(); }
+});
+
+test('expired session on club creation clears authentication without refreshing or retrying POST', async () => {
+  const refresh = jest.fn(async () => undefined);
+  const clear = jest.fn(async () => tokenService.clear());
+  registerAuthHandlers({ refresh, clear });
+  fetchMock.mockResolvedValue(response(401, { detail: 'Sessão expirada.' }));
+  await expect(apiRequest('/clubs', { method: 'POST' }, true, 30000, false)).rejects.toThrow('Sessão expirada.');
+  expect(refresh).not.toHaveBeenCalled();
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(tokenService.current()).toBeNull();
+});

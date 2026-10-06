@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text } from 'react-native';
+import { Text } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { GamePage, Choices } from '../components/GameUI';
+import { ActionButton as Button, GamePage, Choices } from '../components/GameUI';
 import { domainStore } from '../stores/domainStore';
 import { statisticsService, Ranking } from '../services/statisticsService';
 const useStatisticsStore = domainStore(statisticsService.get);

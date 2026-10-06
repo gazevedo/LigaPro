@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { calendarService, Friendly } from '../services/calendarService';
 import { useClubStore } from '../stores/clubStore';
 import { useCalendarStore } from '../stores/calendarStore';
-import { Choices, Field, GamePage, useAction } from '../components/GameUI';
+import { ActionButton as Button, Choices, Field, GamePage, useAction } from '../components/GameUI';
 export function CalendarScreen() {
   const store = useCalendarStore(), action = useAction();
   const [view, setView] = useState('Lista'), [type, setType] = useState('Todos'), [start, setStart] = useState(''), [end, setEnd] = useState(''), [month, setMonth] = useState(new Date().toISOString().slice(0, 7));

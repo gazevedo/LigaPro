@@ -1,3 +1,4 @@
+import { ApiError, ApiTimeoutError } from '../services/apiClient';
 import { act, render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -33,7 +34,7 @@ beforeEach(() => {
   jest.mocked(clubService.catalog).mockResolvedValue({ countries: [{ id: 'BR', name: 'Brasil' }], badges: [{ id: 'blue', name: 'blue', symbol: '🛡', color: '#2563eb' }] });
   jest.mocked(marketService.mine).mockResolvedValue({ listings: [], loans: [], incoming: [{ id: 'offer1', listing_id: 'listing1', buyer_club_id: 'club2', seller_club_id: club.id, amount: 10000, status: 'pending' }], outgoing: [] });
 });
-test('creates club from catalog and reloads status', async () => {
+test('creates club from catalog and enters with the returned club', async () => {
   jest.mocked(clubService.create).mockResolvedValue(club);
   await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
@@ -52,7 +53,7 @@ test('dashboard opens every module', async () => {
 test('public club hides administration for a different owner', async () => {
   useClubStore.setState({ data: { club: { ...club, id: 'other' } } });
   const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
-  await render(<ClubScreen {...props} />); await screen.findByText('🛡 Clube teste');
+  await render(<ClubScreen {...props} />); await screen.findByText('Clube teste');
   expect(screen.queryByText('Administrar plantel')).toBeNull();
   expect(screen.queryByText('Pedir demissão')).toBeNull();
   expect(screen.queryByText(/Saldo/)).toBeNull();
@@ -122,4 +123,47 @@ test('resignation warns, cancels and clears club caches only after confirmation 
   await waitFor(() => expect(useClubStore.getState().data).toEqual({ club: null }));
   expect(clubService.resign).toHaveBeenLastCalledWith(club.id);
   expect(useStadiumStore.getState().data).toBeNull();
+});
+
+test('country picker searches without accents and selects the result', async () => {
+  jest.mocked(clubService.catalog).mockResolvedValue({ countries: [{ id: 'BR', name: 'Brasil' }, { id: 'JP', name: 'Japão' }], badges: [{ id: 'blue', name: 'Azul', symbol: '🛡', color: '#2563eb' }] });
+  jest.mocked(clubService.create).mockResolvedValue(club);
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.press(screen.getByText('✓ Brasil'));
+  await fireEvent.changeText(screen.getByLabelText('Buscar país'), 'japao');
+  await fireEvent.press(screen.getByText('Japão'));
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube japonês');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  expect(clubService.create).toHaveBeenCalledWith({ name: 'Clube japonês', country_id: 'JP', badge_id: 'blue' });
+  expect(screen.queryByText('Voltar')).toBeNull();
+});
+
+test.each([new ApiTimeoutError(), new ApiError(401, 'Sessão expirada')])('failed creation returns to login without checking or creating again (%s)', async error => {
+  useAuthStore.setState({ authenticated: true });
+  jest.mocked(clubService.create).mockRejectedValueOnce(error);
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await waitFor(() => expect(useAuthStore.getState().authenticated).toBe(false));
+  expect(clubService.create).toHaveBeenCalledTimes(1);
+  expect(clubService.status).not.toHaveBeenCalled();
+  expect(useClubStore.getState().data?.club).toBeFalsy();
+  expect(screen.queryByText('Verificar criação')).toBeNull();
+});
+
+test('opening the initial form never creates a club', async () => {
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  expect(clubService.create).not.toHaveBeenCalled();
+});
+
+test('a successful response after session expiry does not enter the game', async () => {
+  useAuthStore.setState({ authenticated: true });
+  let finish!: (value: typeof club) => void;
+  jest.mocked(clubService.create).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await act(async () => { await useAuthStore.getState().clearSession(); finish(club); });
+  expect(useClubStore.getState().data?.club).toBeFalsy();
+  expect(useAuthStore.getState().authenticated).toBe(false);
 });

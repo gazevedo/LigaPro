@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text } from 'react-native';
+import { Text } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { GamePage, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, GamePage, money, useAction } from '../components/GameUI';
 import { History, historyService } from '../services/historyService';
 export function HistoryScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'History'>) {
   const [data, setData] = useState<History | null>(null); const action = useAction();

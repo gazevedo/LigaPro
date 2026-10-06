@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Bank } from '../types/game';
 import { financeService } from '../services/financeService';
-import { Field, GamePage, cents, money, useAction } from '../components/GameUI';
+import { ActionButton as Button, Field, GamePage, cents, money, useAction } from '../components/GameUI';
 const loanNames: Record<string, string> = { short_term: 'Curto prazo', medium_term: 'Médio prazo', long_term: 'Longo prazo' };
 export function BankScreen() {
   const [data, setData] = useState<Bank | null>(null), [amount, setAmount] = useState('');
