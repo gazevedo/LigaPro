@@ -1,7 +1,7 @@
 import { UpcomingMatches } from '../components/UpcomingMatches';
 import { CupSummary } from '../components/CupSummary';
 import { competitionService } from '../services/competitionService';
-import { domainStore } from '../stores/domainStore';
+import { domainStore, resetDomainStores } from '../stores/domainStore';
 import { useEffect, useState } from 'react';
 import { Button, Text } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -13,6 +13,7 @@ import { Field, GamePage, useAction } from '../components/GameUI';
 const useCompetitionStore = domainStore(competitionService.get);
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const [club, setClub] = useState<Club | null>(null), [id, setId] = useState('');
+  const [confirmResign, setConfirmResign] = useState(false);
   const own = useClubStore(state => state.data?.club?.id);
   const action = useAction();
   const competition = useCompetitionStore();
@@ -36,5 +37,15 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
     {own === club.id && <UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} />}
     {own === club.id && <CupSummary report={id => navigation.navigate('MatchReport', { id })} />}
     {own === club.id && <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />}
+    {own === club.id && !confirmResign && <Button title="Pedir demissão" disabled={action.busy} onPress={() => setConfirmResign(true)} />}
+    {own === club.id && confirmResign && <>
+      <Text accessibilityRole="alert">Ao pedir demissão, você perderá definitivamente o clube atual, incluindo todo o dinheiro, jogadores, estádio e progresso. O clube será inativado. Você poderá criar um novo clube, sem transferir dinheiro ou patrimônio do anterior. Esta ação não pode ser desfeita.</Text>
+      <Button title="Cancelar" disabled={action.busy} onPress={() => setConfirmResign(false)} />
+      <Button title="Confirmar demissão e perder o clube" disabled={action.busy} onPress={() => void action.run(async () => {
+        const status = await clubService.resign(club.id);
+        resetDomainStores();
+        useClubStore.setState({ data: status });
+      })} />
+    </>}
   </>}<Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></GamePage>;
 }

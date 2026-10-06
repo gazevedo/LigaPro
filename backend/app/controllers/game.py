@@ -18,6 +18,7 @@ from app.schemas.game import (
     NegotiationInput,
     OfferInput,
     PlayerContractInput,
+    ResignClubInput,
     TacticsInput,
     TicketInput,
     TrainingInput,
@@ -62,6 +63,11 @@ def catalog(repo: Repo):
 @router.post("/clubs", status_code=201)
 def create_club(data: ClubInput, user: User, repo: Repo):
     return ClubService(repo).create(user, data)
+
+
+@router.post("/clubs/{identity}/resign")
+def resign_club(identity: str, data: ResignClubInput, user: User, repo: Repo):
+    return ClubService(repo).resign(user, identity)
 
 
 @router.get("/clubs/{identity}")

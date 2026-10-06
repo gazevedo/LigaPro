@@ -30,6 +30,50 @@ class ClubService:
         club = self.repo.find("clubs", {"owner_user_id": ObjectId(user.id)})
         return {"club": self.response(club) if club else None}
 
+    def resign(self, user, identity):
+        CompetitionService.ensure_lock(self.repo)
+
+        def operation(repo):
+            from app.services.live_match import busy_clubs
+
+            CompetitionService.lock(repo)
+            club = repo.owned(user.id)
+            if str(club["_id"]) != identity:
+                raise HTTPException(403, "Você só pode pedir demissão do seu próprio clube.")
+            if club["_id"] in busy_clubs(repo):
+                raise HTTPException(409, "Aguarde o fim da partida para pedir demissão.")
+            now = utcnow()
+            repo.update(
+                "clubs",
+                {"_id": club["_id"]},
+                {
+                    "$set": {
+                        "active": False,
+                        "owner_user_id": None,
+                        "previous_owner_user_id": ObjectId(user.id),
+                        "inactivated_at": now,
+                    },
+                    "$inc": {"roster_revision": 1},
+                },
+            )
+            repo.update_many(
+                "transfer_listings",
+                {"seller_club_id": club["_id"], "status": "active"},
+                {"$set": {"status": "cancelled"}},
+            )
+            repo.update_many(
+                "transfer_offers",
+                {
+                    "$or": [{"seller_club_id": club["_id"]}, {"buyer_club_id": club["_id"]}],
+                    "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
+                },
+                {"$set": {"status": "cancelled"}},
+            )
+            # Club assets and finances remain archived; a new club receives its own initial data.
+            return {"club": None}
+
+        return self.repo.transaction(operation)
+
     def catalog(self):
         return public(
             {

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
+const resets = new Set<() => void>();
+export function resetDomainStores() { for (const reset of resets) reset(); }
 export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Promise<T>) {
   let generation = 0;
   const store = create<{ data: T | null; loading: boolean; error: string | null; load: (...args: A) => Promise<void>; reset: () => void }>((set) => ({
@@ -14,5 +16,6 @@ export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Prom
     reset: () => { generation++; set({ data: null, loading: false, error: null }); },
   }));
   useAuthStore.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) store.getState().reset(); });
+  resets.add(store.getState().reset);
   return store;
 }

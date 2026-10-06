@@ -22,6 +22,10 @@ class ClubInput(Input):
         return value
 
 
+class ResignClubInput(Input):
+    confirmed: Literal[True]
+
+
 class LineupInput(Input):
     formation: str
     starters: list[str] = Field(min_length=11, max_length=11)

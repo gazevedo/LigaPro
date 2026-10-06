@@ -22,7 +22,7 @@ import { domainStore } from '../stores/domainStore';
 jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn().mockResolvedValue({ competition: null, entry: null, matches: [] }) } }));
 jest.mock('../services/competitionService', () => ({ competitionService: { get: jest.fn().mockResolvedValue(null) } }));
 jest.mock('../services/squadService', () => ({ squadService: { get: jest.fn(), save: jest.fn() } }));
-jest.mock('../services/clubService', () => ({ clubService: { catalog: jest.fn(), status: jest.fn(), create: jest.fn(), get: jest.fn() } }));
+jest.mock('../services/clubService', () => ({ clubService: { catalog: jest.fn(), status: jest.fn(), create: jest.fn(), get: jest.fn(), resign: jest.fn() } }));
 jest.mock('../services/stadiumService', () => ({ stadiumService: { get: jest.fn(), upgrade: jest.fn() } }));
 jest.mock('../services/marketService', () => ({ marketService: { mine: jest.fn(), accept: jest.fn(), cancelOffer: jest.fn() } }));
 const club = { id: 'club1', name: 'Clube teste', country_id: 'BR', badge_id: 'blue', created_at: '2026-01-01T00:00:00Z', ranking: 0, competition_positions: [], trophies: [] };
@@ -54,6 +54,7 @@ test('public club hides administration for a different owner', async () => {
   const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
   await render(<ClubScreen {...props} />); await screen.findByText('🛡 Clube teste');
   expect(screen.queryByText('Administrar plantel')).toBeNull();
+  expect(screen.queryByText('Pedir demissão')).toBeNull();
   expect(screen.queryByText(/Saldo/)).toBeNull();
 });
 test('stadium reports insufficient balance without optimistic upgrade', async () => {
@@ -98,4 +99,27 @@ test('synchronous double tap runs one financial action', async () => {
   await render(<Control />); await fireEvent.press(screen.getByText('Executar'));
   expect(operation).toHaveBeenCalledTimes(1);
   await act(async () => { complete(); });
+});
+
+test('resignation warns, cancels and clears club caches only after confirmation succeeds', async () => {
+  useClubStore.setState({ data: { club } });
+  useStadiumStore.setState({ data: { capacity: 10000 } as never });
+  const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  await render(<ClubScreen {...props} />);
+  await fireEvent.press(await screen.findByText('Pedir demissão'));
+  expect(screen.getByText(/incluindo todo o dinheiro/)).toBeTruthy();
+  expect(clubService.resign).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByText('Cancelar'));
+  expect(screen.queryByText(/incluindo todo o dinheiro/)).toBeNull();
+  await fireEvent.press(screen.getByText('Pedir demissão'));
+  jest.mocked(clubService.resign).mockRejectedValueOnce(new Error('Aguarde o fim da partida.'));
+  await fireEvent.press(screen.getByText('Confirmar demissão e perder o clube'));
+  await screen.findByText('Aguarde o fim da partida.');
+  expect(useClubStore.getState().data?.club?.id).toBe(club.id);
+  expect(useStadiumStore.getState().data).not.toBeNull();
+  jest.mocked(clubService.resign).mockResolvedValue({ club: null });
+  await fireEvent.press(screen.getByText('Confirmar demissão e perder o clube'));
+  await waitFor(() => expect(useClubStore.getState().data).toEqual({ club: null }));
+  expect(clubService.resign).toHaveBeenLastCalledWith(club.id);
+  expect(useStadiumStore.getState().data).toBeNull();
 });

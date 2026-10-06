@@ -480,6 +480,9 @@ class CompetitionService:
 
     @staticmethod
     def match_team(repo, club_id):
+        club = repo.find("clubs", {"_id": club_id}, projection={"active": 1})
+        if club and club.get("active") is False:
+            return None
         lineup = repo.find("lineups", {"_id": club_id})
         documents = repo.many(
             "players",
@@ -849,11 +852,15 @@ class SeasonFinalizationService:
                 for club in repo.many("clubs", {"_id": {"$in": list(destinations)}}, limit=None)
             }
             for division in divisions:
-                slots = [
-                    service.add_slot(repo, upcoming, division, clubs[club_id])
-                    for club_id, tier in destinations.items()
-                    if tier == division["tier"]
-                ]
+                slots = []
+                for club_id, tier in destinations.items():
+                    if tier != division["tier"]:
+                        continue
+                    club = clubs[club_id]
+                    if club.get("active") is False:
+                        club = service.create_bot(repo, tier, len(slots), next_config)
+                        clubs[club["_id"]] = club
+                    slots.append(service.add_slot(repo, upcoming, division, club))
                 service.schedule(repo, upcoming, division, slots)
                 for slot in slots:
                     service.generate_youth(repo, clubs[slot["club_id"]], upcoming, next_config)
