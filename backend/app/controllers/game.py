@@ -16,6 +16,7 @@ from app.schemas.game import (
     MatchCommandInput,
     MoneyInput,
     NegotiationInput,
+    NewsReadInput,
     OfferInput,
     PlayerContractInput,
     ResignClubInput,
@@ -411,6 +412,22 @@ def news(user: User, repo: Repo, scope: Literal["club", "universe"] = "club"):
     from app.services.news import NewsService
 
     return NewsService.feed(repo, repo.owned(user.id)["_id"] if scope == "club" else None)
+
+
+@router.get("/news/inbox")
+def news_inbox(
+    user: User, repo: Repo, offset: int = Query(0, ge=0), limit: int = Query(30, ge=1, le=100)
+):
+    from app.services.news import NewsService
+
+    return NewsService.inbox(repo, user.id, repo.owned(user.id)["_id"], offset, limit)
+
+
+@router.post("/news/read")
+def news_read(data: NewsReadInput, user: User, repo: Repo):
+    from app.services.news import NewsService
+
+    return NewsService.mark_read(repo, user.id, repo.owned(user.id)["_id"], data.news_id)
 
 
 @router.get("/history")

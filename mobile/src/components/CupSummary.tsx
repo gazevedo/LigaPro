@@ -14,6 +14,5 @@ export function CupSummary({ report }: { report?: (id: string) => void }) {
       {match.phase} · {new Date(match.date).toLocaleDateString('pt-BR')}{match.status === 'completed' ? ` · ${match.home_goals} x ${match.away_goals}` : ' · Agendado'}</Text>
       {match.status === 'completed' && <Button title={`Relatório · ${match.phase}`} onPress={() => report(match.id)} />}
     </View>)}
-    <Button title="Atualizar copa" onPress={() => void load()} />
   </>;
 }

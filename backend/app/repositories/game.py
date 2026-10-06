@@ -165,6 +165,7 @@ class GameRepository:
             [("club_id", 1), ("status", 1), ("next_installment_at", 1)]
         )
         self.database.news_items.create_index([("club_id", 1), ("created_at", -1)])
+        self.database.news_reads.create_index([("user_id", 1), ("news_id", 1)], unique=True)
         self.database.match_events.create_index([("match_id", 1), ("sequence", 1)], unique=True)
         self.database.player_development_history.create_index(
             [("season_id", 1), ("player_id", 1)], unique=True

@@ -1,3 +1,5 @@
+import { MailboxButton } from '../components/MailboxButton';
+import { InboxScreen } from '../screens/InboxScreen';
 import { MatchLiveScreen } from '../screens/MatchLiveScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { StatisticsScreen } from '../screens/StatisticsScreen';
@@ -45,7 +47,8 @@ export function AppNavigator() {
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <SplashScreen /> : <NavigationContainer>
       {auth.authenticated ? (!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: palette.background } }}>
-        <Stack.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'LigaPro' }} />
+        <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerRight: () => <MailboxButton focused={navigation.isFocused} open={() => navigation.navigate('Inbox')} /> })} />
+        <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
         <Stack.Screen name="History" component={HistoryScreen} options={{ title: 'Histórico' }} />
       <Stack.Screen name="Statistics" component={StatisticsScreen} options={{ title: 'Estatísticas' }} />

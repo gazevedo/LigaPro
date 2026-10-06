@@ -13,6 +13,7 @@ test('cup shows phase, result and report navigation', async () => {
   jest.mocked(cupService.get).mockResolvedValue({ competition: { id: 'cup', name: 'Copa Nacional', status: 'active' }, entry: { phase: 'Semifinal', status: 'active' }, matches: [{ id: 'match', phase: 'Quartas de final', date: '2026-01-01T00:00:00Z', status: 'completed', home_goals: 2, away_goals: 1 }] });
   const report = jest.fn(); await render(<CupSummary report={report} />);
   await screen.findByText('Copa Nacional · Semifinal · Em disputa');
+  expect(screen.queryByRole('button', { name: 'Atualizar copa' })).toBeNull();
   await fireEvent.press(screen.getByText('Relatório · Quartas de final'));
   expect(report).toHaveBeenCalledWith('match');
 });

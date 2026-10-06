@@ -5,5 +5,6 @@ export interface History {
   records: { id: string; value: number }[];
   players: { id: string; player_id: string; player_name?: string; type: string; goals?: number; matches?: number; stars?: number; titles?: number[]; cup_titles?: string[] }[];
 }
-export interface NewsItem { id: string; type: string; title: string; body: string; created_at: string }
-export const historyService = { get: () => apiRequest<History>('/history'), news: () => apiRequest<NewsItem[]>('/news') };
+export interface NewsItem { id: string; type: string; title: string; body: string; created_at: string; read?: boolean }
+export interface Inbox { items: NewsItem[]; unread_count: number; total: number }
+export const historyService = { get: () => apiRequest<History>('/history'), news: () => apiRequest<NewsItem[]>('/news'), inbox: (offset = 0) => apiRequest<Inbox>(`/news/inbox?offset=${offset}`), markRead: (news_id: string) => apiRequest<{ id: string; read: boolean }>('/news/read', { method: 'POST', body: JSON.stringify({ news_id }) }) };

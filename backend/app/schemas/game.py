@@ -8,6 +8,10 @@ class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class NewsReadInput(Input):
+    news_id: str = Field(min_length=1, max_length=1024)
+
+
 class ClubInput(Input):
     name: str = Field(min_length=3, max_length=60)
     country_id: str = Field(min_length=2, max_length=3)

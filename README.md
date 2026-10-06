@@ -201,6 +201,8 @@ A confirmação inativa o clube, encerra o vínculo com o técnico e cancela an�
 
 ### Liga, copa e calendário
 
+O dashboard mostra a data e a hora da próxima partida. **Assistir** aparece somente quando a API informa que a partida está ao vivo, com atualização automática a cada 30 segundos enquanto o aplicativo está ativo.
+
 - Divisões de 20 clubes, completadas por bots, com turno e returno: 38 rodadas e 380 jogos por divisão.
 - Um clube novo substitui o pior bot da divisão mais alta com vaga e herda sua posição esportiva, sem herdar elenco ou dinheiro. Resultados anteriores e auditoria são preservados. Sem bot disponível, cria-se outra divisão.
 - Temporada padrão: 30 dias reais. Preparação/janela inicial nos dias 0–2, janela intermediária nos dias 15–17; partidas distribuídas fora das janelas. Regras e calendário são congelados por temporada.
@@ -268,7 +270,7 @@ Essas taxas são **totais do contrato, não mensais**. Limite de crédito depend
 
 Bots usam os mesmos jogadores, motor e serviços: administram escalação, táticas, substituições, mercado, contratos, finanças, treino, base e estádio. Decisões/impedimentos ficam em `bot_decisions`; não recebem dinheiro artificial para cobrir compras.
 
-Notícias são derivadas de eventos reais de transferência, lesão, suspensão, título, finanças, estádio, patrocínio, base e aposentadoria, com deduplicação. O feed pode mostrar clube ou universo.
+Notícias são derivadas de eventos reais de transferência, lesão, suspensão, título, finanças, estádio, patrocínio, base e aposentadoria, com deduplicação. O feed pode mostrar clube ou universo. No dashboard, a carta no canto superior direito abre o correio e mostra o total de mensagens não lidas. Abrir uma mensagem salva sua leitura por usuário no MongoDB e reduz o contador; a caixa possui paginação para mensagens antigas.
 
 Estatísticas individuais por clube/temporada/carreira registram partidas, titularidades, minutos reais, gols, cartões, pênaltis, defesas e jogos sem sofrer gols. Assistências têm estrutura preparada, sem atribuição fictícia. Notas de 5–10 derivam das ações e resultado; reservas não utilizados e W.O. não recebem participação inventada.
 
@@ -343,7 +345,7 @@ A tabela utiliza `{id}` como identificador textual. Prefixo `/api`, exceto o Web
 | Crédito | `POST /api/finance/loans/{product}`, `/api/finance/loans/{id}/settle`; produtos: `short_term`, `medium_term`, `long_term`. |
 | Estádio/público | `GET /api/stadium`, `/api/finance/tickets`; `POST /api/stadium/{facility}/upgrade`; `PUT /api/finance/tickets`. |
 | Patrocínio | `GET /api/finance/sponsors`; `POST /api/finance/sponsors/{id}/accept`. |
-| Estatísticas/feed/histórico | `GET /api/statistics`, `/api/players/{id}/statistics`, `/api/news?scope=club`, `/api/news?scope=universe`, `/api/history`. |
+| Estatísticas/feed/histórico | `GET /api/statistics`, `/api/players/{id}/statistics`, `/api/news?scope=club`, `/api/news?scope=universe`, `/api/news/inbox?offset=0&limit=30`, `/api/history`; `POST /api/news/read` recebe `news_id` para marcar a mensagem como lida. |
 | Ao vivo | `GET /api/matches/upcoming`, `/api/matches/{id}/live-state`, `/api/matches/{id}/events?after=0`; `POST /api/matches/{id}/commands/{kind}`, `/api/matches/{id}/pause`, `/api/matches/{id}/resume`, `/api/matches/{id}/speed`; `kind`: `substitution`, `formation`, `tactics`, `combined_change`. |
 | WebSocket | `WS /ws/matches/{id}`. |
 | Settings | `GET /api/settings`, `/api/settings/{key}`; `PUT /api/settings/{key}` com `{"value": ...}`. |

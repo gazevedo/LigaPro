@@ -4,7 +4,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ClubBadge } from '../components/ClubBadge';
 import { DashboardIcon, DashboardIconName } from '../components/DashboardIcon';
 import { UpcomingMatches } from '../components/UpcomingMatches';
-import { NewsFeed } from '../components/NewsFeed';
 import { CupSummary } from '../components/CupSummary';
 import { RootStackParamList } from '../navigation/types';
 import { useClubStore } from '../stores/clubStore';
@@ -59,7 +58,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
       </Pressable>)}
     </View>
     <Card><UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} /><CupSummary /></Card>
-    <Card><NewsFeed /></Card>
   </GamePage>;
 }
 
