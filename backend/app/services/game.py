@@ -9,6 +9,7 @@ from app.config.game import GameConfig, legacy_position
 from app.config.team_performance import MoraleConfig
 from app.models.game import FACILITIES, public, utcnow
 from app.models.player import player_public
+from app.services.bank_loans import PRODUCTS, BankLoanService
 from app.services.chemistry import ChemistryService
 from app.services.club_prestige import ClubRankingService
 from app.services.competition import CompetitionService
@@ -305,6 +306,9 @@ class FinanceService:
         return public(
             {
                 "contracts": self.repo.many("bank_contracts", {"club_id": club["_id"]}),
+                "loans": self.repo.many("club_loans", {"club_id": club["_id"]}),
+                "products": PRODUCTS,
+                **BankLoanService.credit(self.repo, club["_id"]),
                 "rules": {
                     key: value
                     for key, value in self.repo.rules().items()
@@ -316,6 +320,20 @@ class FinanceService:
     def contract(self, user, kind, amount):
         def operation(repo):
             club, rules, now = repo.owned(user.id), repo.rules(), utcnow()
+            repo.update("club_finances", {"_id": club["_id"]}, {"$inc": {"credit_revision": 1}})
+            credit = BankLoanService.credit(repo, club["_id"])
+            if kind == "investment" and credit["debt"]:
+                raise HTTPException(409, "Quite os empréstimos antes de investir.")
+            if kind == "bank_loan" and (
+                amount > credit["credit_limit"]
+                or repo.find(
+                    "bank_contracts",
+                    {"club_id": club["_id"], "type": "investment", "status": "active"},
+                )
+            ):
+                raise HTTPException(
+                    409, "Crédito indisponível enquanto houver investimentos ou dívida em atraso."
+                )
             if kind == "bank_loan":
                 if amount > rules["max_bank_loan"] or repo.find(
                     "bank_contracts", {"club_id": club["_id"], "type": kind, "status": "active"}
@@ -770,6 +788,9 @@ class MarketService:
                     loan["ends_at"],
                     loan["_id"],
                 )
+        from app.services.game_history import HistoryService
+
+        HistoryService.transfer(repo, player, offer, listing["type"], now or utcnow())
         repo.update("players", {"_id": player["_id"]}, {"$set": ownership})
         # A club must retain its own complete roster when borrowed players return.
         permanent = repo.many(

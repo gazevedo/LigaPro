@@ -375,3 +375,40 @@ def friendly_list(user: User, repo: Repo):
             sort=[("date", 1)],
         )
     )
+
+
+@router.post("/finance/loans/{product}", status_code=201)
+def loan_contract(
+    product: Literal["short_term", "medium_term", "long_term"],
+    data: MoneyInput,
+    user: User,
+    repo: Repo,
+):
+    from app.services.bank_loans import BankLoanService
+
+    return repo.transaction(
+        lambda tx: BankLoanService.contract(tx, tx.owned(user.id)["_id"], product, data.amount)
+    )
+
+
+@router.post("/finance/loans/{identity}/settle")
+def loan_settle(identity: str, user: User, repo: Repo):
+    from app.services.bank_loans import BankLoanService
+
+    return repo.transaction(
+        lambda tx: BankLoanService.settle(tx, tx.owned(user.id)["_id"], identity)
+    )
+
+
+@router.get("/news")
+def news(user: User, repo: Repo, scope: Literal["club", "universe"] = "club"):
+    from app.services.news import NewsService
+
+    return NewsService.feed(repo, repo.owned(user.id)["_id"] if scope == "club" else None)
+
+
+@router.get("/history")
+def history(user: User, repo: Repo):
+    from app.services.game_history import HistoryService
+
+    return HistoryService.get(repo, repo.owned(user.id)["_id"])

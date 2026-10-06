@@ -634,6 +634,9 @@ class CompetitionService:
                 identity,
                 match["date"],
             )
+            from app.services.game_history import MatchReportService
+
+            MatchReportService.persist(repo, match, result)
             return public(repo.find("matches", {"_id": identity}))
 
         return self.repo.transaction(operation)
@@ -785,6 +788,9 @@ class SeasonFinalizationService:
                         },
                     )
             ClubRankingService.refresh(repo, season_id, season_id)
+            from app.services.game_history import HistoryService
+
+            HistoryService.season(repo, current, tables, destinations)
             PlayerAgingService().process(repo, season_id, config)
             from app.services.bot_manager import BotManagerService
 

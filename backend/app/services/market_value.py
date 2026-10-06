@@ -105,6 +105,7 @@ class MarketValueService:
             )
         )
         averages = {r["_id"]: sum(r["ratings"][:5]) / len(r["ratings"][:5]) for r in ratings}
+        best = None
         for player in players:
             value = self.calculate(
                 player,
@@ -113,6 +114,12 @@ class MarketValueService:
                 rating=averages.get(player["_id"], 6),
                 now=now,
             )
+            if (
+                collection == "players"
+                and player.get("status") != "retired"
+                and (best is None or value > best[1])
+            ):
+                best = (player, value)
             if value == player.get("market_value") and reason not in {"promotion", "transfer"}:
                 continue
             repo.update(
@@ -137,4 +144,18 @@ class MarketValueService:
                     "reference_id": reference,
                     "created_at": now,
                 },
+            )
+
+        if best:
+            from app.services.game_history import HistoryService
+
+            player, value = best
+            HistoryService.record(
+                repo,
+                "highest_market_value",
+                value,
+                reference or player["_id"],
+                player.get("current_club_id"),
+                player["_id"],
+                now,
             )

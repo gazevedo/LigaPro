@@ -37,6 +37,27 @@ def audit(repo, club_id, kind, payload, reason, now):
 
 class BotFinanceService:
     @staticmethod
+    def manage(repo, club, now):
+        from app.services.bank_loans import BankLoanService
+
+        cash = repo.find("club_finances", {"_id": club["_id"]})["balance"]
+        shortage = ContractService.payroll(repo, club["_id"]) - cash
+        if shortage <= 0 or BankLoanService.credit(repo, club["_id"])["debt"]:
+            return
+        amount = min(shortage, BankLoanService.credit(repo, club["_id"])["credit_limit"])
+        if amount <= 0:
+            return
+        BankLoanService.contract(repo, club["_id"], "short_term", amount, now)
+        audit(
+            repo,
+            club["_id"],
+            "bank_loan",
+            {"amount": amount},
+            "Crédito apenas para cobrir folha imediata.",
+            now,
+        )
+
+    @staticmethod
     def budget(repo, club_id):
         cash = repo.find("club_finances", {"_id": club_id})["balance"]
         payroll = ContractService.payroll(repo, club_id)
@@ -649,6 +670,7 @@ class BotManagerService:
                     return
                 PhysicalConditionService().prepare(repo, identity, now)
                 self.prepare(repo, identity, now)
+                BotFinanceService.manage(repo, club, now)
                 BotContractService.manage(repo, club, now)
                 BotYouthService.manage(repo, club, now)
                 BotTrainingService.manage(repo, club, now)

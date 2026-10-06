@@ -258,8 +258,10 @@ class PlayerStatisticsService:
         club = self.repo.owned(user.id)
         if not ObjectId.is_valid(identity):
             raise HTTPException(404, "Registro não encontrado.")
-        match = self.repo.find("matches", {"_id": ObjectId(identity)}) or self.repo.document(
-            "competition_matches", identity
+        match = (
+            self.repo.find("matches", {"_id": ObjectId(identity)})
+            or self.repo.find("competition_matches", {"_id": ObjectId(identity)})
+            or self.repo.document("friendly_matches", identity)
         )
         involved = club["_id"] in {match["home_club_id"], match["away_club_id"]}
         inherited = (
@@ -300,10 +302,23 @@ class PlayerStatisticsService:
                 projection={"name": 1},
             )
         }
+        projection = self.repo.find("match_stats", {"_id": match["_id"]}) or {}
         return public(
             {
                 "match": {
-                    key: match[key]
+                    key: match.get(
+                        key,
+                        match.get("result", {})
+                        .get("score", {})
+                        .get(
+                            str(
+                                match.get("home_club_id" if key == "home_goals" else "away_club_id")
+                            ),
+                            0,
+                        )
+                        if key in {"home_goals", "away_goals"}
+                        else None,
+                    )
                     for key in (
                         "_id",
                         "date",
@@ -319,6 +334,26 @@ class PlayerStatisticsService:
                 | {
                     key: match.get("result", {}).get(key)
                     for key in ("extra_time", "shootout_score")
+                },
+                "competition": "Copa Nacional"
+                if "competition_id" in match
+                else "Amistoso"
+                if "division_id" not in match
+                else "Campeonato",
+                "events": self.repo.many(
+                    "match_events", {"match_id": match["_id"]}, limit=None, sort=[("sequence", 1)]
+                )
+                or match.get("result", {}).get("events", []),
+                **{
+                    key: projection.get(
+                        key,
+                        match.get("result", {}).get("statistics", {})
+                        if key == "statistics"
+                        else []
+                        if key == "consequences"
+                        else {},
+                    )
+                    for key in ["statistics", "financial", "consequences"]
                 },
                 "home_name": clubs.get(match["home_club_id"], {}).get("name", "Mandante"),
                 "away_name": clubs.get(match["away_club_id"], {}).get("name", "Visitante"),

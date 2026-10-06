@@ -280,6 +280,12 @@ class TrainingService:
         )
         repo.update("lineups", {"_id": club["_id"]}, {"$addToSet": {"reserves": player["_id"]}})
         MarketValueService().recalculate(repo, [professional], "promotion")
+        repo.event(
+            club["_id"],
+            "youth",
+            f"{player['name']} promovido ao profissional",
+            reference=player["_id"],
+        )
         return player_public(repo.find("players", {"_id": player["_id"]}))
 
 
@@ -381,6 +387,32 @@ class PlayerAgingService:
                     repo, [updated], "aging", season_id, collection=collection
                 )
                 if values.get("status") == "retired" and collection == "players":
+                    from app.services.game_history import HistoryService
+                    from app.services.news import NewsService
+
+                    NewsService.publish(
+                        repo,
+                        "retirement",
+                        f"{player['name']} anunciou aposentadoria",
+                        player["current_club_id"],
+                        season_id,
+                        player_id=player["_id"],
+                        now=season.get("ends_at"),
+                    )
+                    HistoryService.save(
+                        repo,
+                        "player_career_history",
+                        f"retirement:{player['_id']}",
+                        {
+                            "player_id": player["_id"],
+                            "club_id": player["current_club_id"],
+                            "type": "retirement",
+                            "player_name": player["name"],
+                            "season_id": season_id,
+                            "stars": player.get("stars", 0),
+                            "created_at": season.get("ends_at", utcnow()),
+                        },
+                    )
                     ContractService.terminate(repo, player["_id"], reason="retired")
                     if player["current_club_id"] is not None:
                         affected_clubs.add(player["current_club_id"])

@@ -105,6 +105,17 @@ class PhysicalConditionService:
                 "condition_updated_at": match["date"],
             }
             if row["red_cards"]:
+                from app.services.news import NewsService
+
+                NewsService.publish(
+                    repo,
+                    "suspension",
+                    f"{player['name']} suspenso",
+                    player["current_club_id"],
+                    match["_id"],
+                    player_id=player["_id"],
+                    now=match["date"],
+                )
                 spacing = GameConfig.from_rules(repo.rules()).SEASON_DURATION_DAYS / 38
                 changes.update(
                     status="suspended",
@@ -122,6 +133,18 @@ class InjuryService:
         for event in result.get("events", []):
             if event["type"] != "injury":
                 continue
+            from app.services.news import NewsService
+
+            NewsService.publish(
+                repo,
+                "injury",
+                "Lesão durante a partida",
+                ObjectId(event["team_id"]),
+                f"{match['_id']}:{event['player_id']}",
+                player_id=ObjectId(event["player_id"]),
+                body=f"{event['injury_type']} · {event['severity']}",
+                now=match["date"],
+            )
             identity = ObjectId(event["player_id"])
             club_id = ObjectId(event["team_id"])
             duration = {

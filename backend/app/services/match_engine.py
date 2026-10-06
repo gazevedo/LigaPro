@@ -607,6 +607,7 @@ class MatchEngine:
                 "attacks": 0,
                 "chances": 0,
                 "shots": 0,
+                "shots_on_target": 0,
                 "goals": 0,
                 "fouls": 0,
                 "yellow_cards": 0,
@@ -799,6 +800,8 @@ class MatchEngine:
                     stats[event_team][field] += 1
                 if kind in {"goal", "shot_saved", "shot_off_target"}:
                     stats[event_team]["shots"] += 1
+                if kind in {"goal", "shot_saved"}:
+                    stats[event_team]["shots_on_target"] += 1
                 if kind == "attack":
                     stats[attacker]["lanes"][lane] += 1
                 events.append(

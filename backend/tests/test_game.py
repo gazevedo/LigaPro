@@ -175,6 +175,18 @@ def test_bank_tickets_sponsors_calendar(client, clubs):
     assert (
         client.post(f"/api/finance/contracts/{identity}/settle", headers=seller).status_code == 409
     )
+    assert (
+        client.post(
+            "/api/finance/bank/bank_loan", headers=seller, json={"amount": 100000}
+        ).status_code
+        == 409
+    )
+    app.state.database.bank_contracts.update_one(
+        {"_id": ObjectId(identity)}, {"$set": {"ends_at": utcnow() - timedelta(seconds=1)}}
+    )
+    assert (
+        client.post(f"/api/finance/contracts/{identity}/settle", headers=seller).status_code == 200
+    )
     loan = client.post("/api/finance/bank/bank_loan", headers=seller, json={"amount": 100000})
     assert loan.status_code == 201
     assert (

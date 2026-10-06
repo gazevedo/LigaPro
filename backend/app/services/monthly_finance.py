@@ -83,6 +83,9 @@ class MonthlyFinanceService:
                         end,
                         effective_at=end - timedelta(microseconds=1),
                     )
+                    from app.services.bank_loans import BankLoanService
+
+                    BankLoanService.monthly(tx, current["_id"], end, period)
                     tx.insert(
                         "club_finance_months",
                         {

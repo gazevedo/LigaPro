@@ -329,6 +329,17 @@ class CupService:
                         repo, winner, "cup_title", competition["_id"], satisfaction=10, growth=0.08
                     )
                     ClubReputationService.cup_title(repo, winner)
+                    from app.services.news import NewsService
+
+                    NewsService.publish(
+                        repo,
+                        "title",
+                        "Campeão da Copa Nacional",
+                        winner,
+                        competition["_id"],
+                        competition_id=competition["_id"],
+                        now=match["date"],
+                    )
             ClubRankingService.refresh(repo, match["season_id"], identity)
             MarketValueService().recalculate(
                 repo,
@@ -341,6 +352,9 @@ class CupService:
                 identity,
                 match["date"],
             )
+            from app.services.game_history import MatchReportService
+
+            MatchReportService.persist(repo, match, result)
             return public(repo.find("competition_matches", {"_id": identity}))
 
         return self.repo.transaction(operation)

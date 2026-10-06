@@ -130,6 +130,11 @@ class GameRepository:
         self.event(club_id, "financial", category, now, reference)
 
     def event(self, club_id, event_type, title, date=None, reference=None):
+        from app.services.news import NewsService
+
+        # Future calendar reminders are not completed game events.
+        if date is None or date <= utcnow():
+            NewsService.publish(self, event_type, title, club_id, reference, now=date)
         self.insert(
             "calendar_events",
             {
@@ -146,6 +151,11 @@ class GameRepository:
         )
 
     def initialize(self):
+        self.database.club_loans.create_index(
+            [("club_id", 1), ("status", 1), ("next_installment_at", 1)]
+        )
+        self.database.news_items.create_index([("club_id", 1), ("created_at", -1)])
+        self.database.match_events.create_index([("match_id", 1), ("sequence", 1)], unique=True)
         self.database.player_development_history.create_index(
             [("season_id", 1), ("player_id", 1)], unique=True
         )

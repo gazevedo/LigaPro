@@ -187,6 +187,9 @@ class FriendlyService:
                 {"_id": identity},
                 {"$set": {"status": "completed", "result": result, "completed_at": now}},
             )
+            from app.services.game_history import MatchReportService
+
+            MatchReportService.persist(repo, match, result)
             return public(repo.find("friendly_matches", {"_id": identity}))
 
         return self.repo.transaction(operation)
