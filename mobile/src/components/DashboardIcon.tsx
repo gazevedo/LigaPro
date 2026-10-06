@@ -1,32 +1,25 @@
 import { Image, View } from 'react-native';
 
-const positions = {
-  history: 0,
-  club: 1,
-  statistics: 2,
-  tactics: 3,
-  squad: 4,
-  stadium: 5,
-  finance: 6,
-  calendar: 7,
-  market: 8,
-  training: 9,
-  youth: 10,
-  profile: 11,
-  settings: 12,
+const icons = {
+  history: require('../../assets/dashboard/historico.png'),
+  club: require('../../assets/dashboard/clube.png'),
+  statistics: require('../../assets/dashboard/estatisticas.png'),
+  tactics: require('../../assets/dashboard/tatica.png'),
+  squad: require('../../assets/dashboard/plantel.png'),
+  stadium: require('../../assets/dashboard/estadio.png'),
+  finance: require('../../assets/dashboard/financeiro.png'),
+  calendar: require('../../assets/dashboard/calendario.png'),
+  market: require('../../assets/dashboard/mercado.png'),
+  training: require('../../assets/dashboard/treinamento.png'),
+  youth: require('../../assets/dashboard/categoria_de_base.png'),
+  profile: require('../../assets/dashboard/perfil.png'),
+  settings: require('../../assets/dashboard/configuracao.png'),
 } as const;
-export type DashboardIconName = keyof typeof positions;
-const sheet = require('../../assets/dashboard/icons.png');
+export type DashboardIconName = keyof typeof icons;
 
 export function DashboardIcon({ name, size = 72 }: { name: DashboardIconName; size?: number }) {
-  const position = positions[name];
-  return <View pointerEvents="none" style={{ width: size, height: size, overflow: 'hidden' }}>
-    <Image source={sheet} accessible={false} resizeMode="stretch" style={{
-      position: 'absolute',
-      width: size * 4,
-      height: size * 4,
-      left: -(position % 4) * size,
-      top: -Math.floor(position / 4) * size,
-    }} />
+  return <View pointerEvents="none" style={{ width: size, height: size }}>
+    <Image source={icons[name]} accessible={false} resizeMode="contain"
+      style={{ width: size, height: size }} />
   </View>;
 }
