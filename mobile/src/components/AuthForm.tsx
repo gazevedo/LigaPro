@@ -35,7 +35,7 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
     <View pointerEvents="none" style={styles.overlay} />
     <SafeAreaView style={{ flex: 1 }}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
-        <View style={styles.content}><View style={styles.brand}><View style={styles.logoPanel}><Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={styles.logo} /></View><Text style={styles.tagline}>Comece sua jornada rumo à glória.</Text></View>
+        <View style={styles.content}><View style={styles.brand}><Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={styles.logo} /><Text style={styles.tagline}>Comece sua jornada rumo à glória.</Text></View>
           <View style={styles.form}>
             <NotificationBubble message={validation || auth.error} /><NotificationBubble message={info} tone="info" />
             <View style={styles.field}><Text style={styles.label}>E-mail</Text><TextInput accessibilityLabel="E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" placeholder="seuemail@exemplo.com" placeholderTextColor="#8191a3" editable={!auth.loading} style={styles.input} /></View>
@@ -77,11 +77,10 @@ function GoogleButton({ disabled, onPress }: { disabled: boolean; onPress: () =>
 const styles = StyleSheet.create({
   background: { flex: 1, width: '100%', overflow: 'hidden', backgroundColor: '#031d30' },
   overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#00132355' },
-  page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
-  content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 28 },
-  brand: { alignItems: 'center', gap: 14 },
-  logoPanel: { width: '100%', maxWidth: 310, paddingHorizontal: 12, paddingVertical: 4 },
-  logo: { width: '100%', height: 144 },
+  page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
+  content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 14 },
+  brand: { alignItems: 'center', gap: 6 },
+  logo: { width: '100%', maxWidth: 310, height: 104 },
   tagline: { color: '#e2f2f7', fontSize: 17, lineHeight: 25, textAlign: 'center', maxWidth: 310 },
   form: { backgroundColor: '#fffffff5', borderRadius: 26, padding: 24, gap: 18, borderWidth: 1, borderColor: '#ffffffaa', boxShadow: '0 16px 48px #00000040' },
   field: { gap: 8 },
