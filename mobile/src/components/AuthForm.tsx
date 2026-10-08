@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Text } from 'react-native';
+import { ActivityIndicator, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useAuthStore } from '../stores/authStore';
-export function AuthForm({ register = false, onCreateAccount, onLogin }: {
-  register?: boolean; onCreateAccount?: () => void; onLogin?: () => void;
+export function AuthForm({ register = false, onCreateAccount, onLogin, background }: {
+  register?: boolean; onCreateAccount?: () => void; onLogin?: () => void; background?: ImageSourcePropType;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,6 +31,25 @@ export function AuthForm({ register = false, onCreateAccount, onLogin }: {
       if (useAuthStore.getState().authenticated) useNotificationStore.getState().show('Conta criada! Agora escolha a identidade do seu clube.');
     } else await auth.login(email.trim().toLowerCase(), password);
   }
+  if (!register) return <ImageBackground source={background} imageStyle={{ width: '100%', height: '100%' }} resizeMode="cover" blurRadius={1} style={styles.background}>
+    <View pointerEvents="none" style={styles.overlay} />
+    <SafeAreaView style={{ flex: 1 }}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}>
+        <View style={styles.content}><View style={styles.brand}><Text accessibilityRole="header" style={styles.logo}>LIGAPRO ⚽</Text><Text style={styles.tagline}>Comece sua jornada rumo à glória.</Text></View>
+          <View style={styles.form}>
+            <NotificationBubble message={validation || auth.error} /><NotificationBubble message={info} tone="info" />
+            <View style={styles.field}><Text style={styles.label}>E-mail</Text><TextInput accessibilityLabel="E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" placeholder="seuemail@exemplo.com" placeholderTextColor="#8191a3" editable={!auth.loading} style={styles.input} /></View>
+            <View style={styles.field}><Text style={styles.label}>Senha</Text><View style={styles.passwordRow}><TextInput accessibilityLabel="Senha" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" autoComplete="current-password" maxLength={128} placeholder="Sua senha" placeholderTextColor="#8191a3" editable={!auth.loading} style={[styles.input, styles.passwordInput]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.eye}><Text style={{ fontSize: 20, color: '#19374b' }}>{showPassword ? '🙈' : '👁'}</Text></Pressable></View></View>
+            <Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} style={styles.forgot}><Text style={styles.link}>Esqueci a senha</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Entrar" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => void submit()} style={({ pressed }) => [styles.enter, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}>{auth.loading ? <ActivityIndicator color="#fff" accessibilityLabel="Entrando" /> : <Text style={styles.enterText}>Entrar</Text>}</Pressable>
+            <View style={styles.divider}><View style={styles.line} /><Text style={{ color: '#728297' }}>ou</Text><View style={styles.line} /></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Continuar com Google" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} style={({ pressed }) => [styles.google, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}><Text accessible={false} style={styles.googleMark}>G</Text><Text style={{ color: '#19374b', fontSize: 15, fontWeight: '700' }}>Continuar com Google</Text></Pressable>
+          </View>
+          <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#8ce7c9', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView></SafeAreaView>
+  </ImageBackground>;
   return <GamePage error={validation || auth.error} loading={auth.loading}>
     <Text style={{ color: palette.primary, fontWeight: '800', letterSpacing: 4 }}>LIGAPRO</Text>
     <Text style={{ fontSize: 36, fontWeight: '800', color: palette.ink }}>{register ? 'Sua história começa aqui.' : 'Seu próximo título começa aqui.'}</Text>
@@ -45,3 +66,29 @@ export function AuthForm({ register = false, onCreateAccount, onLogin }: {
     {register && onLogin && <ActionButton secondary title="Já tenho conta" disabled={auth.loading} onPress={onLogin} />}
     </Card></GamePage>;
 }
+
+const styles = StyleSheet.create({
+  background: { flex: 1, width: '100%', overflow: 'hidden', backgroundColor: '#031d30' },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#00132355' },
+  page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
+  content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 28 },
+  brand: { alignItems: 'center', gap: 14 },
+  logo: { color: '#fff', fontSize: 40, fontWeight: '900', letterSpacing: 3, textShadowColor: '#001324', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 12 },
+  tagline: { color: '#e2f2f7', fontSize: 17, lineHeight: 25, textAlign: 'center', maxWidth: 310 },
+  form: { backgroundColor: '#fffffff5', borderRadius: 26, padding: 24, gap: 18, borderWidth: 1, borderColor: '#ffffffaa', boxShadow: '0 16px 48px #00000040' },
+  field: { gap: 8 },
+  label: { color: '#19374b', fontSize: 14, fontWeight: '700' },
+  input: { color: '#19374b', fontSize: 16, backgroundColor: '#eff4f7', borderWidth: 1, borderColor: '#d6e1e7', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 15, minHeight: 52 },
+  passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff4f7', borderWidth: 1, borderColor: '#d6e1e7', borderRadius: 14 },
+  passwordInput: { flex: 1, backgroundColor: 'transparent', borderWidth: 0 },
+  eye: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  forgot: { alignSelf: 'flex-end', paddingVertical: 3, marginTop: -8 },
+  link: { color: '#087f67', fontWeight: '700', fontSize: 13 },
+  enter: { minHeight: 54, backgroundColor: '#087f67', borderRadius: 14, justifyContent: 'center', alignItems: 'center', boxShadow: '0 4px 0 #066551' },
+  enterText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 1, textTransform: 'uppercase' },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 },
+  line: { flex: 1, height: 1, backgroundColor: '#d6e1e7' },
+  google: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: '#d6e1e7', borderRadius: 14, minHeight: 52 },
+  googleMark: { fontSize: 23, fontWeight: '800', color: '#4285f4' },
+  signup: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
+});

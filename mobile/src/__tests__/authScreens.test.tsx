@@ -40,9 +40,25 @@ test('login exposes Google and account creation actions', async () => {
   const navigate = jest.fn(); await render(<AuthForm onCreateAccount={navigate} />);
   await fireEvent.press(screen.getByText('Continuar com Google')); expect(google).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByText('Criar conta')); expect(navigate).toHaveBeenCalledTimes(1);
-  expect(screen.getByText('Esqueci minha senha')).toBeTruthy();
+  expect(screen.getByText('Esqueci a senha')).toBeTruthy();
 });
 test('profile signs out without editing identity', async () => {
   await render(<ProfileScreen />); await fireEvent.press(screen.getByText('Sair'));
   expect(logout).toHaveBeenCalledTimes(1);
+});
+
+test('password visibility toggles without losing entered password', async () => {
+  await render(<AuthForm />);
+  await fireEvent.changeText(screen.getByLabelText('Senha'), 'password123');
+  expect(screen.getByLabelText('Senha').props.secureTextEntry).toBe(true);
+  await fireEvent.press(screen.getByLabelText('Mostrar senha'));
+  expect(screen.getByLabelText('Senha').props.secureTextEntry).toBe(false);
+  expect(screen.getByLabelText('Senha').props.value).toBe('password123');
+  await fireEvent.press(screen.getByLabelText('Ocultar senha'));
+  expect(screen.getByLabelText('Senha').props.secureTextEntry).toBe(true);
+});
+test('forgot password shows honest availability message', async () => {
+  await render(<AuthForm />);
+  await fireEvent.press(screen.getByText('Esqueci a senha'));
+  expect(screen.getByText('A recuperação de senha ainda não está disponível.')).toBeTruthy();
 });

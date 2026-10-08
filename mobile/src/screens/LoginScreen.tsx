@@ -3,5 +3,5 @@ import { AuthForm } from '../components/AuthForm';
 import { AuthStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 export function LoginScreen({ navigation }: Props) {
-  return <AuthForm onCreateAccount={() => navigation.navigate('Register')} />;
+  return <AuthForm background={require('../../assets/dashboard/login-stadium.png')} onCreateAccount={() => navigation.navigate('Register')} />;
 }
