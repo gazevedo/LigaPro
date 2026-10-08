@@ -19,6 +19,7 @@ import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect } from 'react';
+import { Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -45,7 +46,7 @@ export function AppNavigator() {
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <SplashScreen /> : <NavigationContainer>
       {auth.authenticated ? (!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: palette.background } }}>
-        <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} openSettings={() => navigation.navigate('Settings')} /> })} />
+        <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} openSettings={() => navigation.navigate('Settings')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
         <Stack.Screen name="Competitions" component={CompetitionsScreen} options={{ title: 'Campeonatos' }} />

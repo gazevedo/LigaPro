@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AppState, Pressable, Text, View } from 'react-native';
+import { AppState, Image, Pressable, Text, View } from 'react-native';
 import { useInboxStore } from '../stores/inboxStore';
 
 export function MailboxButton({ open, focused }: { open: () => void; focused?: () => boolean }) {
@@ -18,11 +18,11 @@ export function MailboxButton({ open, focused }: { open: () => void; focused?: (
   }, [load, focused]);
   const description = count === 1 ? 'mensagem não lida' : 'mensagens não lidas';
   return <Pressable accessibilityRole="button" accessibilityLabel={`Correio, ${count} ${description}`}
-    onPress={open} hitSlop={8} style={({ pressed }) => ({ width: 44, height: 44, marginRight: 8,
-      borderRadius: 14, backgroundColor: '#eef4fb', alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
-    <Text style={{ fontSize: 28, color: '#082957' }}>✉︎</Text>
-    {count > 0 && <View style={{ position: 'absolute', right: -6, top: -4, minWidth: 22, height: 22,
-      paddingHorizontal: 5, borderRadius: 11, backgroundColor: '#dc2626', alignItems: 'center', justifyContent: 'center' }}>
+    onPress={open} hitSlop={8} style={({ pressed }) => ({ width: 40, height: 40,
+      borderRadius: 12, backgroundColor: '#eef4fb', alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+    <Image accessible={false} source={require('../../assets/header/mail.png')} resizeMode="contain" style={{ width: 24, height: 24 }} />
+    {count > 0 && <View style={{ position: 'absolute', right: -4, top: -4, minWidth: 20, height: 20,
+      paddingHorizontal: 5, borderRadius: 10, backgroundColor: '#dc2626', alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{count > 99 ? '99+' : count}</Text>
     </View>}
   </Pressable>;
