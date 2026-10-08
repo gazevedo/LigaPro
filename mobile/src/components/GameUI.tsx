@@ -1,5 +1,5 @@
-import { ReactNode, useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, TextInputProps, View } from 'react-native';
+import { createContext, ReactNode, useContext, useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, ImageBackground, Pressable, ScrollView, Text, TextInput, TextInputProps, View } from 'react-native';
 export const palette = { ink: '#14243a', muted: '#64748b', primary: '#087f67', background: '#f4f7fc', border: '#cddbe8' };
 export const money = (amount: number) => (amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 export function NotificationBubble({ message, tone = 'error' }: { message?: string | null; tone?: 'error' | 'info' }) {
@@ -14,8 +14,16 @@ export function ActionButton({ title, onPress, disabled = false, secondary = fal
   return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, alignItems: 'center', borderWidth: 2, borderColor: secondary ? palette.border : '#086550', backgroundColor: secondary ? '#e3edfc' : palette.primary, opacity: disabled ? 0.45 : pressed ? 0.75 : 1 })}><Text style={{ fontWeight: '700', color: secondary ? palette.ink : '#fff' }}>{title}</Text></Pressable>;
 }
 export function Card({ children }: { children: ReactNode }) { return <View style={{ backgroundColor: '#fff', borderRadius: 22, padding: 22, gap: 16, borderWidth: 2, borderColor: palette.border, boxShadow: '0 4px 0 #d8e3ef' }}>{children}</View>; }
+const BackgroundContext = createContext(false);
+export function GameBackground({ children }: { children: ReactNode }) {
+  const inherited = useContext(BackgroundContext);
+  if (inherited) return <>{children}</>;
+  return <ImageBackground source={require('../../assets/app-background.png')} resizeMode="cover" style={{ flex: 1 }}>
+    <BackgroundContext.Provider value>{children}</BackgroundContext.Provider>
+  </ImageBackground>;
+}
 export function GamePage({ children, loading, error }: { children: ReactNode; loading?: boolean; error?: string | null }) {
-  return <ScrollView style={{ flex: 1, backgroundColor: palette.background }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, gap: 18, width: '100%', maxWidth: 1000, alignSelf: 'center', paddingBottom: 48 }}>{loading && <ActivityIndicator color={palette.primary} />}<NotificationBubble message={error} />{children}</ScrollView>;
+  return <GameBackground><ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, gap: 18, width: '100%', maxWidth: 1000, alignSelf: 'center', paddingBottom: 48 }}>{loading && <ActivityIndicator color={palette.primary} />}<NotificationBubble message={error} />{children}</ScrollView></GameBackground>;
 }
 export function Field({ label, value, onChange, numeric = false, ...props }: { label: string; value: string; onChange: (value: string) => void; numeric?: boolean } & Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'>) {
   return <View style={{ gap: 8 }}><Text style={{ fontWeight: '600', color: palette.ink }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} keyboardType={numeric ? 'numeric' : 'default'} placeholderTextColor={palette.muted} {...props} style={{ borderWidth: 1, borderColor: palette.border, backgroundColor: '#fff', color: palette.ink, padding: 14, borderRadius: 12, fontSize: 16 }} /></View>;

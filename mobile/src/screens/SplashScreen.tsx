@@ -10,12 +10,13 @@ export function SplashScreen() {
   async function retry() { await app.initialize(); await auth.restoreSession(); }
   return <View style={styles.container}>
     <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={styles.logo} />
-    {loading && <ActivityIndicator accessibilityLabel="Conectando à API" />}
+    {loading && <ActivityIndicator accessibilityLabel="Conectando à API" style={styles.spinner} />}
     {error && <><NotificationBubble message={error} />
       <Button title="Tentar novamente" onPress={() => { void retry(); }} /></>}
   </View>;
 }
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 16, backgroundColor: '#fff' },
-  logo: { width: '100%', maxWidth: 360, aspectRatio: 2 },
+  logo: { width: 192, height: 96 },
+  spinner: { position: 'absolute', top: '50%', marginTop: 64 },
 });
