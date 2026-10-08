@@ -1,5 +1,5 @@
 /* Only the offline page and public app icons are cached. API responses remain private. */
-const CACHE_NAME = 'ligapro-install-v1';
+const CACHE_NAME = 'ligapro-install-v2';
 const OFFLINE_PAGE = '/offline.html';
 const PUBLIC_FILES = [OFFLINE_PAGE, '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {

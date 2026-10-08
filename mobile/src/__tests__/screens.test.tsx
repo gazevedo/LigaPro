@@ -13,7 +13,9 @@ test('splash shows connection error and retry', async () => {
   const initialize = jest.fn();
   useAppStore.setState({ error: 'Offline', loading: false, initialize });
   await render(<SplashScreen />);
-  expect(screen.getByText('Offline')).toBeTruthy();
+  expect(screen.getAllByLabelText('Logotipo LigaPro')).toHaveLength(1);
+  expect(screen.queryByText('LigaPro')).toBeNull();
+  expect(screen.getByText('Servidor em manutenção, tente mais tarde.')).toBeTruthy();
   await fireEvent.press(screen.getByText('Tentar novamente'));
   expect(initialize).toHaveBeenCalledTimes(1);
 });
