@@ -44,11 +44,11 @@ export function AppNavigator() {
   }, [initialize]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 16, backgroundColor: '#fff' }}>
-      <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', maxWidth: 280, height: 140 }} />
-      {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: 86 }} /> : error || auth.error ? <>
+      <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', maxWidth: 308, height: 154 }} />
+      {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: 93 }} /> : error || auth.error ? <>
         <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : auth.error}</Text>
         <ActionButton title="Tentar novamente" onPress={() => { void initialize().then(() => useAuthStore.getState().restoreSession()); }} />
-      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: 86 }} />}
+      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: 93 }} />}
     </View> : <NavigationContainer>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} openSettings={() => navigation.navigate('Settings')} /> })} />
