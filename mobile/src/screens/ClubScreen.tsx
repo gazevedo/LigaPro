@@ -1,4 +1,3 @@
-import { resetDomainStores } from '../stores/domainStore';
 import { ClubHistory } from './HistoryScreen';
 import { ProfileScreen } from './ProfileScreen';
 import { ClubBadge } from '../components/ClubBadge';
@@ -9,10 +8,9 @@ import { RootStackParamList } from '../navigation/types';
 import { Club } from '../types/game';
 import { clubService } from '../services/clubService';
 import { useClubStore } from '../stores/clubStore';
-import { ActionButton as Button, Card, Field, GamePage, palette, useAction } from '../components/GameUI';
+import { Card, GamePage, palette, useAction } from '../components/GameUI';
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
-  const [club, setClub] = useState<Club | null>(null), [id, setId] = useState('');
-  const [confirmResign, setConfirmResign] = useState(false);
+  const [club, setClub] = useState<Club | null>(null);
   const own = useClubStore(state => state.data?.club?.id);
   const action = useAction();
   useEffect(() => { void action.run(async () => setClub(await clubService.get(route.params.id))); }, [route.params.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -44,23 +42,10 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
       })}
     </Card>
     {own === club.id && <>
-      <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />
       <Card><Text style={styles.heading}>Perfil do técnico</Text><ProfileScreen /></Card>
       <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />
-      <Card><Text style={styles.heading}>Gestão do clube</Text><Text style={styles.caption}>Pedir demissão encerra sua gestão e inativa o clube atual.</Text>
-    {own === club.id && !confirmResign && <Button title="Pedir demissão" disabled={action.busy} onPress={() => setConfirmResign(true)} />}
-    {own === club.id && confirmResign && <>
-      <Text accessibilityRole="alert">Ao pedir demissão, você perderá definitivamente o clube atual, incluindo todo o dinheiro, jogadores, estádio e progresso. O clube será inativado. Você poderá criar um novo clube, sem transferir dinheiro ou patrimônio do anterior. Esta ação não pode ser desfeita.</Text>
-      <Button title="Cancelar" disabled={action.busy} onPress={() => setConfirmResign(false)} />
-      <Button title="Confirmar demissão e perder o clube" disabled={action.busy} onPress={() => void action.run(async () => {
-        const status = await clubService.resign(club.id);
-        resetDomainStores();
-        useClubStore.setState({ data: status });
-      })} />
     </>}
-      </Card>
-    </>}
-  </>}<Card><Text style={styles.heading}>Consultar outro clube</Text><Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></Card></GamePage>;
+  </>}</GamePage>;
 }
 
 const styles = StyleSheet.create({

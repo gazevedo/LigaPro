@@ -33,7 +33,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
     <Card><View style={styles.hero}>
       <ClubBadge badge={club?.badge} name={club?.name} />
       <View style={styles.identity}>
-        <Text style={styles.eyebrow}>CENTRAL DO TÉCNICO</Text>
         <Text style={styles.clubName}>{club?.name}</Text>
         <UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} />
       </View>
@@ -55,7 +54,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
 const styles = StyleSheet.create({
   hero: { flexDirection: 'row', gap: 20, alignItems: 'center' },
   identity: { flex: 1, gap: 8 },
-  eyebrow: { color: palette.primary, fontWeight: '700', letterSpacing: 2 },
   clubName: { fontSize: 30, fontWeight: '800', color: palette.ink },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   tile: {

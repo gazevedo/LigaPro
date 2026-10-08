@@ -24,10 +24,16 @@ test('championship owns table, games, reports and cup rankings', async () => {
   const navigate = jest.fn();
   await render(<CompetitionsScreen {...({ navigation: { navigate } } as unknown as NativeStackScreenProps<RootStackParamList, 'Competitions'>)} />);
   await screen.findByText('1. Aurora');
+  expect(screen.getByText('GP')).toBeTruthy();
+  expect(screen.getByText('GC')).toBeTruthy();
+  expect(screen.getByText('CV')).toBeTruthy();
+  expect(screen.getByText('CA')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Partidas'));
   await fireEvent.press(screen.getByText('Ver relatório'));
   expect(navigate).toHaveBeenCalledWith('MatchReport', { id: 'match' });
   await fireEvent.press(screen.getByText('Copa Nacional'));
   await screen.findByText('Semifinal · Em disputa');
+  await fireEvent.press(screen.getByText('Artilheiros'));
   await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('cup', 'goals'));
 });
 test('calendar selects event day and loads adjacent month without filters', async () => {

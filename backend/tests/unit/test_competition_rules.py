@@ -1,9 +1,12 @@
 import unittest
 from collections import Counter
 from datetime import UTC, datetime
+from random import Random
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.config.game import GameConfig
+from app.config.names import club_name
 from app.services.competition import CompetitionService, division_name, movement, round_robin
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
 
@@ -62,6 +65,43 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertTrue(
             all(event["date"] == match_dates[event["reference_id"]] for event in events)
         )
+
+    def test_bot_name_combinations_are_varied_and_reproducible(self):
+        names = {club_name(Random(seed)) for seed in range(30)}
+        self.assertGreater(len(names), 20)
+        self.assertTrue(all(not name.startswith("Bot ") for name in names))
+        self.assertEqual(club_name(Random("club")), club_name(Random("club")))
+
+    def test_table_card_totals_follow_slots_including_replaced_bots(self):
+        repo = Mock()
+        repo.owned.return_value = {"_id": "club"}
+        repo.find.side_effect = [
+            {"_id": "season"},
+            {"division_id": "division"},
+            {"_id": "division"},
+        ]
+        repo.many.side_effect = [
+            [{"_id": "slot", "club_id": "club"}],
+            [
+                {
+                    "home_slot_id": "slot",
+                    "away_slot_id": "other-slot",
+                    "home_club_id": "previous-bot",
+                    "away_club_id": "other",
+                    "result": {"statistics": {"previous-bot": {"yellow_cards": 3, "red_cards": 1}}},
+                },
+                {
+                    "home_slot_id": "slot",
+                    "away_slot_id": "other-slot",
+                    "home_club_id": "club",
+                    "away_club_id": "other",
+                    "result": {"statistics": {"club": {"yellow_cards": 2, "red_cards": 0}}},
+                },
+            ],
+        ]
+        table = CompetitionService(repo).table(SimpleNamespace(id="user"))
+        self.assertEqual(table["standings"][0]["yellow_cards"], 5)
+        self.assertEqual(table["standings"][0]["red_cards"], 1)
 
     def test_unlimited_series_and_three_division_movements(self):
         self.assertEqual([division_name(i) for i in (0, 25, 26, 701)], ["A", "Z", "AA", "ZZ"])

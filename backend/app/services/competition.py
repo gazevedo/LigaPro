@@ -1,6 +1,7 @@
 """Persistent league slots preserve sporting history when a human replaces a bot."""
 
 from datetime import timedelta
+from random import Random
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -8,6 +9,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
+from app.config.names import club_name
 from app.models.game import public, utcnow
 from app.services.chemistry import ChemistryService
 from app.services.club_prestige import ClubRankingService, ClubReputationService
@@ -140,7 +142,7 @@ class CompetitionService:
             "_id": club_id,
             "is_bot": True,
             "active": True,
-            "name": f"Bot {division_name(tier)} {index + 1:02}",
+            "name": club_name(Random(str(club_id))),
             "country_id": "BR",
             "badge_id": "blue",
             "created_at": utcnow(),
@@ -433,6 +435,15 @@ class CompetitionService:
 
     def bootstrap(self):
         self.ensure_lock(self.repo)
+        # Upgrade old generic bot labels once; keep existing custom names.
+        for bot in self.repo.many(
+            "clubs", {"is_bot": True, "name": {"$regex": r"^Bot [A-Z]+ \d+$"}}, limit=None
+        ):
+            name = club_name(Random(str(bot["_id"])))
+            self.repo.update("clubs", {"_id": bot["_id"]}, {"$set": {"name": name}})
+            self.repo.database.standings.update_many(
+                {"club_id": bot["_id"]}, {"$set": {"club_name": name}}, session=self.repo.session
+            )
         for club in self.repo.many(
             "clubs", {"is_bot": {"$ne": True}, "active": {"$ne": False}}, limit=None
         ):
@@ -456,6 +467,32 @@ class CompetitionService:
             limit=None,
             sort=[("position", 1)],
         )
+        # Match statistics also cover fixtures played before card totals existed.
+        cards = {str(row["_id"]): {"yellow_cards": 0, "red_cards": 0} for row in standings}
+        for match in self.repo.many(
+            "matches",
+            {"season_id": season["_id"], "division_id": division["_id"], "status": "completed"},
+            limit=None,
+            projection={
+                "result.statistics": 1,
+                "home_slot_id": 1,
+                "away_slot_id": 1,
+                "home_club_id": 1,
+                "away_club_id": 1,
+            },
+        ):
+            for side in ("home", "away"):
+                totals = cards.get(str(match[f"{side}_slot_id"]))
+                if totals is not None:
+                    stats = (
+                        match.get("result", {})
+                        .get("statistics", {})
+                        .get(str(match[f"{side}_club_id"]), {})
+                    )
+                    for field in totals:
+                        totals[field] += stats.get(field, 0)
+        for row in standings:
+            row.update(cards[str(row["_id"])])
         return public({"season": season, "division": division, "standings": standings})
 
     def matches(self, user):

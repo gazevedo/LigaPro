@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.config.game import GameConfig
+from app.config.names import FIRST_NAMES, SURNAMES
 from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.models.game import utcnow
 from app.models.player import FORBIDDEN, SKILLS, market_value, normalize_player, player_public
@@ -23,8 +24,8 @@ class PlayerGeneratorService:
             self.config.MAX_PLAYER_LEVEL,
             self.rng.randint(25, 45) if youth else self.rng.randint(40, 60),
         )
-        first = self.rng.choice(("João", "Pedro", "Lucas", "André", "Rafael", "Bruno", "Caio"))
-        last = self.rng.choice(("Silva", "Santos", "Costa", "Souza", "Lima", "Alves", "Oliveira"))
+        first = self.rng.choice(FIRST_NAMES)
+        last = self.rng.choice(SURNAMES)
         age = self.rng.randint(14, 17) if youth else self.rng.randint(18, 30)
         potential = self.potential(strength, youth)
         value = market_value(strength, potential, age)

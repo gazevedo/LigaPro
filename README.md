@@ -4,7 +4,7 @@ Jogo de gerenciamento de futebol inspirado no Brasfoot, com clubes próprios, ca
 
 Este README concentra a documentação mantida do projeto. Os arquivos em `prompts/` são requisitos originais e podem descrever etapas anteriores; as regras atuais estão abaixo. JSONs de calibração e relatórios gerados permanecem como evidências, sem duplicar instruções de uso.
 
-O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Histórico e perfil do técnico ficam em Clube; classificação, jogos e estatísticas ficam em cada campeonato. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O calendário é uma agenda mensal e as configurações ficam no cabeçalho ao lado do correio.
+O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Histórico, perfil do técnico e logout ficam em Clube; Campeonatos possui abas Tabela, Partidas e Artilheiros, com classificação completa e cartões. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O calendário é uma agenda mensal e o cabeçalho oferece o correio. Para voltar, deslize da borda esquerda para a direita; no app nativo Android, o botão Voltar retorna à tela anterior sem fechar o jogo no dashboard.
 
 ## Índice
 

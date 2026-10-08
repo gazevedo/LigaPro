@@ -22,5 +22,5 @@ export interface Market { listings: Listing[]; incoming: Offer[]; outgoing: Offe
 export interface Competition {
   season: { number: number; starts_at: string; ends_at: string };
   division: { name: string };
-  standings: { id: string; club_id: string; club_name: string; position: number; points: number; games: number; wins: number; draws: number; losses: number; goals_for: number; goals_against: number; goal_difference: number }[];
+  standings: { id: string; club_id: string; club_name: string; position: number; points: number; games: number; wins: number; draws: number; losses: number; goals_for: number; goals_against: number; goal_difference: number; yellow_cards?: number; red_cards?: number }[];
 }

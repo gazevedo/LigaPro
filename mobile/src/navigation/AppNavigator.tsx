@@ -19,12 +19,13 @@ import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect } from 'react';
-import { ActivityIndicator, Image, Text, useWindowDimensions, View } from 'react-native';
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
+import { ActivityIndicator, BackHandler, Image, Text, useWindowDimensions, View } from 'react-native';
+import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
 import { ActionButton, GameBackground, GamePage, palette } from '../components/GameUI';
+import { SwipeBack } from '../components/SwipeBack';
 import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
 import { useClubStore } from '../stores/clubStore';
@@ -36,6 +37,7 @@ import { RootStackParamList } from './types';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
 export function AppNavigator() {
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const { width } = useWindowDimensions();
   const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
   const auth = useAuthStore();
@@ -47,6 +49,14 @@ export function AppNavigator() {
       if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
     });
   }, [initialize]);
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!auth.authenticated) return false;
+      if (navigationRef.isReady() && navigationRef.canGoBack()) navigationRef.goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
       <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />
@@ -56,7 +66,7 @@ export function AppNavigator() {
           if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
         }); }} />
       </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} />}
-    </View> : <NavigationContainer theme={navigationTheme}>
+    </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme}>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
@@ -80,7 +90,7 @@ export function AppNavigator() {
         <Stack.Screen name="Settings" component={SettingsScreen}
           options={{ title: 'Configurações' }} />
       </Stack.Navigator>)}</GameBackground> : <AuthNavigator />}
-    </NavigationContainer>}
+    </NavigationContainer></SwipeBack>}
     <NotificationHost />
   </SafeAreaProvider>;
 }
