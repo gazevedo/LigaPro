@@ -472,6 +472,16 @@ class CompetitionService:
             sort=[("round", 1)],
             projection={"result": 0, "seed": 0},
         )
+        club_ids = {row[key] for row in rows for key in ("home_club_id", "away_club_id")}
+        names = {
+            row["_id"]: row["name"]
+            for row in self.repo.many(
+                "clubs", {"_id": {"$in": list(club_ids)}}, projection={"name": 1}, limit=None
+            )
+        }
+        for row in rows:
+            row["home_name"] = names.get(row["home_club_id"], "Mandante")
+            row["away_name"] = names.get(row["away_club_id"], "Visitante")
         for row in rows:
             row["commands"] = [
                 c for c in row.get("commands", []) if c["team_id"] == str(club["_id"])

@@ -20,6 +20,7 @@ import { useStadiumStore } from '../stores/stadiumStore';
 import { useMarketStore } from '../stores/marketStore';
 import { useAuthStore } from '../stores/authStore';
 import { domainStore } from '../stores/domainStore';
+jest.mock('../services/historyService', () => ({ historyService: { get: jest.fn().mockResolvedValue({ seasons: [], clubs: [], records: [], players: [] }) } }));
 jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn().mockResolvedValue({ competition: null, entry: null, matches: [] }) } }));
 jest.mock('../services/competitionService', () => ({ competitionService: { get: jest.fn().mockResolvedValue(null) } }));
 jest.mock('../services/squadService', () => ({ squadService: { get: jest.fn(), save: jest.fn() } }));
@@ -47,8 +48,8 @@ test('dashboard opens every module', async () => {
   const navigate = jest.fn();
   const props = { navigation: { navigate } } as unknown as NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
   await render(<DashboardScreen {...props} />);
-  for (const title of ['Histórico', 'Clube', 'Plantel', 'Táticas', 'Estatísticas', 'Estádio', 'Financeiro', 'Calendário', 'Mercado', 'Treinamento', 'Categorias de Base', 'Perfil', 'Configurações']) await fireEvent.press(screen.getByText(title));
-  expect(navigate.mock.calls).toEqual([['History'], ['Club', { id: club.id }], ['Squad'], ['Tactics'], ['Statistics'], ['Stadium'], ['Finance'], ['Calendar'], ['Market'], ['Training'], ['YouthAcademy'], ['Profile'], ['Settings']]);
+  for (const title of ['Campeonatos', 'Clube', 'Plantel', 'Táticas', 'Estádio', 'Financeiro', 'Calendário', 'Mercado', 'Treinamento', 'Categorias de Base']) await fireEvent.press(screen.getByText(title));
+  expect(navigate.mock.calls).toEqual([['Competitions'], ['Club', { id: club.id }], ['Squad'], ['Tactics'], ['Stadium'], ['Finance'], ['Calendar'], ['Market'], ['Training'], ['YouthAcademy']]);
 });
 test('public club hides administration for a different owner', async () => {
   useClubStore.setState({ data: { club: { ...club, id: 'other' } } });
@@ -84,14 +85,15 @@ test('squad refresh discards starters removed by a transfer', async () => {
   const players = Array.from({ length: 12 }, (_, i) => ({ id: String(i), name: `Player ${i}`, position: 'DEF', age: 21, overall: 50, value: 1000, country_id: 'BR', owner_club_id: 'club1', current_club_id: 'club1' }));
   const starters = players.slice(0, 11).map(p => p.id);
   jest.mocked(squadService.get).mockResolvedValueOnce({ players, lineup: { formation: '4-4-2', starters, reserves: ['11'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
-  jest.mocked(squadService.get).mockResolvedValueOnce({ players, lineup: { formation: '4-4-2', starters: [...starters.slice(1), '11'], reserves: ['0'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
+  jest.mocked(squadService.get).mockResolvedValueOnce({ players: players.slice(1), lineup: { formation: '4-4-2', starters: [...starters.slice(1), '11'], reserves: [] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
   useSquadStore.getState().reset();
   const props = { navigation: { navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Squad'>;
   await render(<SquadScreen {...props} />);
-  await screen.findByText('Titular · DEF Player 0');
+  await screen.findByText('Player 0');
   await fireEvent.press(screen.getByText('Atualizar plantel'));
-  await screen.findByText('Reserva · DEF Player 0');
-  expect(screen.getByText('Titular · DEF Player 11')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText('Player 0')).toBeNull());
+  expect(screen.getByText('Player 11')).toBeTruthy();
+  expect(screen.queryByText('Salvar escalação')).toBeNull();
 });
 test('synchronous double tap runs one financial action', async () => {
   let complete!: () => void;

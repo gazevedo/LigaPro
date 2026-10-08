@@ -27,32 +27,19 @@ test('saves four tactics using Portuguese choices', async () => {
   await waitFor(() => expect(tacticsService.save).toHaveBeenCalledWith({ formation: '4-3-3', play_style: 'all_out_attack', marking: 'heavy', attack_focus: 'wings' }));
   await screen.findByText('Tática salva.');
 });
-test('plans substitution with actual starter and reserve', async () => {
+test('lineup is in tactics and match planning is removed', async () => {
   await render(<TacticsScreen />);
-  await fireEvent.press(await screen.findByText(/Rodada 1/));
-  await fireEvent.press(screen.getByText('Pedro · ATT'));
-  await fireEvent.press(screen.getByText('Lucas · ATT'));
-  await fireEvent.press(screen.getByText('Programar substituição'));
-  await waitFor(() => expect(tacticsService.command).toHaveBeenCalledWith('match1', { minute: 60, type: 'substitution', payload: { out_player_id: 'starter', in_player_id: 'reserve' } }));
+  await screen.findByText('Escalação');
+  expect(screen.getByText('Titular · ATT Pedro')).toBeTruthy();
+  expect(screen.getByText('Reserva · ATT Lucas')).toBeTruthy();
+  expect(screen.queryByText('Plano de partida')).toBeNull();
+  expect(tacticsService.matches).not.toHaveBeenCalled();
 });
-test('plans tactical changes and rejects minutes without future blocks', async () => {
+test('saves eleven starters and excludes unavailable reserves', async () => {
+  const players = Array.from({ length: 13 }, (_, i) => ({ ...player, id: `p${i}`, name: `Jogador ${i}`, status: i === 12 ? 'injured' : 'available' }));
+  const starters = players.slice(0, 11).map(item => item.id);
+  jest.mocked(squadService.get).mockResolvedValue({ players, lineup: { formation: '4-4-2', starters, reserves: ['p11', 'p12'] }, formations: { '4-4-2': {} } });
   await render(<TacticsScreen />);
-  await fireEvent.press(await screen.findByText(/Rodada 1/));
-  await fireEvent.changeText(screen.getByLabelText('Minuto do comando (0–85)'), '90');
-  await fireEvent.press(screen.getByText('Programar mudança com a tática acima'));
-  await screen.findByText('Informe um minuto de 0 a 85.');
-  expect(tacticsService.command).not.toHaveBeenCalled();
-  await fireEvent.changeText(screen.getByLabelText('Minuto do comando (0–85)'), '45');
-  await fireEvent.press(screen.getByText('Programar mudança com a tática acima'));
-  await waitFor(() => expect(tacticsService.command).toHaveBeenCalledWith('match1', { minute: 45, type: 'tactics_change', payload: tactics }));
-});
-test('shows server rejection without adding local command', async () => {
-  jest.mocked(tacticsService.command).mockRejectedValue(new Error('Máximo de cinco substituições.'));
-  await render(<TacticsScreen />);
-  await fireEvent.press(await screen.findByText(/Rodada 1/));
-  await fireEvent.press(screen.getByText('Pedro · ATT'));
-  await fireEvent.press(screen.getByText('Lucas · ATT'));
-  await fireEvent.press(screen.getByText('Programar substituição'));
-  await screen.findByText('Máximo de cinco substituições.');
-  expect(screen.queryByText('Comando programado.')).toBeNull();
+  await fireEvent.press(await screen.findByText('Salvar escalação'));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters, reserves: ['p11'] }));
 });

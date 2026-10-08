@@ -203,15 +203,43 @@ class SquadService:
 
     def get(self, user):
         club = self.repo.owned(user.id)
+        players = self.repo.many(
+            "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
+        )
+        identities = [player["_id"] for player in players]
+        contracts = {
+            row["player_id"]: row
+            for row in self.repo.many(
+                "player_contracts",
+                {"player_id": {"$in": identities}, "status": {"$in": ["active", "expiring"]}},
+                projection={"player_id": 1, "salary": 1, "expires_at": 1, "status": 1},
+                limit=None,
+            )
+        }
+        statistics = {
+            row["_id"]: row
+            for row in self.repo.many(
+                "player_career_stats",
+                {"_id": {"$in": identities}},
+                projection={
+                    "matches": 1,
+                    "goals": 1,
+                    "minutes": 1,
+                    "yellow_cards": 1,
+                    "red_cards": 1,
+                },
+                limit=None,
+            )
+        }
         return public(
             {
                 "players": [
-                    player_public(p)
-                    for p in self.repo.many(
-                        "players",
-                        {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
-                        limit=None,
-                    )
+                    {
+                        **player_public(player),
+                        "contract": contracts.get(player["_id"]),
+                        "statistics": statistics.get(player["_id"]),
+                    }
+                    for player in players
                 ],
                 "team_chemistry": ChemistryService().get(self.repo, club["_id"])["value"],
                 "lineup": self.repo.find("lineups", {"_id": club["_id"]}),

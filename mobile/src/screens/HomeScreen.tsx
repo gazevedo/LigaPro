@@ -7,7 +7,6 @@ export function HomeScreen({ navigation }: Props) {
   return <View style={styles.container}>
     <Button title="Novo Jogo" disabled onPress={() => undefined} />
     <Button title="Carregar Jogo" disabled onPress={() => undefined} />
-    <Button title="Perfil" onPress={() => navigation.navigate('Profile')} />
     <Button title="Configurações" onPress={() => navigation.navigate('Settings')} />
   </View>;
 }

@@ -254,6 +254,85 @@ class PlayerStatisticsService:
             }
         )
 
+    def competition_rankings(self, user, kind, ranking):
+        club = self.repo.owned(user.id)
+        season = self.repo.find("seasons", {"status": "active"})
+        if not season:
+            return {"season": None, "ranking": ranking, "rows": []}
+        if kind == "league":
+            slot = self.repo.find(
+                "season_clubs", {"season_id": season["_id"], "club_id": club["_id"]}
+            )
+            if not slot:
+                return public({"season": season, "ranking": ranking, "rows": []})
+            matches = self.repo.many(
+                "matches",
+                {
+                    "season_id": season["_id"],
+                    "division_id": slot["division_id"],
+                    "status": "completed",
+                },
+                projection={"_id": 1},
+                limit=None,
+            )
+        else:
+            competition = self.repo.find(
+                "competitions", {"season_id": season["_id"], "name": "Copa Nacional"}
+            )
+            matches = (
+                self.repo.many(
+                    "competition_matches",
+                    {"competition_id": competition["_id"], "status": "completed"},
+                    projection={"_id": 1},
+                    limit=None,
+                )
+                if competition
+                else []
+            )
+        metric = {
+            "goals": "$goals",
+            "matches": "$matches",
+            "cards": {"$add": ["$yellow_cards", "$red_cards"]},
+        }[ranking]
+        rows = list(
+            self.repo.database.player_match_ratings.aggregate(
+                [
+                    {"$match": {"match_id": {"$in": [match["_id"] for match in matches]}}},
+                    {
+                        "$group": {
+                            "_id": "$player_id",
+                            "matches": {"$sum": 1},
+                            "minutes": {"$sum": "$minutes"},
+                            "goals": {"$sum": "$events_summary.goals"},
+                            "yellow_cards": {"$sum": "$events_summary.yellow_cards"},
+                            "red_cards": {"$sum": "$events_summary.red_cards"},
+                        }
+                    },
+                    {"$set": {"total": metric}},
+                    {"$sort": {"total": -1, "minutes": -1, "_id": 1}},
+                    {"$limit": 20},
+                    {
+                        "$lookup": {
+                            "from": "players",
+                            "localField": "_id",
+                            "foreignField": "_id",
+                            "as": "player",
+                        }
+                    },
+                    {
+                        "$set": {
+                            "player_id": "$_id",
+                            "name": {"$arrayElemAt": ["$player.name", 0]},
+                            "position": {"$arrayElemAt": ["$player.position", 0]},
+                        }
+                    },
+                    {"$unset": "player"},
+                ],
+                session=self.repo.session,
+            )
+        )
+        return public({"season": season, "ranking": ranking, "rows": rows})
+
     def report(self, user, identity):
         club = self.repo.owned(user.id)
         if not ObjectId.is_valid(identity):

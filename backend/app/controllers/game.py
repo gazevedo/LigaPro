@@ -274,6 +274,16 @@ def player_statistics(identity: str, repo: Repo):
     return PlayerStatisticsService(repo).player(identity)
 
 
+@router.get("/competition/statistics")
+def competition_statistics(
+    user: User,
+    repo: Repo,
+    kind: Literal["league", "cup"] = "league",
+    ranking: Literal["goals", "matches", "cards"] = "goals",
+):
+    return PlayerStatisticsService(repo).competition_rankings(user, kind, ranking)
+
+
 @router.get("/competition/matches/{identity}")
 def match_report(identity: str, user: User, repo: Repo):
     return PlayerStatisticsService(repo).report(user, identity)

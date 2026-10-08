@@ -8,4 +8,4 @@ export function ProfileScreen() {
     <Button title="Sair" disabled={loading} onPress={() => { void logout(); }} />
   </View>;
 }
-const styles = StyleSheet.create({ container: { flex: 1, padding: 24, gap: 16 } });
+const styles = StyleSheet.create({ container: { gap: 16 } });

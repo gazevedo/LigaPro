@@ -4,7 +4,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ClubBadge } from '../components/ClubBadge';
 import { DashboardIcon, DashboardIconName } from '../components/DashboardIcon';
 import { UpcomingMatches } from '../components/UpcomingMatches';
-import { CupSummary } from '../components/CupSummary';
 import { RootStackParamList } from '../navigation/types';
 import { useClubStore } from '../stores/clubStore';
 import { Card, GamePage, palette } from '../components/GameUI';
@@ -18,9 +17,8 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
   const columns = gridWidth >= 600 ? 4 : gridWidth >= 330 ? 3 : 2;
   const tileWidth = Math.max(0, Math.floor((gridWidth - 12 * (columns - 1)) / columns));
   const shortcuts: Shortcut[] = [
-    { icon: 'history', title: 'Histórico', open: () => navigation.navigate('History') },
+    { icon: 'competitions', title: 'Campeonatos', open: () => navigation.navigate('Competitions') },
     { icon: 'club', title: 'Clube', disabled: !club, open: () => { if (club) navigation.navigate('Club', { id: club.id }); } },
-    { icon: 'statistics', title: 'Estatísticas', open: () => navigation.navigate('Statistics') },
     { icon: 'tactics', title: 'Táticas', open: () => navigation.navigate('Tactics') },
     { icon: 'squad', title: 'Plantel', open: () => navigation.navigate('Squad') },
     { icon: 'stadium', title: 'Estádio', open: () => navigation.navigate('Stadium') },
@@ -29,8 +27,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
     { icon: 'market', title: 'Mercado', open: () => navigation.navigate('Market') },
     { icon: 'training', title: 'Treinamento', open: () => navigation.navigate('Training') },
     { icon: 'youth', title: 'Categorias de Base', open: () => navigation.navigate('YouthAcademy') },
-    { icon: 'profile', title: 'Perfil', open: () => navigation.navigate('Profile') },
-    { icon: 'settings', title: 'Configurações', open: () => navigation.navigate('Settings') },
   ];
 
   return <GamePage>
@@ -57,7 +53,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.tileTitle}>{shortcut.title}</Text>
       </Pressable>)}
     </View>
-    <Card><UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} /><CupSummary /></Card>
+    <Card><UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} /></Card>
   </GamePage>;
 }
 
@@ -74,8 +70,8 @@ const styles = StyleSheet.create({
     minHeight: 156, paddingHorizontal: 8, paddingVertical: 16,
     justifyContent: 'center', alignItems: 'center', gap: 10,
     backgroundColor: '#fff', borderRadius: 20,
-    borderWidth: 1, borderColor: palette.border,
-    boxShadow: '0 3px 12px #14243a08',
+    borderWidth: 2, borderColor: palette.border,
+    boxShadow: '0 4px 0 #d8e3ef',
   },
   tilePressed: { backgroundColor: '#eef4fb', borderColor: '#9cb3d0', transform: [{ scale: 0.98 }] },
   tileDisabled: { opacity: 0.45 },
