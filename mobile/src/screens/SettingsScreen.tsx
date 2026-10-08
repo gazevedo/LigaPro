@@ -2,8 +2,11 @@ import { ActionButton as Button, NotificationBubble } from '../components/GameUI
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { settingsService } from '../services/settingsService';
+import { useAuthStore } from '../stores/authStore';
 import { AppSetting } from '../types/api';
 export function SettingsScreen() {
+  const logout = useAuthStore(state => state.logout);
+  const loggingOut = useAuthStore(state => state.loading);
   const [settings, setSettings] = useState<AppSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +32,7 @@ export function SettingsScreen() {
     void fetchSettings();
   }
   return <View style={styles.container}>
+    <Button title={loggingOut ? 'Saindo…' : 'Sair da conta'} disabled={loggingOut} onPress={() => { void logout(); }} />
     {loading ? <ActivityIndicator accessibilityLabel="Carregando configurações" /> : error ?
       <><NotificationBubble message={error} />
         <Button title="Tentar novamente" onPress={() => { void load(); }} /></> :

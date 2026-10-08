@@ -1,6 +1,7 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { useAuthStore } from '../stores/authStore';
 import { settingsService } from '../services/settingsService';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -34,4 +35,17 @@ test('settings retries after error', async () => {
   await fireEvent.press(screen.getByText('Tentar novamente'));
   await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
   expect(await screen.findByText('Nenhuma configuração cadastrada.')).toBeTruthy();
+});
+
+test('settings logs out using the existing session handler', async () => {
+  const previous = useAuthStore.getState().logout;
+  const logout = jest.fn(async () => undefined);
+  useAuthStore.setState({ logout, loading: false });
+  list.mockResolvedValueOnce([]);
+  try {
+    await render(<SettingsScreen />);
+    await screen.findByText('Nenhuma configuração cadastrada.');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sair da conta' }));
+    expect(logout).toHaveBeenCalledTimes(1);
+  } finally { useAuthStore.setState({ logout: previous }); }
 });
