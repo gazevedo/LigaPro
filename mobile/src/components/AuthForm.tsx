@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
@@ -39,11 +39,11 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
           <View style={styles.form}>
             <NotificationBubble message={validation || auth.error} /><NotificationBubble message={info} tone="info" />
             <View style={styles.field}><Text style={styles.label}>E-mail</Text><TextInput accessibilityLabel="E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" placeholder="seuemail@exemplo.com" placeholderTextColor="#8191a3" editable={!auth.loading} style={styles.input} /></View>
-            <View style={styles.field}><Text style={styles.label}>Senha</Text><View style={styles.passwordRow}><TextInput accessibilityLabel="Senha" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" autoComplete="current-password" maxLength={128} placeholder="Sua senha" placeholderTextColor="#8191a3" editable={!auth.loading} style={[styles.input, styles.passwordInput]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.eye}><Text style={{ fontSize: 20, color: '#19374b' }}>{showPassword ? '🙈' : '👁'}</Text></Pressable></View></View>
+            <View style={styles.field}><Text style={styles.label}>Senha</Text><View style={styles.passwordRow}><TextInput accessibilityLabel="Senha" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" autoComplete="current-password" maxLength={128} placeholder="Sua senha" placeholderTextColor="#8191a3" editable={!auth.loading} style={[styles.input, styles.passwordInput]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.eye}><Image source={showPassword ? require('../../assets/auth/eye-off.png') : require('../../assets/auth/eye.png')} accessible={false} style={{ width: 24, height: 24 }} /></Pressable></View></View>
             <Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} style={styles.forgot}><Text style={styles.link}>Esqueci a senha</Text></Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="Entrar" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => void submit()} style={({ pressed }) => [styles.enter, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}>{auth.loading ? <ActivityIndicator color="#fff" accessibilityLabel="Entrando" /> : <Text style={styles.enterText}>Entrar</Text>}</Pressable>
             <View style={styles.divider}><View style={styles.line} /><Text style={{ color: '#728297' }}>ou</Text><View style={styles.line} /></View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Continuar com Google" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} style={({ pressed }) => [styles.google, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}><Text accessible={false} style={styles.googleMark}>G</Text><Text style={{ color: '#19374b', fontSize: 15, fontWeight: '700' }}>Continuar com Google</Text></Pressable>
+            <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
           </View>
           <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#8ce7c9', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
         </View>
@@ -61,10 +61,17 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
     {register && <Field label="Confirmar senha" value={confirm} onChange={setConfirm} secureTextEntry autoCapitalize="none" maxLength={128} editable={!auth.loading} />}
     <ActionButton title={register ? 'Criar conta' : 'Entrar'} onPress={() => void submit()} disabled={auth.loading} />
     {!register && <ActionButton secondary title="Esqueci minha senha" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} />}
-    <ActionButton secondary title="Continuar com Google" disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
+    <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
     {!register && <ActionButton secondary title="Criar conta" disabled={auth.loading} onPress={() => onCreateAccount?.()} />}
     {register && onLogin && <ActionButton secondary title="Já tenho conta" disabled={auth.loading} onPress={onLogin} />}
     </Card></GamePage>;
+}
+
+function GoogleButton({ disabled, onPress }: { disabled: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel="Continuar com Google" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.google, { backgroundColor: pressed ? '#f2f6fc' : '#fff', opacity: disabled ? 0.5 : 1 }]}>
+    <Image accessible={false} source={require('../../assets/auth/google.png')} style={{ width: 18, height: 18 }} />
+    <Text style={styles.googleText}>Continuar com Google</Text>
+  </Pressable>;
 }
 
 const styles = StyleSheet.create({
@@ -88,7 +95,7 @@ const styles = StyleSheet.create({
   enterText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 1, textTransform: 'uppercase' },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 },
   line: { flex: 1, height: 1, backgroundColor: '#d6e1e7' },
-  google: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: '#d6e1e7', borderRadius: 14, minHeight: 52 },
-  googleMark: { fontSize: 23, fontWeight: '800', color: '#4285f4' },
+  google: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#747775', borderRadius: 4, minHeight: 44 },
+  googleText: { color: '#1f1f1f', fontSize: 14, fontWeight: '500', letterSpacing: 0.25 },
   signup: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
 });
