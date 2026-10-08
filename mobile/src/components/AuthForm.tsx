@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 28 },
   brand: { alignItems: 'center', gap: 14 },
   logoPanel: { width: '100%', maxWidth: 310, paddingHorizontal: 12, paddingVertical: 4 },
-  logo: { width: '100%', aspectRatio: 2 },
+  logo: { width: '100%', height: 144 },
   tagline: { color: '#e2f2f7', fontSize: 17, lineHeight: 25, textAlign: 'center', maxWidth: 310 },
   form: { backgroundColor: '#fffffff5', borderRadius: 26, padding: 24, gap: 18, borderWidth: 1, borderColor: '#ffffffaa', boxShadow: '0 16px 48px #00000040' },
   field: { gap: 8 },
