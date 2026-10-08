@@ -1,8 +1,10 @@
 import unittest
 from collections import Counter
+from datetime import UTC, datetime
+from unittest.mock import Mock, patch
 
 from app.config.game import GameConfig
-from app.services.competition import division_name, movement, round_robin
+from app.services.competition import CompetitionService, division_name, movement, round_robin
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
 
 
@@ -22,14 +24,44 @@ class CompetitionRulesTests(unittest.TestCase):
         config = GameConfig()
         offsets = config.round_offsets()
         self.assertEqual(len(offsets), 38)
-        self.assertTrue(all(2 <= d < 15 for d in offsets[:19]))
-        self.assertTrue(all(17 <= d < 30 for d in offsets[19:]))
+        self.assertTrue(all(2 <= d < 15 for d in offsets[:20]))
+        self.assertTrue(all(17 <= d < 30 for d in offsets[20:]))
+        days = Counter(int(offset) for offset in offsets)
+        self.assertTrue(all(count == 2 for count in days.values()))
+        self.assertTrue(all(b - a == 0.5 for a, b in zip(offsets[:19], offsets[1:20])))
+        self.assertTrue(all(b - a == 0.5 for a, b in zip(offsets[20:-1], offsets[21:])))
         custom = (2,) * 19 + (17,) * 19
         self.assertEqual(GameConfig(ROUND_OFFSETS_DAYS=custom).round_offsets(), custom)
         with self.assertRaises(ValueError):
             GameConfig(ROUND_OFFSETS_DAYS=(15,) * 38)
         with self.assertRaises(ValueError):
             GameConfig(ROUND_OFFSETS_DAYS=(float("nan"),) * 38)
+
+    def test_generated_fixtures_and_calendar_have_two_matches_per_club_per_day(self):
+        config = GameConfig()
+        season = {
+            "_id": "season",
+            "starts_at": datetime(2026, 10, 1, tzinfo=UTC),
+            "config": config.snapshot(),
+        }
+        division = {"_id": "division", "name": "A"}
+        slots = [{"_id": i, "club_id": i} for i in range(20)]
+        repo = Mock()
+        with patch.object(CompetitionService, "refresh_positions"):
+            CompetitionService.schedule(repo, season, division, slots)
+        fixtures = repo.insert_many.call_args_list[0].args[1]
+        events = repo.insert_many.call_args_list[1].args[1]
+        counts = Counter()
+        for match in fixtures:
+            for side in ("home_club_id", "away_club_id"):
+                counts[(match[side], match["date"].date())] += 1
+        self.assertEqual(len(fixtures), 380)
+        self.assertTrue(all(count == 2 for count in counts.values()))
+        match_dates = {match["_id"]: match["date"] for match in fixtures}
+        self.assertEqual(len(events), 760)
+        self.assertTrue(
+            all(event["date"] == match_dates[event["reference_id"]] for event in events)
+        )
 
     def test_unlimited_series_and_three_division_movements(self):
         self.assertEqual([division_name(i) for i in (0, 25, 26, 701)], ["A", "Z", "AA", "ZZ"])

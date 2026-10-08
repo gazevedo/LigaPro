@@ -119,10 +119,10 @@ class GameConfig:
             return self.ROUND_OFFSETS_DAYS
         first_start = self.PRESEASON_DAYS
         second_start = self.midseason_start + self.MIDSEASON_TRANSFER_WINDOW_DAYS
-        return tuple(
-            first_start + (self.midseason_start - first_start) * i / 19 for i in range(19)
-        ) + tuple(
-            second_start + (self.SEASON_DURATION_DAYS - second_start) * i / 19 for i in range(19)
+        # Twenty rounds before the midseason window and eighteen after it:
+        # two rounds per playing day, with twelve hours between kickoffs.
+        return tuple(first_start + i / 2 for i in range(20)) + tuple(
+            second_start + i / 2 for i in range(18)
         )
 
     @classmethod

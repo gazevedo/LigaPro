@@ -215,7 +215,7 @@ O dashboard mostra a data e a hora da próxima partida. **Assistir** aparece som
 
 - Divisões de 20 clubes, completadas por bots, com turno e returno: 38 rodadas e 380 jogos por divisão.
 - Um clube novo substitui o pior bot da divisão mais alta com vaga e herda sua posição esportiva, sem herdar elenco ou dinheiro. Resultados anteriores e auditoria são preservados. Sem bot disponível, cria-se outra divisão.
-- Temporada padrão: 30 dias reais. Preparação/janela inicial nos dias 0–2, janela intermediária nos dias 15–17; partidas distribuídas fora das janelas. Regras e calendário são congelados por temporada.
+- Temporada padrão: 30 dias reais. Preparação/janela inicial nos dias 0–2, janela intermediária nos dias 15–17; duas rodadas por dia de jogos, com intervalo de 12 horas: 20 rodadas antes da janela intermediária e 18 depois, sem jogos da liga durante as janelas. Regras e calendário são congelados por temporada.
 - Quatro acessos e quatro rebaixamentos por fronteira de divisões. Fechamento registra classificação, campeão, prêmios, envelhecimento, carreira e próximo calendário.
 - Copa Nacional paralela, com até 128 participantes das cinco primeiras divisões por padrão. Sorteio determinístico e folgas quando necessário. Jogo único; empate leva a 30 minutos de prorrogação e, persistindo, disputa de pênaltis com morte súbita. Pênaltis da disputa não contam como gols ou minutos individuais da partida.
 - Clubes novos herdam a participação ativa do bot substituído na copa. Campeão, avanço, troféus e premiações são persistidos.
