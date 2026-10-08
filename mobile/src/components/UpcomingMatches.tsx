@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppState, Text, View } from 'react-native';
+import { calendarService } from '../services/calendarService';
 import { liveMatchService } from '../services/liveMatchService';
 import { ActionButton, NotificationBubble, palette } from './GameUI';
 
@@ -14,7 +15,14 @@ export function UpcomingMatches({ open }: { open: (id: string) => void }) {
       if (loading || AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
       loading = true;
       try {
-        const rows = await liveMatchService.upcoming();
+        const [events, upcoming] = await Promise.all([
+          calendarService.get(), liveMatchService.upcoming(),
+        ]);
+        const rows = events.flatMap(event => {
+          if (!['match', 'league_match', 'cup_match', 'friendly'].includes(event.kind || event.type)) return [];
+          const match = upcoming.find(item => item.id === event.reference_id);
+          return match ? [{ ...match, date: event.date }] : [];
+        });
         if (active) { setMatches(rows); setError(null); }
       } catch { if (active) setError('Não foi possível atualizar a próxima partida.'); }
       finally { loading = false; }
