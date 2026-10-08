@@ -61,6 +61,12 @@ curl http://localhost:8000/api/health
 
 O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às transações. Com `MONGODB_CONNECTION_STRING` vazio, a API em Docker usa o hostname interno `mongodb`; clientes no host usam `localhost`. Uma URI preenchida no `.env` substitui esse padrão. O volume `mongodb_data` persiste os dados.
 
+### Instalar o app web no Android e iPhone
+
+Abra o frontend publicado em HTTPS (`https://ligapro-mobile.vercel.app/`). No Android, use Chrome → menu ⋮ → **Instalar aplicativo** ou **Adicionar à tela inicial**. No iPhone, use Safari → Compartilhar → **Adicionar à Tela de Início**; mantenha **Abrir como App** ativado se essa opção aparecer. Abra pelo ícone LigaPro para usar a janela sem a barra do navegador.
+
+A exportação web inclui manifesto, ícones Android/iOS e service worker. O app precisa de internet para acessar o jogo; offline, mostra uma tela para tentar novamente. Apenas essa tela e ícones públicos entram no cache, sem respostas da API ou credenciais. Após atualizar esses arquivos no Git, faça um novo deploy do frontend com `npx expo export --platform web`, saída `dist`. A PWA não habilita o login Google web, que ainda precisa de integração própria.
+
 ### Backend local para desenvolvimento
 
 Para instalar somente as dependências Python da API a partir da raiz, execute `python -m pip install -r requirements.txt`. Para desenvolvimento e testes, use `python -m pip install -r backend/requirements-dev.txt`. As dependências do aplicativo continuam em `mobile/package.json` e são instaladas com `npm ci` na pasta `mobile`.
