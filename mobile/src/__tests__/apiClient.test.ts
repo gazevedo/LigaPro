@@ -1,3 +1,4 @@
+import { checkHealth } from '../services/healthService';
 import { apiRequest, ApiError, registerAuthHandlers } from '../services/apiClient';
 import { tokenService } from '../services/tokenService';
 import { Tokens } from '../types/auth';
@@ -86,4 +87,21 @@ test('expired session on club creation clears authentication without refreshing 
   expect(clear).toHaveBeenCalledTimes(1);
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(tokenService.current()).toBeNull();
+});
+
+test('startup cancels an unresponsive server after three seconds', async () => {
+  jest.useFakeTimers();
+  let signal: AbortSignal | undefined;
+  fetchMock.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+    signal = options?.signal ?? undefined;
+    signal?.addEventListener('abort', () => reject(new Error('Aborted')));
+  }));
+  try {
+    const result = checkHealth().catch(error => error);
+    await jest.advanceTimersByTimeAsync(2999);
+    expect(signal?.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(signal?.aborted).toBe(true);
+    expect(await result).toMatchObject({ message: 'O servidor demorou para responder. Verifique sua conexão e tente novamente.' });
+  } finally { jest.useRealTimers(); }
 });
