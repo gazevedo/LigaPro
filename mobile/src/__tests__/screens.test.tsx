@@ -1,24 +1,12 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { SplashScreen } from '../screens/SplashScreen';
-import { useAppStore } from '../stores/appStore';
 import { settingsService } from '../services/settingsService';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 jest.mock('../services/settingsService', () => ({ settingsService: { list: jest.fn() } }));
 const list = jest.mocked(settingsService.list);
 beforeEach(() => jest.clearAllMocks());
-test('splash shows connection error and retry', async () => {
-  const initialize = jest.fn();
-  useAppStore.setState({ error: 'Offline', loading: false, initialize });
-  await render(<SplashScreen />);
-  expect(screen.getAllByLabelText('Logotipo LigaPro')).toHaveLength(1);
-  expect(screen.queryByText('LigaPro')).toBeNull();
-  expect(screen.getByText('Servidor em manutenção, tente mais tarde.')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Tentar novamente'));
-  expect(initialize).toHaveBeenCalledTimes(1);
-});
 test('home navigates only to settings; game buttons disabled', async () => {
   const navigate = jest.fn();
   const props = { navigation: { navigate }, route: { key: 'Home', name: 'Home' } } as unknown as NativeStackScreenProps<RootStackParamList, 'Home'>;

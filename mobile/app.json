@@ -10,11 +10,6 @@
     },
     "android": {
       "package": "com.ligapro.app"
-    },
-    "splash": {
-      "image": "./assets/brand/logo-ligapro.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
     }
   }
 }
