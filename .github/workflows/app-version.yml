@@ -29,6 +29,10 @@ jobs:
             exit 0
           fi
           git pull --ff-only origin main
+          if ! git diff --quiet "$PREVIOUS_REVISION" HEAD -- mobile/version.json; then
+            echo 'Version already updated in this release'
+            exit 0
+          fi
           node --test mobile/scripts/version.test.cjs
           node mobile/scripts/bump-version.cjs
           git config user.name 'github-actions[bot]'
