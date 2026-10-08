@@ -38,10 +38,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.subtitle}>{club?.country?.name || club?.country_id} · Sua próxima conquista começa no planejamento.</Text>
       </View>
     </View></Card>
-    <View style={styles.sectionHeading}>
-      <Text style={styles.sectionTitle}>Gerencie seu clube</Text>
-      <Text style={styles.subtitle}>Tudo para comandar sua equipe.</Text>
-    </View>
     <View style={styles.grid} onLayout={event => setGridWidth(event.nativeEvent.layout.width)}>
       {shortcuts.map(shortcut => <Pressable key={shortcut.icon}
         accessibilityRole="button" accessibilityLabel={shortcut.title}
@@ -63,8 +59,6 @@ const styles = StyleSheet.create({
   eyebrow: { color: palette.primary, fontWeight: '700', letterSpacing: 2 },
   clubName: { fontSize: 30, fontWeight: '800', color: palette.ink },
   subtitle: { color: palette.muted, lineHeight: 20 },
-  sectionHeading: { gap: 6, marginTop: 4 },
-  sectionTitle: { color: palette.ink, fontSize: 22, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   tile: {
     minHeight: 156, paddingHorizontal: 8, paddingVertical: 16,

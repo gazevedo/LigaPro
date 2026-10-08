@@ -13,9 +13,10 @@ const options = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
 export const tokenService = {
   current: (): Tokens | null => tokens,
   read: async (): Promise<Tokens | null> => {
-    if (Platform.OS === 'web') return tokens; // No persistent browser token storage.
     await writes;
-    const value = await SecureStore.getItemAsync(key);
+    const value = Platform.OS === 'web'
+      ? globalThis.localStorage.getItem(key)
+      : await SecureStore.getItemAsync(key);
     if (!value) return (tokens = null);
     let parsed: unknown;
     try { parsed = JSON.parse(value); }
@@ -28,15 +29,14 @@ export const tokenService = {
     return (tokens = { access_token: parsed.access_token, refresh_token: parsed.refresh_token });
   },
   save: (value: Tokens): Promise<void> => serialize(async () => {
-    if (Platform.OS !== 'web') {
-      await SecureStore.setItemAsync(key, JSON.stringify({
-        access_token: value.access_token, refresh_token: value.refresh_token,
-      }), options);
-    }
+    const stored = JSON.stringify({ access_token: value.access_token, refresh_token: value.refresh_token });
+    if (Platform.OS === 'web') globalThis.localStorage.setItem(key, stored);
+    else await SecureStore.setItemAsync(key, stored, options);
     tokens = { access_token: value.access_token, refresh_token: value.refresh_token };
   }),
   clear: (): Promise<void> => serialize(async () => {
     tokens = null;
-    if (Platform.OS !== 'web') await SecureStore.deleteItemAsync(key);
+    if (Platform.OS === 'web') globalThis.localStorage.removeItem(key);
+    else await SecureStore.deleteItemAsync(key);
   }),
 };
