@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
   content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 14 },
   brand: { alignItems: 'center', gap: 6 },
-  logo: { width: '100%', maxWidth: 310, height: 104 },
+  logo: { width: '100%', maxWidth: 310, height: 104, backgroundColor: '#fffffff5', borderRadius: 22 },
   tagline: { color: '#e2f2f7', fontSize: 17, lineHeight: 25, textAlign: 'center', maxWidth: 310 },
   form: { backgroundColor: '#fffffff5', borderRadius: 26, padding: 24, gap: 18, borderWidth: 1, borderColor: '#ffffffaa', boxShadow: '0 16px 48px #00000040' },
   field: { gap: 8 },
