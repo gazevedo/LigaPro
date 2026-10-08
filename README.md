@@ -491,3 +491,7 @@ Em 06/10/2026, cinco branches do Dependabot foram revisadas e integradas ao hist
 React DOM acompanha React em 19.2.3. Não atualize esses pacotes isoladamente; verifique a matriz do Expo, o renderizador nativo, tipos, lint, testes e builds. `npm ci` usa o lockfile versionado; para verificar alinhamento, execute `npx expo install --check`.
 
 Dependabot utiliza `open-pull-requests-limit: 0` para atualizações de versões npm/pip. Isso interrompe novas PRs automáticas de versões; alertas e atualizações de segurança têm configuração separada no GitHub. Proteção de branch e permissões são configuradas no GitHub, não pelos arquivos locais; mantenha qualquer regra compatível com o fluxo autorizado de trabalho na `main`.
+
+### Versão do aplicativo
+
+O rodapé do login mostra `v1.0.0.0`, no formato principal.secundária.correção.revisão, definido em `mobile/version.json`. O workflow **App version** incrementa automaticamente a revisão após atualizações na `main` e envia um commit com o novo número. A primeira publicação mantém a revisão zero; commits que alteram apenas esse arquivo não reiniciam o workflow. A automação precisa de permissão de escrita na `main`. O deploy do frontend deve usar o commit mais recente, incluindo a atualização automática. Para uma nova versão principal, secundária ou de correção, ajuste esses campos e zere a revisão. Expo usa os três primeiros números; o rodapé inclui os quatro.

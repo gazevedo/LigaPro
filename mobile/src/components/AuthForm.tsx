@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import version from '../../version.json';
 import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useAuthStore } from '../stores/authStore';
+const appVersion = `${version.major}.${version.minor}.${version.patch}.${version.revision}`;
 export function AuthForm({ register = false, onCreateAccount, onLogin, background }: {
   register?: boolean; onCreateAccount?: () => void; onLogin?: () => void; background?: ImageSourcePropType;
 }) {
@@ -48,6 +50,7 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
           <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#8ce7c9', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
         </View>
       </ScrollView>
+      <View style={styles.footer}><Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text></View>
     </KeyboardAvoidingView></SafeAreaView>
   </ImageBackground>;
   return <GamePage error={validation || auth.error} loading={auth.loading}>
@@ -97,5 +100,7 @@ const styles = StyleSheet.create({
   line: { flex: 1, height: 1, backgroundColor: '#d6e1e7' },
   google: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#747775', borderRadius: 4, minHeight: 44 },
   googleText: { color: '#1f1f1f', fontSize: 14, fontWeight: '500', letterSpacing: 0.25 },
+  footer: { alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 12 },
+  version: { color: '#d5e5ee', fontSize: 12 },
   signup: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
 });
