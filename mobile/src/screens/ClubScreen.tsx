@@ -3,13 +3,13 @@ import { ClubHistory } from './HistoryScreen';
 import { ProfileScreen } from './ProfileScreen';
 import { ClubBadge } from '../components/ClubBadge';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Club } from '../types/game';
 import { clubService } from '../services/clubService';
 import { useClubStore } from '../stores/clubStore';
-import { ActionButton as Button, Card, Field, GamePage, useAction } from '../components/GameUI';
+import { ActionButton as Button, Card, Field, GamePage, palette, useAction } from '../components/GameUI';
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const [club, setClub] = useState<Club | null>(null), [id, setId] = useState('');
   const [confirmResign, setConfirmResign] = useState(false);
@@ -17,11 +17,37 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const action = useAction();
   useEffect(() => { void action.run(async () => setClub(await clubService.get(route.params.id))); }, [route.params.id]); // eslint-disable-line react-hooks/exhaustive-deps
   return <GamePage loading={action.busy} error={action.error}>{club?.id === route.params.id && <>
-    <View style={{ flexDirection: 'row', gap: 20, alignItems: 'center' }}><ClubBadge badge={club.badge} name={club.name} /><Text style={{ fontSize: 28, fontWeight: '800', flex: 1 }}>{club.name}</Text></View><Text>Escudo: {club.badge_id} · País: {club.country?.name ?? club.country_id}</Text>
-    <Text>Criado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text><Text>Ranking: {club.ranking_position ?? 0} · Pontos: {club.ranking_points ?? club.ranking}</Text><Text>Reputação: {club.reputation ?? 10}/100</Text><Text>Torcida: {club.supporters ?? 1000} · Satisfação: {club.fan_satisfaction ?? 50}/100</Text>
-    <Text>Troféus: {club.trophies.length ? JSON.stringify(club.trophies) : 'Nenhum troféu'}</Text>
-    {own === club.id && <><Card><Text style={{ fontSize: 22, fontWeight: '800' }}>Perfil do técnico</Text><ProfileScreen /></Card><ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} /></>}
-    {own === club.id && <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />}
+    <Card><View style={styles.hero}>
+      <ClubBadge badge={club.badge} name={club.name} />
+      <View style={{ flex: 1, gap: 8 }}>
+        <Text style={styles.eyebrow}>{own === club.id ? 'MEU CLUBE' : 'CLUBE'}</Text>
+        <Text style={styles.name}>{club.name}</Text>
+        <Text style={styles.caption}>{club.country?.name ?? club.country_id}</Text>
+        <Text style={styles.caption}>Fundado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text>
+      </View>
+    </View></Card>
+    <View style={styles.metrics}>
+      {[
+        { label: 'Ranking', value: `${club.ranking_position ?? 0}º`, detail: `${club.ranking_points ?? club.ranking} pontos`, color: '#e3edfc' },
+        { label: 'Reputação', value: `${club.reputation ?? 10}/100`, detail: 'Prestígio do clube', color: '#daf4e7' },
+        { label: 'Torcida', value: (club.supporters ?? 1000).toLocaleString('pt-BR'), detail: 'Torcedores', color: '#fff2c1' },
+        { label: 'Satisfação', value: `${club.fan_satisfaction ?? 50}/100`, detail: 'Apoio da torcida', color: '#e8e0fc' },
+      ].map(metric => <View key={metric.label} style={[styles.metric, { backgroundColor: metric.color }]}>
+        <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text><Text style={styles.caption}>{metric.detail}</Text>
+      </View>)}
+    </View>
+    <Card><Text style={styles.heading}>Sala de troféus</Text>
+      <Text style={styles.caption}>{club.trophies.length ? `${club.trophies.length} conquista${club.trophies.length > 1 ? 's' : ''}` : 'As próximas conquistas começam aqui.'}</Text>
+      {club.trophies.map((trophy, index) => {
+        const name = typeof trophy === 'string' ? trophy : trophy && typeof trophy === 'object' ? ('name' in trophy ? trophy.name : 'title' in trophy ? trophy.title : null) : null;
+        return <Text key={index} style={styles.label}>🏆 {typeof name === 'string' ? name : `Título ${index + 1}`}</Text>;
+      })}
+    </Card>
+    {own === club.id && <>
+      <Button title="Administrar plantel" onPress={() => navigation.navigate('Squad')} />
+      <Card><Text style={styles.heading}>Perfil do técnico</Text><ProfileScreen /></Card>
+      <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />
+      <Card><Text style={styles.heading}>Gestão do clube</Text><Text style={styles.caption}>Pedir demissão encerra sua gestão e inativa o clube atual.</Text>
     {own === club.id && !confirmResign && <Button title="Pedir demissão" disabled={action.busy} onPress={() => setConfirmResign(true)} />}
     {own === club.id && confirmResign && <>
       <Text accessibilityRole="alert">Ao pedir demissão, você perderá definitivamente o clube atual, incluindo todo o dinheiro, jogadores, estádio e progresso. O clube será inativado. Você poderá criar um novo clube, sem transferir dinheiro ou patrimônio do anterior. Esta ação não pode ser desfeita.</Text>
@@ -32,5 +58,19 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         useClubStore.setState({ data: status });
       })} />
     </>}
-  </>}<Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></GamePage>;
+      </Card>
+    </>}
+  </>}<Card><Text style={styles.heading}>Consultar outro clube</Text><Field label="Consultar clube por ID" value={id} onChange={setId} /><Button title="Consultar clube" disabled={!id} onPress={() => navigation.setParams({ id })} /></Card></GamePage>;
 }
+
+const styles = StyleSheet.create({
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  eyebrow: { color: palette.primary, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  name: { color: palette.ink, fontSize: 28, fontWeight: '800' },
+  heading: { color: palette.ink, fontSize: 21, fontWeight: '800' },
+  caption: { color: palette.muted, lineHeight: 20 },
+  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  metric: { flexGrow: 1, flexBasis: '45%', padding: 18, gap: 8, borderRadius: 20, borderWidth: 2, borderColor: palette.border },
+  label: { color: palette.ink, fontWeight: '700' },
+  value: { color: palette.ink, fontSize: 24, fontWeight: '800' },
+});
