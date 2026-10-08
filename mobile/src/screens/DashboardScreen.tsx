@@ -35,7 +35,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
       <View style={styles.identity}>
         <Text style={styles.eyebrow}>CENTRAL DO TÉCNICO</Text>
         <Text style={styles.clubName}>{club?.name}</Text>
-        <Text style={styles.subtitle}>{club?.country?.name || club?.country_id} · Sua próxima conquista começa no planejamento.</Text>
+        <UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} />
       </View>
     </View></Card>
     <View style={styles.grid} onLayout={event => setGridWidth(event.nativeEvent.layout.width)}>
@@ -49,7 +49,6 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.tileTitle}>{shortcut.title}</Text>
       </Pressable>)}
     </View>
-    <Card><UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} /></Card>
   </GamePage>;
 }
 
@@ -58,7 +57,6 @@ const styles = StyleSheet.create({
   identity: { flex: 1, gap: 8 },
   eyebrow: { color: palette.primary, fontWeight: '700', letterSpacing: 2 },
   clubName: { fontSize: 30, fontWeight: '800', color: palette.ink },
-  subtitle: { color: palette.muted, lineHeight: 20 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   tile: {
     minHeight: 156, paddingHorizontal: 8, paddingVertical: 16,
