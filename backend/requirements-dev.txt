@@ -2,3 +2,5 @@
 pytest==9.1.1
 httpx==0.28.1
 ruff==0.16.10
+httpx2==2.13.1
+cryptography==50.0.2

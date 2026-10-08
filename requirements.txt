@@ -1,0 +1,2 @@
+# Dependências Python da API. Instale a partir da raiz do projeto.
+-r backend/requirements.txt

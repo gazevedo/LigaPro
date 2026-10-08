@@ -63,6 +63,8 @@ O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às t
 
 ### Backend local para desenvolvimento
 
+Para instalar somente as dependências Python da API a partir da raiz, execute `python -m pip install -r requirements.txt`. Para desenvolvimento e testes, use `python -m pip install -r backend/requirements-dev.txt`. As dependências do aplicativo continuam em `mobile/package.json` e são instaladas com `npm ci` na pasta `mobile`.
+
 Em `backend/.env`, configure `MONGODB_CONNECTION_STRING=mongodb://localhost:27017/?directConnection=true` para o backend executado no host. Inicie apenas o MongoDB em Docker e execute a API no ambiente virtual:
 
 ```bash
