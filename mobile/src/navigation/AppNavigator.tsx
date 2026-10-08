@@ -25,6 +25,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
 import { ActionButton, GameBackground, GamePage, palette } from '../components/GameUI';
+import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
 import { useClubStore } from '../stores/clubStore';
 import { CreateClubScreen } from '../screens/CreateClubScreen';
@@ -41,14 +42,18 @@ export function AppNavigator() {
   const loadClub = game.load;
   useEffect(() => { if (auth.user?.id) void loadClub(); }, [auth.user?.id, loadClub]);
   useEffect(() => {
-    void initialize().then(() => useAuthStore.getState().restoreSession());
+    void initialize().then(() => {
+      if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
+    });
   }, [initialize]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
       <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />
       {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} /> : error || auth.error ? <>
         <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : auth.error}</Text>
-        <ActionButton title="Tentar novamente" onPress={() => { void initialize().then(() => useAuthStore.getState().restoreSession()); }} />
+        <ConnectionRetry onRetry={() => { void initialize().then(() => {
+          if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
+        }); }} />
       </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} />}
     </View> : <NavigationContainer>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
