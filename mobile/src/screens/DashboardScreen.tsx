@@ -17,8 +17,8 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
   const columns = gridWidth >= 600 ? 4 : gridWidth >= 330 ? 3 : 2;
   const tileWidth = Math.max(0, Math.floor((gridWidth - 12 * (columns - 1)) / columns));
   const shortcuts: Shortcut[] = [
-    { icon: 'competitions', title: 'Campeonatos', open: () => navigation.navigate('Competitions') },
     { icon: 'club', title: 'Clube', disabled: !club, open: () => { if (club) navigation.navigate('Club', { id: club.id }); } },
+    { icon: 'competitions', title: 'Campeonatos', open: () => navigation.navigate('Competitions') },
     { icon: 'tactics', title: 'Táticas', open: () => navigation.navigate('Tactics') },
     { icon: 'squad', title: 'Plantel', open: () => navigation.navigate('Squad') },
     { icon: 'stadium', title: 'Estádio', open: () => navigation.navigate('Stadium') },

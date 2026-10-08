@@ -20,7 +20,7 @@ import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect } from 'react';
 import { ActivityIndicator, Image, Text, useWindowDimensions, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
@@ -34,6 +34,7 @@ import { AuthNavigator } from './AuthNavigator';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackParamList } from './types';
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
 export function AppNavigator() {
   const { width } = useWindowDimensions();
   const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
@@ -55,7 +56,7 @@ export function AppNavigator() {
           if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
         }); }} />
       </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} />}
-    </View> : <NavigationContainer>
+    </View> : <NavigationContainer theme={navigationTheme}>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} openSettings={() => navigation.navigate('Settings')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
