@@ -18,7 +18,7 @@ import { StadiumScreen } from '../screens/StadiumScreen';
 import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ActivityIndicator, BackHandler, Image, Platform, Text, useWindowDimensions, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -34,10 +34,12 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { AuthNavigator } from './AuthNavigator';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackParamList } from './types';
+import { registerBrowserBack } from './browserBack';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
 export function AppNavigator() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const browserBack = useRef<ReturnType<typeof registerBrowserBack> | null>(null);
   const { width } = useWindowDimensions();
   const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
   const auth = useAuthStore();
@@ -47,6 +49,14 @@ export function AppNavigator() {
   const showStartupLogo = !installedWebApp || (initialized && !loading && Boolean(error || auth.error));
   const game = useClubStore();
   const loadClub = game.load;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = registerBrowserBack(window,
+      () => navigationRef.isReady() && navigationRef.canGoBack(),
+      () => navigationRef.goBack());
+    browserBack.current = handler;
+    return () => { handler.dispose(); browserBack.current = null; };
+  }, [navigationRef]);
   useEffect(() => { if (auth.user?.id) void loadClub(); }, [auth.user?.id, loadClub]);
   useEffect(() => {
     void initialize().then(() => {
@@ -70,7 +80,7 @@ export function AppNavigator() {
           if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
         }); }} />
       </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} />}
-    </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme}>
+    </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitle: '', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
