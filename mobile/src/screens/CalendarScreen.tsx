@@ -9,12 +9,12 @@ export function CalendarScreen() {
   const [selected, setSelected] = useState(() => new Date().getDate());
   const load = store.load;
   useEffect(() => { void load({ start: month.toISOString(), end: new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString() }); }, [load, month]);
-  const events = store.data ?? [], today = dayKey(new Date());
+  const events = (store.data ?? []).filter(event => !['financial', 'financial_close', 'ticketing', 'transfer_window_open', 'transfer_window_close', 'transfer_window'].includes(event.kind || event.type)), today = dayKey(new Date());
   const cells = Array.from({ length: month.getDay() + new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate() }, (_, index) => index < month.getDay() ? null : index - month.getDay() + 1);
   function move(offset: number) { setMonth(new Date(month.getFullYear(), month.getMonth() + offset, 1)); setSelected(1); }
   const date = (day: number) => new Date(month.getFullYear(), month.getMonth(), day);
   const selectedEvents = events.filter(event => dayKey(new Date(event.date)) === dayKey(date(selected)));
-  return <GamePage loading={store.loading} error={store.error}><Text style={{ fontSize: 26, fontWeight: '800', color: palette.ink }}>Agenda do clube</Text>
+  return <GamePage loading={store.loading} error={store.error}>
     <Card><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><ActionButton title="‹" accessibilityLabel="Mês anterior" secondary onPress={() => move(-1)} /><Text style={{ color: palette.ink, fontWeight: '800', fontSize: 18 }}>{month.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</Text><ActionButton title="›" accessibilityLabel="Próximo mês" secondary onPress={() => move(1)} /></View>
       <View style={{ flexDirection: 'row' }}>{['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((label, i) => <Text key={i} style={{ width: '14.28%', textAlign: 'center', color: palette.muted, fontWeight: '700' }}>{label}</Text>)}</View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{cells.map((day, index) => {

@@ -134,7 +134,7 @@ class CompetitionRulesTests(unittest.TestCase):
         )
         self.assertTrue(all(p["strength"] <= 30 for p in squad))
         youth = generator.youth("club", "BR")
-        self.assertEqual(len(youth), 2)
+        self.assertEqual(len(youth), 3)
         self.assertTrue(all(14 <= p["age"] <= 17 for p in youth))
         config = GameConfig()
         self.assertEqual(PlayerAgingService.probability(34, config.DECLINE_PROBABILITIES), 0)

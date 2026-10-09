@@ -219,7 +219,7 @@ O dashboard mostra a data e a hora da próxima partida. **Assistir** aparece som
 - Quatro acessos e quatro rebaixamentos por fronteira de divisões. Fechamento registra classificação, campeão, prêmios, envelhecimento, carreira e próximo calendário.
 - Copa Nacional paralela, com até 128 participantes das cinco primeiras divisões por padrão. Sorteio determinístico e folgas quando necessário. Jogo único; empate leva a 30 minutos de prorrogação e, persistindo, disputa de pênaltis com morte súbita. Pênaltis da disputa não contam como gols ou minutos individuais da partida.
 - Clubes novos herdam a participação ativa do bot substituído na copa. Campeão, avanço, troféus e premiações são persistidos.
-- Calendário inclui liga, copa, amistosos, início/fim, janelas, geração de juniores e doze fechamentos financeiros. Amistosos precisam de horário livre; humanos convidados aceitam e bots aceitam automaticamente.
+- O calendário interno inclui liga, copa, amistosos, início/fim, janelas, geração de juniores e doze fechamentos financeiros; a agenda do app oculta bilheteria, fechamentos financeiros e janelas de transferências, exibindo os compromissos do dia selecionado. Amistosos precisam de horário livre; humanos convidados aceitam e bots aceitam automaticamente.
 
 Tudo continua sendo processado quando os técnicos estão offline. Dados e eventos usam UTC/ISO 8601; o aplicativo apresenta datas no formato local do usuário.
 
@@ -229,7 +229,7 @@ Profissionais usam GK/FB/CB/MID/ATT, lado, força, estrelas, condição física,
 
 O modelo profissional atual **não possui potencial/CPE**. Potencial interno e CPE pertencem à base. O treino evolui a habilidade escolhida, mantém progresso técnico separado e recalcula força e valor de mercado. Lesões impedem escalação e treino normal; desgaste depende de minutos, idade e intensidade, com recuperação por tempo lógico e estrutura médica.
 
-A base aceita até 20 juniores ativos e gera dois por temporada. Permite treino, promoção a partir dos 18 anos com contrato profissional e dispensa. A promoção remove o CPE do modelo profissional. Desenvolvimento/regressão anual considera idade, treino, minutos, moral, lesões e características; declínio e aposentadoria são graduais a partir das faixas configuradas. Aposentados preservam histórico e deixam plantel, treino e mercado.
+A base aceita até 20 juniores ativos. No início de cada temporada, apresenta três candidatos aleatórios e o técnico escolhe apenas um; os outros dois são descartados. Candidatos não podem treinar ou ser promovidos antes da escolha, e a seleção é protegida por transação para impedir duas escolhas em dispositivos diferentes. Juniores já existentes são preservados. Permite treino, promoção a partir dos 18 anos com contrato profissional e dispensa. A promoção remove o CPE do modelo profissional. Desenvolvimento/regressão anual considera idade, treino, minutos, moral, lesões e características; declínio e aposentadoria são graduais a partir das faixas configuradas. Aposentados preservam histórico e deixam plantel, treino e mercado.
 
 Moral vai de 0–100 e varia por participação, resultados, gols, ausência, promoção e transferências; o multiplicador de desempenho fica entre 0,94–1,04, com faixa normal neutra. Entrosamento responde à continuidade da escalação, formação e integração; seu fator fica entre 0,92–1,04. São regras separadas da aleatoriedade do motor.
 

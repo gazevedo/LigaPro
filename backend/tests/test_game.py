@@ -463,3 +463,19 @@ def test_create_club_with_expanded_catalog(client):
     assert club["badge"]["pattern"] == "cross"
     assert club["badge"]["accent"] == "#facc15"
     assert client.get("/api/game/status", headers=headers).json()["club"]["id"] == club["id"]
+
+
+def test_market_sorts_results_before_limit(client):
+    headers = account(client, 1)
+    create(client, headers)
+    for sort, field, reverse in [
+        ("value_asc", "market_value", False),
+        ("value_desc", "market_value", True),
+        ("strength_desc", "strength", True),
+        ("strength_asc", "strength", False),
+    ]:
+        response = client.get(f"/api/market/players?sort={sort}", headers=headers)
+        assert response.status_code == 200
+        values = [row[field] for row in response.json()]
+        assert values == sorted(values, reverse=reverse)
+    assert client.get("/api/market/players?sort=invalid", headers=headers).status_code == 422

@@ -560,7 +560,12 @@ class MarketService:
                     bounds[operator] = value
             if bounds:
                 query[key] = bounds
-        return [player_public(p) for p in self.repo.search_players(query, filters.get("type"))]
+        return [
+            player_public(p)
+            for p in self.repo.search_players(
+                query, filters.get("type"), filters.get("sort", "value_asc")
+            )
+        ]
 
     def mine(self, user):
         club = self.repo.owned(user.id)

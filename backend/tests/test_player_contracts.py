@@ -57,6 +57,7 @@ def test_creation_financial_view_and_youth_contract(client):
     assert finance["salary_history"] == []
     assert finance["total_contract_cost"] > finance["monthly_payroll"]
     youth = db.youth_players.find_one({"owner_club_id": ObjectId(club["id"])})
+    assert client.post(f"/api/youth/{youth['_id']}/select", headers=headers).status_code == 200
     assert not db.player_contracts.find_one({"player_id": youth["_id"]})
     db.youth_players.update_one({"_id": youth["_id"]}, {"$set": {"age": 18}})
     assert client.post(f"/api/youth/{youth['_id']}/promote", headers=headers).status_code == 200

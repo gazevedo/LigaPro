@@ -90,7 +90,8 @@ def player_public(player, youth=False):
             "transfer_fee": 0
             if player.get("owner_club_id") is None
             else player.get("market_value", player.get("value", 0)),
-            "can_train": player.get("status") not in {"retired", "injured", "suspended"}
+            "can_train": player.get("status")
+            not in {"retired", "injured", "suspended", "candidate", "discarded"}
             and any(
                 value < 100 for value in normalize_player(player)["individual_skills"].values()
             ),

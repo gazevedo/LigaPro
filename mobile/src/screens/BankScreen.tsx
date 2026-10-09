@@ -9,7 +9,7 @@ export function BankScreen() {
   const action = useAction();
   async function load() { setData(await financeService.bank()); }
   useEffect(() => { void action.run(load); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <GamePage loading={action.busy} error={action.error}><Button title="Atualizar banco" onPress={() => void action.run(load)} />
+  return <GamePage loading={action.busy} error={action.error}>
     {data && <Text>Investimento: {data.rules.investment_days} dias, {data.rules.investment_interest_bps / 100}% por contrato. Empréstimo: {data.rules.bank_loan_days} dias, {data.rules.bank_loan_interest_bps / 100}% por contrato. Limite: {money(data.rules.max_bank_loan)}</Text>}
     {data?.credit_limit !== undefined && <Text>Crédito disponível: {money(data.credit_limit)} · Risco: {({low: 'Baixo', moderate: 'Moderado', high: 'Alto'} as Record<string, string>)[data.financial_risk ?? 'low']}</Text>}
     {Object.entries(data?.products ?? {}).map(([product, terms]) => <Button key={product} title={`${loanNames[product]} · ${terms.installments} parcelas · ${Math.round(terms.interest_rate * 100)}% total`} disabled={action.busy || data?.credit_blocked} onPress={() => void action.run(async () => { await financeService.loan(product, cents(amount)); await load(); })} />)}

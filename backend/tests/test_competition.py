@@ -41,7 +41,7 @@ def test_division_bots_random_players_and_schedule(client):
     assert len(matches) == 38
     assert sum(m["home_club_id"] == club["id"] for m in matches) == 19
     assert len(client.get("/api/calendar?type=match", headers=headers).json()) == 38
-    assert len(client.get("/api/youth", headers=headers).json()) == 2
+    assert len(client.get("/api/youth", headers=headers).json()) == 3
 
 
 def test_bot_replacement_inherits_sport_only_and_keeps_audit(client):
@@ -136,13 +136,14 @@ def test_training_youth_promotion_and_permissions(client):
     assert client.post("/api/players/invalid/train", headers=headers).status_code == 404
     youth = client.get("/api/youth", headers=headers).json()[0]
     assert 14 <= youth["age"] <= 17
+    assert client.post(f"/api/youth/{youth['id']}/select", headers=headers).status_code == 200
     assert client.post(f"/api/players/{youth['id']}/train", headers=headers).status_code == 200
     assert client.post(f"/api/youth/{youth['id']}/promote", headers=headers).status_code == 409
     db.youth_players.update_one({"_id": ObjectId(youth["id"])}, {"$set": {"age": 18}})
     assert client.post(f"/api/youth/{youth['id']}/promote", headers=stranger).status_code == 403
     assert client.post(f"/api/youth/{youth['id']}/promote", headers=headers).status_code == 200
     assert client.post(f"/api/youth/{youth['id']}/promote", headers=headers).status_code == 409
-    assert len(client.get("/api/youth", headers=headers).json()) == 1
+    assert len(client.get("/api/youth", headers=headers).json()) == 0
     squad = client.get("/api/squad", headers=headers).json()
     assert len(squad["players"]) == 26
     assert youth["id"] in squad["lineup"]["reserves"]
@@ -248,7 +249,7 @@ def test_season_finalization_plays_all_matches_ages_and_is_idempotent(client):
     )
     assert repo.find("players", {"_id": player["_id"]})["age"] == player["age"] + 1
     assert repo.find("youth_players", {"_id": youth["_id"]})["age"] == youth["age"] + 1
-    assert len(TrainingService(repo).get(user, youth=True)) == 4
+    assert len(TrainingService(repo).get(user, youth=True)) == 3
     assert db.seasons.count_documents({"status": "active"}) == 1
     bots = list(db.clubs.find({"is_bot": True, "active": True}))
     assert not db.club_finances.find_one(
@@ -514,5 +515,5 @@ def test_existing_club_bootstrap_preserves_administrative_data(client):
     assert db.season_clubs.count_documents({"club_id": cid}) == 1
     assert list(db.players.find({"current_club_id": cid}).sort("_id", 1)) == original_players
     assert repo.find("club_finances", {"_id": cid})["balance"] == original_balance
-    assert len(TrainingService(repo).get(user, youth=True)) == 2
+    assert len(TrainingService(repo).get(user, youth=True)) == 3
     assert db.matches.count_documents({}) == 380

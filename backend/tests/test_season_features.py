@@ -23,14 +23,22 @@ def setup(client):
     return headers, ObjectId(club["id"]), repo
 
 
-def test_cpe_release_promotion_and_bounded_generation(client):
+def test_cpe_selection_promotion_and_bounded_generation(client):
     headers, club, repo = setup(client)
     rows = client.get("/api/youth", headers=headers).json()
-    assert len(rows) == 2 and all(
-        14 <= p["age"] <= 17 and p["strength"] <= p["estimated_potential_capacity"] <= 100
+    assert len(rows) == 3 and all(
+        p["status"] == "candidate"
+        and not p["can_train"]
+        and 14 <= p["age"] <= 17
+        and p["strength"] <= p["estimated_potential_capacity"] <= 100
         for p in rows
     )
+    assert client.post(f"/api/players/{rows[0]['id']}/train", headers=headers).status_code == 409
+    assert client.post(f"/api/youth/{rows[0]['id']}/promote", headers=headers).status_code == 409
     promoted = rows[0]
+    assert client.post(f"/api/youth/{promoted['id']}/select", headers=headers).status_code == 200
+    assert client.post(f"/api/youth/{rows[1]['id']}/select", headers=headers).status_code == 409
+    assert len(client.get("/api/youth", headers=headers).json()) == 1
     repo.update("youth_players", {"_id": ObjectId(promoted["id"])}, {"$set": {"age": 18}})
     result = client.post(f"/api/youth/{promoted['id']}/promote", headers=headers)
     assert result.status_code == 200, result.text
@@ -38,20 +46,60 @@ def test_cpe_release_promotion_and_bounded_generation(client):
     assert repo.find(
         "player_contracts", {"player_id": ObjectId(promoted["id"]), "status": "active"}
     )
-    assert client.post(f"/api/youth/{rows[1]['id']}/release", headers=headers).status_code == 200
     assert not client.get("/api/youth", headers=headers).json()
     season = CompetitionService.current(repo)
     club_doc = repo.find("clubs", {"_id": club})
-    for index in range(15):
-        fake = {**season, "_id": ObjectId()}
-        repo.transaction(
-            lambda tx: CompetitionService.generate_youth(tx, club_doc, fake, GameConfig())
+    # Existing academy players remain; the candidate trio is not counted as roster space.
+    generator = PlayerGeneratorService(seed=100)
+    repo.insert_many("youth_players", [generator.player(club, "BR", youth=True) for _ in range(20)])
+    fake = {**season, "_id": ObjectId(), "number": season["number"] + 1}
+    repo.update("seasons", {"_id": season["_id"]}, {"$set": {"status": "completed"}})
+    repo.insert("seasons", fake)
+    repo.transaction(lambda tx: CompetitionService.generate_youth(tx, club_doc, fake, GameConfig()))
+    candidates = [
+        p for p in client.get("/api/youth", headers=headers).json() if p["status"] == "candidate"
+    ]
+    assert len(candidates) == 3
+    assert (
+        client.post(f"/api/youth/{candidates[0]['id']}/select", headers=headers).status_code == 409
+    )
+    active = client.get("/api/youth", headers=headers).json()
+    selected = next(p for p in active if p["status"] == "available")
+    assert client.post(f"/api/youth/{selected['id']}/release", headers=headers).status_code == 200
+    assert (
+        client.post(f"/api/youth/{candidates[0]['id']}/select", headers=headers).status_code == 200
+    )
+
+
+def test_youth_choice_is_serialized_between_two_devices(client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    headers, club, repo = setup(client)
+    candidates = client.get("/api/youth", headers=headers).json()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda p: client.post(f"/api/youth/{p['id']}/select", headers=headers),
+                candidates[:2],
+            )
         )
+    assert sorted(result.status_code for result in results) == [200, 409]
     assert (
         repo.database.youth_players.count_documents(
             {"current_club_id": club, "status": "available"}
         )
-        == 20
+        == 1
+    )
+
+
+def test_youth_candidates_cannot_be_selected_by_another_club(client):
+    headers, club, repo = setup(client)
+    other_headers = account(client, 2)
+    create(client, other_headers)
+    candidate = client.get("/api/youth", headers=headers).json()[0]
+    assert (
+        client.post(f"/api/youth/{candidate['id']}/select", headers=other_headers).status_code
+        == 403
     )
 
 

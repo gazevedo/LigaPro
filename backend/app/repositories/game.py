@@ -37,7 +37,7 @@ class GameRepository:
         )
         return result[0]["amount"] if result else 0
 
-    def search_players(self, query, listing_type=None):
+    def search_players(self, query, listing_type=None, sort="value_asc"):
         pipeline = [
             {"$match": query},
             {
@@ -61,7 +61,24 @@ class GameRepository:
         ]
         if listing_type:
             pipeline.append({"$match": {"listing.type": listing_type}})
-        pipeline.append({"$limit": 200})
+        field = "strength" if sort.startswith("strength") else "market_value"
+        direction = -1 if sort.endswith("desc") else 1
+        pipeline.append(
+            {
+                "$set": {
+                    "sort_value": {
+                        "$ifNull": [f"${field}", "$overall" if field == "strength" else "$value"]
+                    }
+                }
+            }
+        )
+        pipeline.extend(
+            [
+                {"$sort": {"sort_value": direction, "_id": 1}},
+                {"$limit": 200},
+                {"$unset": "sort_value"},
+            ]
+        )
         return list(self.database.players.aggregate(pipeline, session=self.session))
 
     def insert(self, collection, document):

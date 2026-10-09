@@ -37,15 +37,20 @@ test('championship owns table, games, reports and cup rankings', async () => {
   await fireEvent.press(screen.getByText('Copa Nacional'));
   await screen.findByText('Semifinal · Em disputa');
   await fireEvent.press(screen.getByText('Artilheiros'));
+  expect(screen.queryByText('Estatísticas do campeonato')).toBeNull();
+  expect(screen.queryByText('Mais cartões')).toBeNull();
+  expect(screen.getByText('Gols')).toBeTruthy();
   await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('cup', 'goals'));
 });
 test('calendar selects event day and loads adjacent month without filters', async () => {
   const now = new Date();
   const eventDate = new Date(now.getFullYear(), now.getMonth(), 15, 15);
-  jest.mocked(calendarService.get).mockResolvedValue([{ id: 'event', title: 'Aurora × Estrela', type: 'league_match', date: eventDate.toISOString() }]);
+  jest.mocked(calendarService.get).mockResolvedValue([{ id: 'event', title: 'Aurora × Estrela', type: 'league_match', date: eventDate.toISOString() }, { id: 'window', title: 'Abertura da janela', type: 'transfer_window_open', date: eventDate.toISOString() }, { id: 'tickets', title: 'Bilheteria', type: 'financial', date: eventDate.toISOString() }]);
   await render(<CalendarScreen />);
   await fireEvent.press(await screen.findByLabelText('Dia 15, com eventos'));
   expect(screen.getByText('Aurora × Estrela')).toBeTruthy();
+  expect(screen.queryByText('Abertura da janela')).toBeNull();
+  expect(screen.queryByText('Bilheteria')).toBeNull();
   expect(screen.queryByText('Aplicar filtros')).toBeNull();
   await fireEvent.press(screen.getByLabelText('Próximo mês'));
   await waitFor(() => expect(calendarService.get).toHaveBeenLastCalledWith({ start: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(), end: new Date(now.getFullYear(), now.getMonth() + 2, 1).toISOString() }));

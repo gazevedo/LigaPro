@@ -157,6 +157,7 @@ def search(
     overall_max: int | None = Query(None, ge=0, le=100),
     value_min: int | None = Query(None, ge=0),
     value_max: int | None = Query(None, ge=0),
+    sort: Literal["value_asc", "value_desc", "strength_asc", "strength_desc"] = "value_asc",
 ):
     return MarketService(repo).search(
         {key: value for key, value in locals().items() if key != "repo"}
@@ -221,6 +222,11 @@ def train(identity: str, user: User, repo: Repo, data: TrainingInput | None = No
 @router.get("/youth")
 def youth(user: User, repo: Repo):
     return TrainingService(repo).get(user, youth=True)
+
+
+@router.post("/youth/{identity}/select")
+def select_youth(identity: str, user: User, repo: Repo):
+    return TrainingService(repo).select_youth(user, identity)
 
 
 @router.post("/youth/{identity}/promote")

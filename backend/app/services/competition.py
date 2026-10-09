@@ -413,16 +413,18 @@ class CompetitionService:
         batch_id = f"{season['_id']}:{club['_id']}"
         if repo.find("youth_batches", {"_id": batch_id}):
             return
-        players = PlayerGeneratorService(config, batch_id).youth(club["_id"], club["country_id"])
-        available = repo.database.youth_players.count_documents(
-            {"current_club_id": club["_id"], "status": {"$in": ["available", "active"]}},
+        repo.database.youth_players.update_many(
+            {"current_club_id": club["_id"], "status": "candidate"},
+            {"$set": {"status": "discarded", "current_club_id": None, "owner_club_id": None}},
             session=repo.session,
         )
-        players = players[: max(0, config.MAX_YOUTH_PLAYERS - available)]
-        if players:
-            repo.insert_many(
-                "youth_players", [{**p, "generated_season_id": season["_id"]} for p in players]
-            )
+        players = PlayerGeneratorService(config, batch_id).youth(
+            club["_id"], club["country_id"], count=3
+        )
+        repo.insert_many(
+            "youth_players",
+            [{**p, "status": "candidate", "generated_season_id": season["_id"]} for p in players],
+        )
         repo.event(
             club["_id"], "youth_generation", "Chegada de juniores", season["starts_at"], batch_id
         )
@@ -430,7 +432,14 @@ class CompetitionService:
 
         SeasonCalendarService.ensure(repo, club["_id"], season)
         repo.insert(
-            "youth_batches", {"_id": batch_id, "season_id": season["_id"], "club_id": club["_id"]}
+            "youth_batches",
+            {
+                "_id": batch_id,
+                "season_id": season["_id"],
+                "club_id": club["_id"],
+                "candidate_ids": [p["_id"] for p in players],
+                "selected_player_id": None,
+            },
         )
 
     def bootstrap(self):

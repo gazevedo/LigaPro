@@ -99,10 +99,10 @@ class PlayerGeneratorService:
                 players.append(self.player(club_id, country_id, role))
         return players
 
-    def youth(self, club_id, country_id):
+    def youth(self, club_id, country_id, count=None):
         return [
             self.player(club_id, country_id, youth=True)
-            for _ in range(self.config.YOUTH_PLAYERS_PER_SEASON)
+            for _ in range(self.config.YOUTH_PLAYERS_PER_SEASON if count is None else count)
         ]
 
 
@@ -121,7 +121,12 @@ class TrainingService:
             )
         players = self.repo.many(
             collection,
-            {"current_club_id": club["_id"], "status": {"$nin": ["retired", "promoted"]}},
+            {
+                "current_club_id": club["_id"],
+                "status": {"$in": ["available", "active", "candidate"]}
+                if youth
+                else {"$nin": ["retired", "promoted"]},
+            },
             limit=None,
         )
         progress = {
@@ -161,7 +166,7 @@ class TrainingService:
             raise HTTPException(404, "Jogador não encontrado.")
         if player["current_club_id"] != club["_id"]:
             raise HTTPException(403, "Jogador de outro clube.")
-        if player.get("status") in {"retired", "injured", "suspended"}:
+        if player.get("status") in {"retired", "injured", "suspended", "candidate", "discarded"}:
             raise HTTPException(409, "Jogador indisponível para treino normal.")
         skills = normalize_player(player)["individual_skills"]
         skill = skill or {
@@ -219,6 +224,58 @@ class TrainingService:
             ),
             "training_progress": level,
         }
+
+    def select_youth(self, user, identity):
+        def operation(repo):
+            from app.services.competition import CompetitionService
+
+            club = repo.owned(user.id)
+            # Serialize choices from two devices on the club's roster revision.
+            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+            season = CompetitionService.current(repo)
+            if not season:
+                raise HTTPException(409, "Nenhuma temporada ativa.")
+            batch_id = f"{season['_id']}:{club['_id']}"
+            batch = repo.find("youth_batches", {"_id": batch_id})
+            if not batch or batch.get("selected_player_id"):
+                raise HTTPException(409, "A escolha desta temporada já foi concluída.")
+            player = repo.document("youth_players", identity)
+            if player["current_club_id"] != club["_id"]:
+                raise HTTPException(403, "Jogador de outro clube.")
+            if (
+                player["_id"] not in batch.get("candidate_ids", [])
+                or player.get("status") != "candidate"
+            ):
+                raise HTTPException(409, "Jogador não pertence à seleção desta temporada.")
+            config = CompetitionService.season_config(season)
+            available = repo.database.youth_players.count_documents(
+                {"current_club_id": club["_id"], "status": {"$in": ["available", "active"]}},
+                session=repo.session,
+            )
+            if available >= config.MAX_YOUTH_PLAYERS:
+                raise HTTPException(409, "A base está cheia. Dispense um jovem antes de escolher.")
+            repo.update(
+                "youth_batches",
+                {"_id": batch_id},
+                {"$set": {"selected_player_id": player["_id"], "selected_at": utcnow()}},
+            )
+            selected = repo.update(
+                "youth_players", {"_id": player["_id"]}, {"$set": {"status": "available"}}
+            )
+            repo.database.youth_players.update_many(
+                {"_id": {"$in": batch["candidate_ids"]}, "status": "candidate"},
+                {"$set": {"status": "discarded", "current_club_id": None, "owner_club_id": None}},
+                session=repo.session,
+            )
+            repo.event(
+                club["_id"],
+                "youth",
+                f"{player['name']} escolhido para a base",
+                reference=player["_id"],
+            )
+            return player_public(selected, youth=True)
+
+        return self.repo.transaction(operation)
 
     def release(self, user, identity):
         def operation(repo):
@@ -327,7 +384,7 @@ class PlayerAgingService:
         for collection in ("players", "youth_players"):
             for player in repo.many(
                 collection,
-                {"status": {"$nin": ["retired", "promoted"]}},
+                {"status": {"$nin": ["retired", "promoted", "candidate", "discarded"]}},
                 limit=None,
                 sort=[("_id", 1)],
             ):

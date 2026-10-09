@@ -42,8 +42,7 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
       })}
     </Card>
     {own === club.id && <>
-      <Card><Text style={styles.heading}>Perfil do técnico</Text><ProfileScreen /></Card>
-      <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />
+      <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} profile={<ProfileScreen />} />
     </>}
   </>}</GamePage>;
 }

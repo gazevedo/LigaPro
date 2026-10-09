@@ -14,7 +14,7 @@ class GameConfig:
     RELEGATION_COUNT: int = 4
     INITIAL_SQUAD_SIZE: int = 25
     MAX_PLAYER_LEVEL: int = 100
-    YOUTH_PLAYERS_PER_SEASON: int = 2
+    YOUTH_PLAYERS_PER_SEASON: int = 3
     MAX_YOUTH_PLAYERS: int = 20
     YOUTH_PROMOTION_AGE: int = 18
     PLAYER_DECLINE_AGE: int = 35

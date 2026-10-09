@@ -90,7 +90,8 @@ test('squad refresh discards starters removed by a transfer', async () => {
   const props = { navigation: { navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Squad'>;
   await render(<SquadScreen {...props} />);
   await screen.findByText('Player 0');
-  await fireEvent.press(screen.getByText('Atualizar plantel'));
+  expect(screen.queryByText('Atualizar plantel')).toBeNull();
+  await act(async () => { await useSquadStore.getState().load(); });
   await waitFor(() => expect(screen.queryByText('Player 0')).toBeNull());
   expect(screen.getByText('Player 11')).toBeTruthy();
   expect(screen.queryByText('Salvar escalação')).toBeNull();
@@ -155,4 +156,15 @@ test('a successful response after session expiry does not enter the game', async
   await act(async () => { await useAuthStore.getState().clearSession(); finish(club); });
   expect(useClubStore.getState().data?.club).toBeFalsy();
   expect(useAuthStore.getState().authenticated).toBe(false);
+});
+
+test('stadium upgrade refreshes capacity and facilities automatically', async () => {
+  const before = { capacity: 10000, ticket_price: 2000, facilities: { stands: 1 }, names: { stands: 'Arquibancadas' }, upgrade_costs: { stands: 100000 } };
+  jest.mocked(stadiumService.get).mockResolvedValueOnce(before).mockResolvedValueOnce({ ...before, capacity: 15000, facilities: { stands: 2 } });
+  jest.mocked(stadiumService.upgrade).mockResolvedValue({ ...before, capacity: 15000 });
+  await render(<StadiumScreen />);
+  await fireEvent.press(await screen.findByRole('button', { name: /Melhorar Arquibancadas/ }));
+  await screen.findByText('Arquibancadas · nível 2');
+  expect(screen.queryByText('Atualizar estádio')).toBeNull();
+  expect(stadiumService.get).toHaveBeenCalledTimes(2);
 });
