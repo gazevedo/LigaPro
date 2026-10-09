@@ -33,11 +33,12 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }
   return <GamePage loading={loading} error={error || (!confirmResignation ? action.error : null)}>{club?.id === route.params.id && <>
     <Card><View style={styles.hero}>
-      <View style={{ alignItems: 'center', gap: 8 }}><ClubBadge badge={club.badge} name={club.name} />
-        <Text accessibilityLabel={`País: ${club.country?.name ?? club.country_id}`} style={{ fontSize: 28 }}>{countryFlag(club.country?.id ?? club.country_id)}</Text>
-      </View>
+      <ClubBadge badge={club.badge} name={club.name} />
       <View style={{ flex: 1, gap: 8 }}>
-        <Text style={styles.name}>{club.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{club.name}</Text>
+          <Text accessibilityLabel={`País: ${club.country?.name ?? club.country_id}`} style={styles.flag}>{countryFlag(club.country?.id ?? club.country_id)}</Text>
+        </View>
         {own === club.id && <Text style={styles.caption}>{auth.user?.name}</Text>}
         <Text style={styles.caption}>Fundado em {new Date(club.created_at).toLocaleDateString('pt-BR')}</Text>
       </View>
@@ -83,7 +84,9 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
 const styles = StyleSheet.create({
   hero: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  name: { color: palette.ink, fontSize: 28, fontWeight: '800' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  name: { color: palette.ink, fontSize: 28, fontWeight: '800', flexShrink: 1 },
+  flag: { fontSize: 28 },
   caption: { color: palette.muted, lineHeight: 20 },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metric: { flexGrow: 1, flexBasis: '45%', padding: 18, gap: 8, borderRadius: 20, borderWidth: 2, borderColor: palette.border },
