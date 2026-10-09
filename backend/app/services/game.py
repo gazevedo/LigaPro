@@ -105,6 +105,7 @@ class ClubService:
                     "reputation",
                 ]
             }
+            | {"fan_confidence": FanBaseService.confidence(club)}
         )
 
     def create(self, user, data):
@@ -468,6 +469,7 @@ class FinanceService:
                 "attendance_share": FanBaseService.ATTENDANCE_SHARE,
                 "supporters": club.get("supporters", 1000),
                 "fan_satisfaction": club.get("fan_satisfaction", 50),
+                "fan_confidence": FanBaseService.confidence(club),
                 "reputation": club.get("reputation", 10),
             }
         )

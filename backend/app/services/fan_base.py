@@ -9,6 +9,11 @@ class FanBaseService:
     ATTENDANCE_SHARE = 0.10
 
     @staticmethod
+    def confidence(club):
+        # Keep the persisted supporter score and historical records compatible.
+        return max(0, min(100, club.get("fan_satisfaction", 50)))
+
+    @staticmethod
     def initialize(repo, club_id):
         repo.update(
             "clubs",
@@ -28,7 +33,7 @@ class FanBaseService:
     def attendance(club, stadium, importance=1.0, price=None, opponent=None, position=None):
         ticket = stadium["ticket_price"] if price is None else price
         price_factor = min(1.5, 2000 / max(500, ticket))
-        satisfaction = 0.4 + 0.8 * club.get("fan_satisfaction", 50) / 100
+        satisfaction = 0.4 + 0.8 * FanBaseService.confidence(club) / 100
         prestige = 1 + club.get("reputation", 10) / 200
         return max(
             0,

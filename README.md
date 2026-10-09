@@ -197,7 +197,11 @@ Não existe client secret no aplicativo. Cadastro/login por e-mail funcionam ind
 
 ## Regras e funcionalidades
 
-### Clube e demissão
+### Clube, direção e confiança da torcida
+
+A confiança da torcida é o único indicador de confiança do clube, de 0 a 100, exibido na aba Informações. Reutiliza o histórico de satisfação existente, sem zerar os dados dos clubes: vitória aumenta 3 pontos, derrota reduz 3, empate reduz 1 quando a reputação supera 50 e ingressos caros podem reduzir até 3 pontos adicionais. Títulos, acessos e rebaixamentos também alteram o indicador no fechamento da competição. Confiança baixa não causa demissão automática nem perda do clube: o usuário administra o clube como diretor.
+
+Público e bilheteria respondem à confiança, junto com preço, capacidade, torcida e reputação. Novas propostas de patrocínio recebem um multiplicador de `0,5 + confiança / 100`: confiança 50 mantém o valor de referência, 0 reduz pela metade e 100 aumenta em 50%. Ofertas já emitidas valem até seu vencimento, e contratos assinados mantêm seus valores até o fim do prazo. `fan_confidence` é exposto pela API; `fan_satisfaction` continua disponível para compatibilidade. Esta é a regra do LigaPro, sem atribuir esses coeficientes ao Brasfoot.
 
 A criação oferece uma lista pesquisável de 249 países e territórios ISO 3166-1 e oito escudos com cores, padrões e iniciais do clube. Os identificadores antigos de países e escudos continuam válidos. Reinicie a API após atualizar para carregar o catálogo no MongoDB.
 
@@ -205,9 +209,9 @@ O aplicativo apresenta erros e avisos em notificações em bolhas. As requisiç�
 
 Cada usuário administra um único clube criado por ele. A criação é transacional: gera 25 jogadores, escalação, estádio, tática, finanças e contrato de patrocínio inicial. O plantel tem 3 goleiros, 8 defensores, 8 médios e 6 atacantes; os defensores profissionais se dividem em FB/CB. Consulta de outro clube exige autenticação e omite propriedade e dados financeiros privados.
 
-O técnico **não pode assumir ou trocar para um clube existente**. Na aba Informações do próprio clube, **Logout** encerra a sessão e **Pedir demissão** pede confirmação do desligamento completo e da perda de acesso à gestão e aos recursos. Esses botões não aparecem na Sala de troféus. A API exige `{"confirmed": true}` e bloqueia a demissão durante uma partida ao vivo.
+O usuário é o diretor do clube e não perde sua gestão por confiança baixa. Na aba Informações, **Logout** encerra a sessão e **Abandonar gestão** permite sair voluntariamente do clube mediante confirmação. A Sala de troféus não exibe essas ações. Contratação de treinadores e compra de moedas com dinheiro real ainda não fazem parte desta atualização.
 
-A confirmação remove o vínculo do usuário e transfere a gestão do mesmo clube para um bot. A demissão preserva dinheiro, jogadores, contratos, estádio, anúncios, partidas e histórico. Clubes transferidos para bots não são substituídos ao cadastrar novos clubes, mas estão sujeitos à extinção da última série sem técnicos no fechamento da temporada, descrita abaixo. O aplicativo limpa os dados do clube anterior e abre a criação de um novo clube, mantendo a sessão do usuário. O novo clube recebe seus próprios dados iniciais; nada é criado automaticamente. Repetir a demissão dirigida ao clube antigo não desliga o usuário de um novo clube.
+Abandonar a gestão usa a API de desligamento voluntário, exigindo `{"confirmed": true}` e bloqueando a ação durante partidas ao vivo. A ação preserva dinheiro, jogadores, contratos, estádio, anúncios, partidas e histórico sob controle de um bot, mas o usuário perde o acesso à gestão e aos recursos desse clube. O aplicativo abre a criação de um novo clube, mantendo a sessão e sem criar nada automaticamente. Clubes transferidos para bots não são substituídos ao cadastrar novos clubes, mas estão sujeitos à extinção da última série sem gestores no fechamento da temporada, descrita abaixo.
 
 ### Liga, copa e calendário
 

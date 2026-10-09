@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
 from app.models.game import public, utcnow
+from app.services.fan_base import FanBaseService
 
 
 class SponsorshipService:
@@ -40,7 +41,8 @@ class SponsorshipService:
         supporters = min(1, club.get("supporters", 1000) / 50000)
         recent = min(0.08, max(-0.05, club.get("result_streak", 0) * 0.01))
         factor = 0.95 + reputation * 0.003 + supporters * 0.1 - tier * 0.05 + recent
-        return round(500000 * max(0.7, min(1.5, factor)) / 1000) * 1000
+        confidence_factor = 0.5 + FanBaseService.confidence(club) / 100
+        return round(500000 * max(0.7, min(1.5, factor)) * confidence_factor / 1000) * 1000
 
     @classmethod
     def offers(cls, repo, club, now=None):
