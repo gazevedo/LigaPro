@@ -48,28 +48,24 @@ class ClubService:
                 {"_id": club["_id"]},
                 {
                     "$set": {
-                        "active": False,
+                        "active": True,
+                        "is_bot": True,
+                        "bot_takeover": True,
                         "owner_user_id": None,
                         "previous_owner_user_id": ObjectId(user.id),
-                        "inactivated_at": now,
+                        "resigned_at": now,
                     },
                     "$inc": {"roster_revision": 1},
                 },
             )
-            repo.update_many(
-                "transfer_listings",
-                {"seller_club_id": club["_id"], "status": "active"},
-                {"$set": {"status": "cancelled"}},
-            )
-            repo.update_many(
-                "transfer_offers",
-                {
-                    "$or": [{"seller_club_id": club["_id"]}, {"buyer_club_id": club["_id"]}],
-                    "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
-                },
-                {"$set": {"status": "cancelled"}},
-            )
-            # Club assets and finances remain archived; a new club receives its own initial data.
+            season = CompetitionService.current(repo)
+            for collection in ("season_clubs", "standings"):
+                repo.update_many(
+                    collection,
+                    {"club_id": club["_id"], "season_id": season["_id"] if season else None},
+                    {"$set": {"is_bot": True, "bot_takeover": True}},
+                )
+            # The same club and its assets continue under bot management.
             return {"club": None}
 
         return self.repo.transaction(operation)

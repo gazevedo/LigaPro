@@ -212,6 +212,7 @@ class CompetitionService:
             "division_id": division["_id"],
             "club_id": club["_id"],
             "is_bot": club.get("is_bot", False),
+            "bot_takeover": club.get("bot_takeover", False),
             "previous_club_ids": [],
         }
         repo.insert("season_clubs", slot)
@@ -224,6 +225,7 @@ class CompetitionService:
                 "club_id": club["_id"],
                 "club_name": club["name"],
                 "is_bot": slot["is_bot"],
+                "bot_takeover": slot.get("bot_takeover", False),
                 "games": 0,
                 "wins": 0,
                 "draws": 0,
@@ -300,7 +302,12 @@ class CompetitionService:
         for division in divisions:
             bots = repo.many(
                 "standings",
-                {"season_id": season["_id"], "division_id": division["_id"], "is_bot": True},
+                {
+                    "season_id": season["_id"],
+                    "division_id": division["_id"],
+                    "is_bot": True,
+                    "bot_takeover": {"$ne": True},
+                },
                 limit=None,
                 sort=[
                     ("position", -1 if config.BOT_REPLACEMENT_STRATEGY == "lowest_ranked" else 1)

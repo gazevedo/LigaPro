@@ -54,7 +54,7 @@ export function AppNavigator() {
   useEffect(() => {
     if (!auth.authenticated || !clubId) return;
     let active = true;
-    void prefetchGameData(clubId, () => active && useAuthStore.getState().authenticated);
+    void prefetchGameData(clubId, () => active && useAuthStore.getState().authenticated && useClubStore.getState().data?.club?.id === clubId);
     return () => { active = false; };
   }, [auth.authenticated, auth.user?.id, clubId]);
   useEffect(() => {

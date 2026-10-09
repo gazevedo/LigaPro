@@ -17,7 +17,7 @@ def test_resignation_requires_confirmation_and_owner(client):
     assert client.get("/api/game/status", headers=owner).json()["club"]["id"] == club["id"]
 
 
-def test_resignation_inactivates_and_new_club_inherits_no_assets(client):
+def test_resignation_preserves_active_club_and_new_club_inherits_no_assets(client):
     owner = account(client, 1)
     club = create(client, owner)
     db = app.state.database
@@ -35,27 +35,52 @@ def test_resignation_inactivates_and_new_club_inherits_no_assets(client):
         json={"player_id": str(player["_id"]), "type": "sale", "price": 100000, "duration_days": 1},
     )
     assert listing.status_code == 201, listing.text
+    snapshots = {
+        collection: list(
+            db[collection].find(
+                {"owner_club_id": old} if collection == "players" else {"club_id": old}
+            )
+        )
+        for collection in ("players", "player_contracts", "club_history")
+    }
+    fixtures = list(db.matches.find({"$or": [{"home_club_id": old}, {"away_club_id": old}]}))
+    db.club_history.insert_one({"club_id": old, "title": "Histórico preservado"})
+    history = list(db.club_history.find({"club_id": old}))
     path = f"/api/clubs/{club['id']}/resign"
     response = client.post(path, headers=owner, json={"confirmed": True})
     assert response.status_code == 200 and response.json() == {"club": None}
     archived = db.clubs.find_one({"_id": old})
-    assert archived["active"] is False and archived["owner_user_id"] is None
-    assert not archived.get("is_bot")
+    assert archived["active"] is True and archived["owner_user_id"] is None
+    assert archived.get("is_bot") and archived.get("bot_takeover")
     assert db.club_finances.find_one({"_id": old})["balance"] == 987654321
     assert (
-        db.transfer_listings.find_one({"_id": ObjectId(listing.json()["id"])})["status"]
-        == "cancelled"
+        db.transfer_listings.find_one({"_id": ObjectId(listing.json()["id"])})["status"] == "active"
     )
-    assert CompetitionService.match_team(GameRepository(db), old) is None
+    assert CompetitionService.match_team(GameRepository(db), old) is not None
+    for collection in ("players", "player_contracts"):
+        query = {"owner_club_id": old} if collection == "players" else {"club_id": old}
+        assert list(db[collection].find(query)) == snapshots[collection]
+    assert list(db.club_history.find({"club_id": old})) == history
+    assert (
+        list(db.matches.find({"$or": [{"home_club_id": old}, {"away_club_id": old}]})) == fixtures
+    )
+    from app.models.game import utcnow
+    from app.services.bot_manager import BotManagerService
+
+    BotManagerService.prepare(GameRepository(db), old, utcnow())
+    assert db.bot_decisions.find_one({"club_id": old})
     assert client.get("/api/game/status", headers=owner).json() == {"club": None}
     assert client.get("/api/squad", headers=owner).status_code == 403
+    db.standings.update_one({"club_id": old}, {"$set": {"position": 999}})
     new = create(client, owner, "Clube novo")
     assert new["id"] != club["id"]
     assert client.get("/api/finance", headers=owner).json()["balance"] == 10000000
     assert players.isdisjoint(
         p["_id"] for p in db.players.find({"owner_club_id": ObjectId(new["id"])})
     )
-    # Retrying the previous club's request must never inactivate the newly created club.
+    assert db.season_clubs.find_one({"club_id": old})["bot_takeover"] is True
+    assert db.clubs.find_one({"_id": old})["active"] is True
+    # Retrying the previous club's request must never detach the newly created club.
     assert client.post(path, headers=owner, json={"confirmed": True}).status_code == 403
     assert client.get("/api/game/status", headers=owner).json()["club"]["id"] == new["id"]
 
@@ -74,7 +99,7 @@ def test_resignation_waits_for_live_match(client):
     db.matches.update_one({"_id": match["_id"]}, {"$set": {"status": "scheduled"}})
 
 
-def test_inactive_club_is_replaced_by_new_bot_next_season(client):
+def test_resigned_club_continues_as_the_same_bot_next_season(client):
     from app.services.competition import SeasonFinalizationService
 
     owner = account(client, 1)
@@ -96,6 +121,9 @@ def test_inactive_club_is_replaced_by_new_bot_next_season(client):
     assert upcoming["_id"] != season["_id"]
     slots = list(db.season_clubs.find({"season_id": upcoming["_id"]}))
     assert len(slots) == 20
-    assert all(slot["club_id"] != ObjectId(club["id"]) for slot in slots)
+    assert any(slot["club_id"] == ObjectId(club["id"]) and slot["bot_takeover"] for slot in slots)
     assert all(slot["is_bot"] for slot in slots)
-    assert db.clubs.find_one({"_id": ObjectId(club["id"])})["active"] is False
+    assert db.clubs.find_one({"_id": ObjectId(club["id"])})["active"] is True
+    new = create(client, owner, "Clube seguinte")
+    assert db.season_clubs.find_one({"season_id": upcoming["_id"], "club_id": ObjectId(club["id"])})
+    assert new["id"] != club["id"]

@@ -3,21 +3,35 @@ import { ScreenTabs } from '../components/ScreenTabs';
 import { useAuthStore } from '../stores/authStore';
 import { ClubBadge } from '../components/ClubBadge';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Modal, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useClubDetailsStore } from '../stores/screenStores';
 import { useScreenRefresh } from '../components/useScreenRefresh';
 import { useClubStore } from '../stores/clubStore';
-import { ActionButton, Card, GamePage, palette } from '../components/GameUI';
+import { ActionButton, Card, GamePage, NotificationBubble, palette, useAction } from '../components/GameUI';
+import { clubService } from '../services/clubService';
+import { resetDomainStores } from '../stores/domainStore';
+import { useNotificationStore } from '../stores/notificationStore';
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const { data: club, ensure, loading, error } = useClubDetailsStore();
   const [tab, setTab] = useState('Informações');
+  const [confirmResignation, setConfirmResignation] = useState(false);
+  const action = useAction();
   const auth = useAuthStore();
   const own = useClubStore(state => state.data?.club?.id);
   useScreenRefresh(() => ensure(route.params.id), undefined, true, route.params.id);
   useEffect(() => { navigation.setOptions({ title: own === route.params.id ? 'Meu clube' : 'Clube' }); }, [navigation, own, route.params.id]);
-  return <GamePage loading={loading} error={error}>{club?.id === route.params.id && <>
+  async function resign() {
+    const session = useAuthStore.getState();
+    const id = route.params.id;
+    await clubService.resign(id);
+    if (useAuthStore.getState().user?.id !== session.user?.id || useClubStore.getState().data?.club?.id !== id) return;
+    resetDomainStores();
+    useClubStore.setState({ data: { club: null }, loading: false, error: null });
+    useNotificationStore.getState().show('Demissão confirmada. Crie seu novo clube para continuar.');
+  }
+  return <GamePage loading={loading} error={error || (!confirmResignation ? action.error : null)}>{club?.id === route.params.id && <>
     <Card><View style={styles.hero}>
       <View style={{ alignItems: 'center', gap: 8 }}><ClubBadge badge={club.badge} name={club.name} />
         <Text accessibilityLabel={`País: ${club.country?.name ?? club.country_id}`} style={{ fontSize: 28 }}>{countryFlag(club.country?.id ?? club.country_id)}</Text>
@@ -41,6 +55,10 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
       </View>)}
     </View>
     {own === club.id && <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
+    {own === club.id && <>
+      <ActionButton title="Pedir demissão" secondary disabled={auth.loading || action.busy} onPress={() => setConfirmResignation(true)} />
+      <ActionButton title="Logout" disabled={auth.loading || action.busy} onPress={() => { void auth.logout(); }} />
+    </>}
     </>}
     {tab === 'Sala de troféus' && <Card>
       <Text style={styles.caption}>{club.trophies.length ? `${club.trophies.length} conquista${club.trophies.length > 1 ? 's' : ''}` : 'As próximas conquistas começam aqui.'}</Text>
@@ -49,7 +67,17 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         return <Text key={index} style={styles.label}>🏆 {typeof name === 'string' ? name : `Título ${index + 1}`}</Text>;
       })}
     </Card>}
-    {own === club.id && <ActionButton title="Sair" disabled={auth.loading} onPress={() => { void auth.logout(); }} />}
+    <Modal visible={confirmResignation} transparent animationType="fade" onRequestClose={() => { if (!action.busy) setConfirmResignation(false); }}>
+      <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#14243a88' }}>
+        <View style={{ width: '100%', maxWidth: 450, alignSelf: 'center', padding: 24, gap: 18, borderRadius: 22, backgroundColor: '#fff' }}>
+          <Text style={{ color: palette.ink, fontSize: 22, fontWeight: '800' }}>Pedir demissão?</Text>
+          <Text style={styles.caption}>Você será desligado completamente do clube {club.name} e perderá o acesso à sua gestão e aos seus recursos. O clube, seus jogadores e seu histórico serão preservados. Um bot assumirá o controle. Deseja continuar?</Text>
+          <NotificationBubble message={action.error} />
+          <ActionButton title="Não" secondary disabled={action.busy} onPress={() => setConfirmResignation(false)} />
+          <ActionButton title={action.busy ? 'Confirmando…' : 'Sim'} disabled={action.busy} onPress={() => { void action.run(resign); }} />
+        </View>
+      </View>
+    </Modal>
   </>}</GamePage>;
 }
 

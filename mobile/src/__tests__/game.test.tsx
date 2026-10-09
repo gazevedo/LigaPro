@@ -118,10 +118,14 @@ test('club hides consultation and management shortcuts', async () => {
   expect(screen.getByLabelText('País: BR')).toHaveTextContent('🇧🇷');
   expect(props.navigation.setOptions).toHaveBeenCalledWith({ title: 'Meu clube' });
   expect(screen.getByRole('tab', { name: 'Informações', selected: true })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Pedir demissão' })).toBeTruthy();
   await fireEvent.press(screen.getByRole('tab', { name: 'Sala de troféus' }));
   expect(screen.queryByText('Records do clube')).toBeNull();
   expect(screen.getByText('As próximas conquistas começam aqui.')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Sair' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Logout' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Pedir demissão' })).toBeNull();
 });
 
 test('country picker searches without accents and selects the result', async () => {
@@ -176,4 +180,41 @@ test('stadium upgrade refreshes capacity and facilities automatically', async ()
   await screen.findByText('Arquibancadas · nível 2');
   expect(screen.queryByText('Atualizar estádio')).toBeNull();
   expect(stadiumService.get).toHaveBeenCalledTimes(2);
+});
+
+test('resignation asks for confirmation and cancelling preserves the club', async () => {
+  useClubStore.setState({ data: { club } });
+  const props = { route: { params: { id: club.id } }, navigation: { setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  await render(<ClubScreen {...props} />);
+  await fireEvent.press(await screen.findByRole('button', { name: 'Pedir demissão' }));
+  expect(screen.getByText(/seus jogadores e seu histórico serão preservados/)).toBeTruthy();
+  expect(clubService.resign).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Não' }));
+  expect(useClubStore.getState().data?.club?.id).toBe(club.id);
+  expect(clubService.resign).not.toHaveBeenCalled();
+});
+
+test('confirmed resignation clears club data but keeps authentication and never auto-creates a club', async () => {
+  useAuthStore.setState({ authenticated: true });
+  useClubStore.setState({ data: { club } });
+  jest.mocked(clubService.resign).mockResolvedValue({ club: null });
+  const props = { route: { params: { id: club.id } }, navigation: { setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  await render(<ClubScreen {...props} />);
+  await fireEvent.press(await screen.findByRole('button', { name: 'Pedir demissão' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Sim' }));
+  await waitFor(() => expect(useClubStore.getState().data).toEqual({ club: null }));
+  expect(useAuthStore.getState().authenticated).toBe(true);
+  expect(clubService.resign).toHaveBeenCalledWith(club.id);
+  expect(clubService.create).not.toHaveBeenCalled();
+});
+
+test('rejected resignation keeps the current club and displays the reason', async () => {
+  useClubStore.setState({ data: { club } });
+  jest.mocked(clubService.resign).mockRejectedValueOnce(new Error('Aguarde o fim da partida para pedir demissão.'));
+  const props = { route: { params: { id: club.id } }, navigation: { setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  await render(<ClubScreen {...props} />);
+  await fireEvent.press(await screen.findByRole('button', { name: 'Pedir demissão' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Sim' }));
+  await screen.findByText('Aguarde o fim da partida para pedir demissão.');
+  expect(useClubStore.getState().data?.club?.id).toBe(club.id);
 });

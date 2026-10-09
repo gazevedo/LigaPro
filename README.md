@@ -205,9 +205,9 @@ O aplicativo apresenta erros e avisos em notificações em bolhas. As requisiç�
 
 Cada usuário administra um único clube criado por ele. A criação é transacional: gera 25 jogadores, escalação, estádio, tática, finanças e contrato de patrocínio inicial. O plantel tem 3 goleiros, 8 defensores, 8 médios e 6 atacantes; os defensores profissionais se dividem em FB/CB. Consulta de outro clube exige autenticação e omite propriedade e dados financeiros privados.
 
-O técnico **não pode assumir ou trocar para um clube existente**. Na tela do próprio clube, **Pedir demissão** apresenta aviso de perda definitiva do clube, dinheiro, jogadores, estádio e progresso, com cancelar/confirmar. A API exige `{"confirmed": true}`. A operação é bloqueada enquanto o clube participa de uma partida ao vivo.
+O técnico **não pode assumir ou trocar para um clube existente**. Na aba Informações do próprio clube, **Logout** encerra a sessão e **Pedir demissão** pede confirmação do desligamento completo e da perda de acesso à gestão e aos recursos. Esses botões não aparecem na Sala de troféus. A API exige `{"confirmed": true}` e bloqueia a demissão durante uma partida ao vivo.
 
-A confirmação inativa o clube, encerra o vínculo com o técnico e cancela anúncios/propostas pendentes do clube. Patrimônio e finanças permanecem arquivados, sem acesso administrativo nem transferência para outro clube. O aplicativo limpa os caches e abre a criação de um novo clube com dados iniciais próprios. Repetir uma solicitação dirigida ao clube antigo não inativa o novo. O clube inativo não disputa novas partidas normalmente e sua vaga é preenchida por um novo bot na temporada seguinte.
+A confirmação remove o vínculo do usuário e transfere a gestão do mesmo clube para um bot. O clube permanece ativo com dinheiro, jogadores, contratos, estádio, anúncios, partidas e histórico preservados, inclusive nas próximas temporadas. Clubes transferidos para bots não são substituídos ao cadastrar novos clubes. O aplicativo limpa os dados do clube anterior e abre a criação de um novo clube, mantendo a sessão do usuário. O novo clube recebe seus próprios dados iniciais; nada é criado automaticamente. Repetir a demissão dirigida ao clube antigo não desliga o usuário de um novo clube.
 
 ### Liga, copa e calendário
 
