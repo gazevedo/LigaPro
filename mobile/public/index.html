@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#031d30" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="application-name" content="LigaPro" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -35,6 +35,8 @@
         flex: 1;
       }
       @media (pointer: coarse) { html, body, #root { touch-action: pan-x pan-y; } }
+      /* Installed apps already have a launch logo supplied by the operating system. */
+      @media (display-mode: standalone), (display-mode: fullscreen) { #root > div > img { display: none; } }
     </style>
   </head>
 

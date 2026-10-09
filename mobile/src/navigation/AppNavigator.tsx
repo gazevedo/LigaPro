@@ -19,7 +19,7 @@ import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect } from 'react';
-import { ActivityIndicator, BackHandler, Image, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, Platform, Text, useWindowDimensions, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,6 +41,10 @@ export function AppNavigator() {
   const { width } = useWindowDimensions();
   const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
   const auth = useAuthStore();
+  // Installed PWAs already show the Android/iOS launch screen before React starts.
+  const installedWebApp = Platform.OS === 'web' && typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches);
+  const showStartupLogo = !installedWebApp || (initialized && !loading && Boolean(error || auth.error));
   const game = useClubStore();
   const loadClub = game.load;
   useEffect(() => { if (auth.user?.id) void loadClub(); }, [auth.user?.id, loadClub]);
@@ -59,13 +63,13 @@ export function AppNavigator() {
   }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
-      <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />
-      {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} /> : error || auth.error ? <>
+      {showStartupLogo && <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />}
+      {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} /> : error || auth.error ? <>
         <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : auth.error}</Text>
         <ConnectionRetry onRetry={() => { void initialize().then(() => {
           if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
         }); }} />
-      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} />}
+      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} />}
     </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme}>
       {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitle: '', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
