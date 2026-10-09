@@ -1,69 +1,34 @@
 """Reusable name combinations for generated clubs and players."""
 
-FIRST_NAMES = (
-    "João",
-    "Pedro",
-    "Lucas",
-    "André",
-    "Rafael",
-    "Bruno",
-    "Caio",
-    "Gabriel",
-    "Mateus",
-    "Thiago",
-    "Gustavo",
-    "Felipe",
-    "Henrique",
-    "Daniel",
-    "Diego",
-    "Vinícius",
-    "Eduardo",
-    "Leonardo",
-    "Arthur",
-    "Samuel",
-    "Nicolas",
-    "Davi",
-    "Rodrigo",
-    "Leandro",
-    "Marcos",
-    "Victor",
-    "Alex",
-    "Fernando",
-    "Igor",
-    "Renato",
-)
-SURNAMES = (
-    "Silva",
-    "Santos",
-    "Costa",
-    "Souza",
-    "Lima",
-    "Alves",
-    "Oliveira",
-    "Pereira",
-    "Ferreira",
-    "Rodrigues",
-    "Carvalho",
-    "Gomes",
-    "Martins",
-    "Rocha",
-    "Ribeiro",
-    "Barbosa",
-    "Mendes",
-    "Nunes",
-    "Teixeira",
-    "Azevedo",
-    "Moreira",
-    "Cardoso",
-    "Moura",
-    "Castro",
-    "Dias",
-    "Freitas",
-    "Correia",
-    "Machado",
-    "Vieira",
-    "Batista",
-)
+import json
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=None)
+def player_name_library(country_id):
+    code = str(country_id).upper()
+    directory = Path(__file__).with_name("player_names")
+    path = (
+        directory / f"{code}.json"
+        if len(code) == 2 and code.isascii() and code.isalpha()
+        else directory / "BR.json"
+    )
+    if not path.is_file():
+        path = directory / "BR.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def player_name(rng, country_id):
+    library = player_name_library(country_id)
+    first = rng.choice(library["first_names"])
+    parts = [first]
+    if rng.choice((False, True)):
+        parts.append(rng.choice([name for name in library["second_names"] if name != first]))
+    parts.append(rng.choice(library["third_names"]))
+    return " ".join(parts)
+
+
 CLUB_PREFIXES = (
     "Atlético",
     "Esportivo",

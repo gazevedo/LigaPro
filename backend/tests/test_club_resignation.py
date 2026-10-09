@@ -99,7 +99,7 @@ def test_resignation_waits_for_live_match(client):
     db.matches.update_one({"_id": match["_id"]}, {"$set": {"status": "scheduled"}})
 
 
-def test_resigned_club_continues_as_the_same_bot_next_season(client):
+def test_bot_only_last_division_is_extinguished_and_players_become_free(client):
     from app.services.competition import SeasonFinalizationService
 
     owner = account(client, 1)
@@ -112,18 +112,40 @@ def test_resigned_club_continues_as_the_same_bot_next_season(client):
         == 200
     )
     season = db.seasons.find_one({"status": "active"})
+    old_clubs = [slot["club_id"] for slot in db.season_clubs.find({"season_id": season["_id"]})]
+    player_ids = [p["_id"] for p in db.players.find({"owner_club_id": {"$in": old_clubs}})]
     # Completed fixtures are irrelevant to the enrollment rule under test.
     for collection in ("matches", "competition_matches", "friendly_matches"):
         db[collection].update_many({"season_id": season["_id"]}, {"$set": {"status": "completed"}})
     db.competitions.update_many({"season_id": season["_id"]}, {"$set": {"status": "completed"}})
     SeasonFinalizationService(GameRepository(db)).finalize(season["_id"], season["ends_at"])
+    assert db.seasons.find_one({"status": "active"}) is None
+    assert db.divisions.find_one({"tier": 0})["active"] is False
+    assert db.clubs.count_documents({"_id": {"$in": old_clubs}, "active": True}) == 0
+    assert db.season_clubs.count_documents({"season_id": season["_id"]}) == 20
+    assert db.matches.count_documents({"season_id": season["_id"]}) == 380
+    assert db.club_history.find_one({"club_id": ObjectId(club["id"])})
+    assert db.players.count_documents(
+        {"_id": {"$in": player_ids}, "owner_club_id": None, "current_club_id": None, "salary": 0}
+    ) == len(player_ids)
+    assert (
+        db.player_contracts.count_documents(
+            {"club_id": {"$in": old_clubs}, "status": {"$in": ["active", "expiring"]}}
+        )
+        == 0
+    )
+    # Finalizing twice must not release/settle the same contracts twice.
+    history_count = db.contract_history.count_documents({})
+    SeasonFinalizationService(GameRepository(db)).finalize(season["_id"], season["ends_at"])
+    assert db.contract_history.count_documents({}) == history_count
+    new = create(client, owner, "Clube seguinte")
     upcoming = db.seasons.find_one({"status": "active"})
     assert upcoming["_id"] != season["_id"]
-    slots = list(db.season_clubs.find({"season_id": upcoming["_id"]}))
-    assert len(slots) == 20
-    assert any(slot["club_id"] == ObjectId(club["id"]) and slot["bot_takeover"] for slot in slots)
-    assert all(slot["is_bot"] for slot in slots)
-    assert db.clubs.find_one({"_id": ObjectId(club["id"])})["active"] is True
-    new = create(client, owner, "Clube seguinte")
-    assert db.season_clubs.find_one({"season_id": upcoming["_id"], "club_id": ObjectId(club["id"])})
+    assert upcoming["number"] == season["number"] + 1
+    assert db.divisions.count_documents({}) == 1
+    assert db.divisions.find_one({"tier": 0})["active"] is True
+    assert db.season_clubs.count_documents({"season_id": upcoming["_id"]}) == 20
+    assert not db.season_clubs.find_one(
+        {"season_id": upcoming["_id"], "club_id": {"$in": old_clubs}}
+    )
     assert new["id"] != club["id"]

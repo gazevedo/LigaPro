@@ -293,13 +293,19 @@ class CompetitionService:
 
     def enroll(self, repo, club, now=None):
         self.lock(repo)
-        season = self.current(repo) or self.create_season(repo, now or utcnow())
+        season = self.current(repo)
+        if not season:
+            previous = repo.many("seasons", {}, limit=1, sort=[("number", -1)])
+            number = previous[0]["number"] + 1 if previous else 1
+            season = self.create_season(repo, now or utcnow(), number)
         existing = repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
         if existing:
             return existing
         config = self.season_config(season)
-        divisions = repo.many("divisions", {}, limit=None, sort=[("tier", 1)])
-        for division in divisions:
+        divisions = repo.many(
+            "divisions", {"active": {"$ne": False}}, limit=None, sort=[("tier", 1)]
+        )
+        for division in divisions[-1:]:
             bots = repo.many(
                 "standings",
                 {
@@ -402,10 +408,19 @@ class CompetitionService:
                         {"$set": {"club_id": club["_id"]}},
                     )
             return slot
-        tier = len(divisions)
-        division = repo.insert(
-            "divisions", {"_id": ObjectId(), "tier": tier, "name": division_name(tier)}
-        )
+        tier = divisions[-1]["tier"] + 1 if divisions else 0
+        division = repo.find("divisions", {"tier": tier})
+        if division:
+            division = repo.update(
+                "divisions",
+                {"_id": division["_id"]},
+                {"$set": {"active": True}, "$unset": {"extinguished_at": ""}},
+            )
+        else:
+            division = repo.insert(
+                "divisions",
+                {"_id": ObjectId(), "tier": tier, "name": division_name(tier), "active": True},
+            )
         slots = [self.add_slot(repo, season, division, club)]
         for index in range(19):
             bot = self.create_bot(repo, tier, index, config)
@@ -794,6 +809,128 @@ class SeasonFinalizationService:
     def __init__(self, repository):
         self.repo = repository
 
+    @staticmethod
+    def extinguish_bot_divisions(repo, divisions, destinations, now):
+        """Prune bottom tiers without managers after promotion/relegation is settled."""
+        from app.services.game import MarketService
+
+        clubs = {
+            club["_id"]: club
+            for club in repo.many("clubs", {"_id": {"$in": list(destinations)}}, limit=None)
+        }
+        extinct = set()
+        remaining = list(divisions)
+        while remaining:
+            division = remaining[-1]
+            identities = {
+                club_id for club_id, tier in destinations.items() if tier == division["tier"]
+            }
+            if any(not clubs[identity].get("is_bot", False) for identity in identities):
+                break
+            extinct.update(identities)
+            remaining.pop()
+            repo.update(
+                "divisions",
+                {"_id": division["_id"]},
+                {"$set": {"active": False, "extinguished_at": now}},
+            )
+        if not extinct:
+            return remaining
+        repo.update_many(
+            "clubs",
+            {"_id": {"$in": list(extinct)}},
+            {"$set": {"active": False, "inactivated_at": now}},
+        )
+        affected = set()
+        for player in repo.many(
+            "players",
+            {
+                "$or": [
+                    {"owner_club_id": {"$in": list(extinct)}},
+                    {"current_club_id": {"$in": list(extinct)}},
+                ]
+            },
+            limit=None,
+        ):
+            identity = player["_id"]
+            owner = player.get("owner_club_id")
+            current = player.get("current_club_id")
+            for club_id in {owner, current} - {None}:
+                affected.add(club_id)
+                repo.update(
+                    "lineups",
+                    {"_id": club_id},
+                    {"$pull": {"starters": identity, "reserves": identity}},
+                )
+            if owner in extinct:
+                ContractService.terminate(repo, identity, now, reason="division_extinguished")
+                repo.update(
+                    "players",
+                    {"_id": identity},
+                    {
+                        "$set": {
+                            "owner_club_id": None,
+                            "current_club_id": None,
+                            "salary": 0,
+                            "contract_status": "terminated",
+                            "contract_expires_at": now,
+                            "player_transfer_status": "available",
+                            "status": player.get("status")
+                            if player.get("status") in {"retired", "injured", "suspended"}
+                            else "available",
+                        }
+                    },
+                )
+                repo.update_many(
+                    "player_loans",
+                    {"player_id": identity, "status": "active"},
+                    {"$set": {"status": "terminated", "ended_at": now}},
+                )
+                listings = repo.many(
+                    "transfer_listings", {"player_id": identity, "status": "active"}, limit=None
+                )
+                repo.update_many(
+                    "transfer_listings",
+                    {"player_id": identity, "status": "active"},
+                    {"$set": {"status": "closed"}},
+                )
+                repo.update_many(
+                    "transfer_offers",
+                    {
+                        "listing_id": {"$in": [listing["_id"] for listing in listings]},
+                        "status": {"$in": ["pending", "counter_offer", "player_accepted"]},
+                    },
+                    {"$set": {"status": "closed"}},
+                )
+            else:
+                # A borrowed player still belongs to the surviving lender.
+                repo.update(
+                    "players",
+                    {"_id": identity},
+                    {"$set": {"current_club_id": owner, "joined_at": now}},
+                )
+                repo.update_many(
+                    "player_loans",
+                    {"player_id": identity, "status": "active"},
+                    {"$set": {"status": "returned", "ended_at": now}},
+                )
+        repo.update_many(
+            "youth_players",
+            {"owner_club_id": {"$in": list(extinct)}, "status": {"$nin": ["promoted", "retired"]}},
+            {"$set": {"status": "discarded", "owner_club_id": None, "current_club_id": None}},
+        )
+        for club_id in affected:
+            repo.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
+            if club_id not in extinct:
+                try:
+                    MarketService.repair_lineup(repo, club_id)
+                except HTTPException as exc:
+                    if exc.status_code != 409:
+                        raise
+        for club_id in extinct:
+            destinations.pop(club_id)
+        return remaining
+
     def finalize(self, season_id, now=None):
         service = CompetitionService(self.repo)
         service.ensure_lock(self.repo)
@@ -816,7 +953,9 @@ class SeasonFinalizationService:
             ) or repo.find("matches", {"season_id": season_id, "status": "scheduled"}):
                 raise HTTPException(409, "Temporada ainda possui partidas pendentes.")
             config = service.season_config(current)
-            divisions = repo.many("divisions", {}, limit=None, sort=[("tier", 1)])
+            divisions = repo.many(
+                "divisions", {"active": {"$ne": False}}, limit=None, sort=[("tier", 1)]
+            )
             tables = {
                 division["tier"]: service.refresh_positions(repo, season_id, division["_id"])
                 for division in divisions
@@ -908,6 +1047,11 @@ class SeasonFinalizationService:
                     }
                 },
             )
+            divisions = self.extinguish_bot_divisions(
+                repo, divisions, destinations, current["ends_at"]
+            )
+            if not divisions:
+                return public(repo.find("seasons", {"_id": season_id}))
             upcoming = service.create_season(repo, current["ends_at"], current["number"] + 1)
             next_config = service.season_config(upcoming)
             clubs = {

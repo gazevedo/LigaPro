@@ -103,7 +103,7 @@ def test_concurrent_joins_replace_distinct_bots(client):
     assert {r["new_club_id"] for r in audits} == {ObjectId(c["id"]) for c in clubs}
 
 
-def test_full_division_creates_next_and_highest_available_is_used(client):
+def test_full_division_creates_next_and_lowest_available_is_used(client):
     for i in range(20):
         add_club(f"Humano {i}")
     _, lower = add_club("Primeiro da B")
@@ -112,9 +112,16 @@ def test_full_division_creates_next_and_highest_available_is_used(client):
     assert db.clubs.find_one({"_id": ObjectId(lower["id"])})["division_tier"] == 1
     assert db.season_clubs.count_documents({"is_bot": False}) == 21
     assert db.matches.count_documents({}) == 760
+    # A vacancy in A must not let a new manager skip the existing last series B.
+    upper = db.standings.find_one({"division_id": db.divisions.find_one({"tier": 0})["_id"]})
+    db.standings.update_one({"_id": upper["_id"]}, {"$set": {"is_bot": True}})
+    db.clubs.update_one(
+        {"_id": upper["club_id"]}, {"$set": {"is_bot": True, "owner_user_id": None}}
+    )
     _, next_club = add_club("Segundo da B")
     assert db.clubs.find_one({"_id": ObjectId(next_club["id"])})["division_tier"] == 1
     assert db.divisions.count_documents({}) == 2
+    assert db.standings.find_one({"_id": upper["_id"]})["club_id"] == upper["club_id"]
 
 
 def test_training_youth_promotion_and_permissions(client):
@@ -339,11 +346,20 @@ def test_promotion_relegation_and_retirement_are_idempotent(client):
     assert all(db.clubs.find_one({"_id": r["club_id"]})["division_tier"] == 0 for r in old_b[:4])
     assert all(db.clubs.find_one({"_id": r["club_id"]})["division_tier"] == 1 for r in old_b[4:])
     upcoming = service.current(repo)
-    for d in (division_a, division):
-        assert (
-            db.season_clubs.count_documents({"season_id": upcoming["_id"], "division_id": d["_id"]})
-            == 20
+    assert (
+        db.season_clubs.count_documents(
+            {"season_id": upcoming["_id"], "division_id": division_a["_id"]}
         )
+        == 20
+    )
+    # The resulting bottom tier has only bots; promotion history survives its extinction.
+    assert db.divisions.find_one({"_id": division["_id"]})["active"] is False
+    assert (
+        db.season_clubs.count_documents(
+            {"season_id": upcoming["_id"], "division_id": division["_id"]}
+        )
+        == 0
+    )
     retired = repo.find("players", {"_id": retiree["_id"]})
     assert retired["age"] == 35 and retired["status"] == "retired"
     assert retired["strength"] == retiree["strength"] - 1
