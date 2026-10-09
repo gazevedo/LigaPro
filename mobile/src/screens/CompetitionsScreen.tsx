@@ -8,8 +8,21 @@ import { cupService, Cup } from '../services/cupService';
 import { useClubStore } from '../stores/clubStore';
 import { ActionButton, Card, GamePage, palette, useAction } from '../components/GameUI';
 import { CompetitionStatistics } from '../components/CompetitionStatistics';
-function Tabs({ values, selected, onChange, disabled = false }: { values: string[]; selected: string; onChange: (value: string) => void; disabled?: boolean }) {
-  return <View style={{ flexDirection: 'row', gap: 8 }}>{values.map(value => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: selected === value, disabled }} disabled={disabled} onPress={() => onChange(value)} style={{ flex: 1, minHeight: 50, paddingHorizontal: 4, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: selected === value ? palette.primary : '#fff', borderWidth: 2, borderColor: selected === value ? '#086550' : palette.border }}><Text style={{ fontWeight: '700', color: selected === value ? '#fff' : palette.ink, textAlign: 'center' }}>{value}</Text></Pressable>)}</View>;
+function Tabs({ values, selected, onChange, disabled = false, buttons = false }: { values: string[]; selected: string; onChange: (value: string) => void; disabled?: boolean; buttons?: boolean }) {
+  return <View accessibilityRole={buttons ? undefined : 'tablist'} style={{ flexDirection: 'row', gap: buttons ? 8 : 0, backgroundColor: buttons ? 'transparent' : '#fff', borderBottomWidth: buttons ? 0 : 1, borderBottomColor: palette.border }}>
+    {values.map(value => {
+      const active = selected === value;
+      return <Pressable key={value} accessibilityRole={buttons ? 'button' : 'tab'} accessibilityState={{ selected: active, disabled }} disabled={disabled} onPress={() => onChange(value)} style={{
+        flex: 1, minHeight: 50, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center',
+        borderRadius: buttons ? 14 : 0,
+        backgroundColor: buttons && active ? palette.primary : '#fff',
+        borderWidth: buttons ? 2 : 0,
+        borderColor: buttons && active ? '#086550' : palette.border,
+        borderBottomWidth: buttons ? 2 : 3,
+        borderBottomColor: buttons ? active ? '#086550' : palette.border : active ? palette.primary : 'transparent',
+      }}><Text style={{ fontWeight: active ? '800' : '600', color: buttons && active ? '#fff' : active ? palette.primary : palette.muted, textAlign: 'center' }}>{value}</Text></Pressable>;
+    })}
+  </View>;
 }
 export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Competitions'>) {
   const [kind, setKind] = useState<'league' | 'cup'>('league'), [league, setLeague] = useState<Competition | null>(null), [cup, setCup] = useState<Cup | null>(null), [matches, setMatches] = useState<CompetitionMatch[]>([]);
@@ -22,7 +35,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   }); }, [kind, run]);
   const columns = [{ title: 'Clube', width: 200 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 44 }))];
   return <GamePage loading={action.busy} error={action.error}>
-    <Tabs disabled={action.busy} values={['Liga', 'Copa Nacional']} selected={kind === 'league' ? 'Liga' : 'Copa Nacional'} onChange={label => { setKind(label === 'Liga' ? 'league' : 'cup'); setTab('Tabela'); }} />
+    <Tabs buttons disabled={action.busy} values={['Liga', 'Copa Nacional']} selected={kind === 'league' ? 'Liga' : 'Copa Nacional'} onChange={label => { setKind(label === 'Liga' ? 'league' : 'cup'); setTab('Tabela'); }} />
     <Tabs values={['Tabela', 'Partidas', 'Artilheiros']} selected={tab} onChange={setTab} />
     {tab === 'Tabela' && kind === 'league' && league && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text><Text style={{ color: palette.muted }}>Classificação · P pontos · J jogos · V vitórias · E empates · D derrotas · GP gols pró · GC gols contra · SG saldo · CV vermelhos · CA amarelos</Text>
       <ScrollView horizontal><View style={{ gap: 6 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', borderRadius: 12, paddingVertical: 12 }}>{columns.map(column => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 8, fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>

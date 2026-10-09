@@ -24,11 +24,14 @@ test('championship owns table, games, reports and cup rankings', async () => {
   const navigate = jest.fn();
   await render(<CompetitionsScreen {...({ navigation: { navigate } } as unknown as NativeStackScreenProps<RootStackParamList, 'Competitions'>)} />);
   await screen.findByText('1. Aurora');
+  expect(screen.getByRole('tab', { name: 'Tabela', selected: true })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Partidas' })).toBeNull();
   expect(screen.getByText('GP')).toBeTruthy();
   expect(screen.getByText('GC')).toBeTruthy();
   expect(screen.getByText('CV')).toBeTruthy();
   expect(screen.getByText('CA')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Partidas'));
+  await fireEvent.press(screen.getByRole('tab', { name: 'Partidas' }));
+  expect(screen.getByRole('tab', { name: 'Partidas', selected: true })).toBeTruthy();
   await fireEvent.press(screen.getByText('Ver relatório'));
   expect(navigate).toHaveBeenCalledWith('MatchReport', { id: 'match' });
   await fireEvent.press(screen.getByText('Copa Nacional'));
