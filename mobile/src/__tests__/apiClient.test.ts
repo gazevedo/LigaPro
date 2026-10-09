@@ -89,7 +89,7 @@ test('expired session on club creation clears authentication without refreshing 
   expect(tokenService.current()).toBeNull();
 });
 
-test('startup cancels an unresponsive server after three seconds', async () => {
+test('startup allows cold starts and cancels an unresponsive server after thirty seconds', async () => {
   jest.useFakeTimers();
   let signal: AbortSignal | undefined;
   fetchMock.mockImplementation((_url, options) => new Promise((_resolve, reject) => {
@@ -98,10 +98,37 @@ test('startup cancels an unresponsive server after three seconds', async () => {
   }));
   try {
     const result = checkHealth().catch(error => error);
-    await jest.advanceTimersByTimeAsync(2999);
+    await jest.advanceTimersByTimeAsync(29999);
     expect(signal?.aborted).toBe(false);
     await jest.advanceTimersByTimeAsync(1);
     expect(signal?.aborted).toBe(true);
     expect(await result).toMatchObject({ message: 'O servidor demorou para responder. Verifique sua conexão e tente novamente.' });
   } finally { jest.useRealTimers(); }
+});
+
+test('a slow but healthy server initializes without a false maintenance error', async () => {
+  jest.useFakeTimers();
+  let signal: AbortSignal | undefined;
+  fetchMock.mockImplementation((_url, options) => new Promise(resolve => {
+    signal = options?.signal ?? undefined;
+    setTimeout(() => resolve(response(200, { status: 'ok', api: 'ok', mongodb: 'ok' })), 5000);
+  }));
+  try {
+    const checking = checkHealth();
+    await jest.advanceTimersByTimeAsync(5000);
+    await expect(checking).resolves.toBeUndefined();
+    expect(signal?.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.example/api/health', expect.objectContaining({ cache: 'no-store' }));
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).has('Authorization')).toBe(false);
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).has('Content-Type')).toBe(false);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
+});
+
+test('JSON mutations keep their content type and explicit content types are preserved', async () => {
+  fetchMock.mockResolvedValue(response(200, {}));
+  await apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email: 'coach@example.com' }) }, false);
+  expect((fetchMock.mock.calls[0][1]?.headers as Headers).get('Content-Type')).toBe('application/json');
+  await apiRequest('/upload', { method: 'POST', body: 'data', headers: { 'Content-Type': 'text/plain' } }, false);
+  expect((fetchMock.mock.calls[1][1]?.headers as Headers).get('Content-Type')).toBe('text/plain');
 });

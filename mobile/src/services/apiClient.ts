@@ -24,7 +24,7 @@ export async function apiRequest<T>(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const headers = new Headers(options.headers);
-    headers.set('Content-Type', 'application/json');
+    if (options.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
     try {
       const response = await fetch(`${baseUrl}${path}`, { ...options, headers, signal: controller.signal });
