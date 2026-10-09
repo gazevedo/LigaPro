@@ -24,7 +24,7 @@ function Tabs({ values, selected, onChange, disabled = false, buttons = false }:
   </View>;
 }
 export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Competitions'>) {
-  const [kind, setKind] = useState<'league' | 'cup'>('league'), [tab, setTab] = useState('Tabela');
+  const [kind] = useState<'league' | 'cup'>('league'), [tab, setTab] = useState('Tabela');
   const table = useCompetitionStore(), games = useCompetitionMatchesStore(), cupStore = useCupStore();
   const league = table.data, cup = cupStore.data, matches = (kind === 'league' ? games.data : cup?.matches) ?? [];
   const clubId = useClubStore(state => state.data?.club?.id);
@@ -32,15 +32,14 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   const error = kind === 'league' ? table.error || games.error : cupStore.error;
   useScreenRefresh(() => Promise.all([table.ensure(), games.ensure()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
-  const columns = [{ title: 'Clube', width: 200 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 44 }))];
+  const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
   return <GamePage loading={loading} error={error}>
-    <Tabs buttons disabled={loading} values={['Liga', 'Copa Nacional']} selected={kind === 'league' ? 'Liga' : 'Copa Nacional'} onChange={label => { setKind(label === 'Liga' ? 'league' : 'cup'); setTab('Tabela'); }} />
     <Tabs values={['Tabela', 'Partidas', 'Artilheiros']} selected={tab} onChange={setTab} />
-    {tab === 'Tabela' && kind === 'league' && league && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text><Text style={{ color: palette.muted }}>Classificação · P pontos · J jogos · V vitórias · E empates · D derrotas · GP gols pró · GC gols contra · SG saldo · CV vermelhos · CA amarelos</Text>
-      <ScrollView horizontal><View style={{ gap: 6 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', borderRadius: 12, paddingVertical: 12 }}>{columns.map(column => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 8, fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>
-        {league.standings.map(row => <View key={row.id} style={{ flexDirection: 'row', paddingVertical: 12, borderRadius: 12, backgroundColor: row.club_id === clubId ? '#daf4e7' : '#f4f7fc' }}>{[`${row.position}. ${row.club_name}`, row.points, row.games, row.wins, row.draws, row.losses, row.goals_for, row.goals_against, row.goal_difference, row.red_cards ?? 0, row.yellow_cards ?? 0].map((value, i) => <Text key={i} style={{ width: columns[i].width, paddingHorizontal: 8, color: palette.ink }}>{value}</Text>)}</View>)}
+    {tab === 'Tabela' && kind === 'league' && league && <View style={{ marginHorizontal: -24, paddingVertical: 16, gap: 12, backgroundColor: '#fff' }}><Text style={{ paddingHorizontal: 8, fontSize: 18, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text>
+      <ScrollView horizontal><View style={{ gap: 4 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', paddingVertical: 8 }}>{columns.map((column, index) => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 4, fontSize: 12, textAlign: index ? 'center' : 'left', fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>
+        {league.standings.map(row => <View key={row.id} style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: row.club_id === clubId ? '#daf4e7' : '#f4f7fc' }}>{[`${row.position}. ${row.club_name}`, row.points, row.games, row.wins, row.draws, row.losses, row.goals_for, row.goals_against, row.goal_difference, row.red_cards ?? 0, row.yellow_cards ?? 0].map((value, i) => <Text key={i} style={{ width: columns[i].width, paddingHorizontal: 4, fontSize: 12, textAlign: i ? 'center' : 'left', color: palette.ink }}>{value}</Text>)}</View>)}
       </View></ScrollView>
-    </Card>}
+    </View>}
     {tab === 'Tabela' && kind === 'cup' && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Copa Nacional</Text><Text>{cup?.entry ? `${cup.entry.phase} · ${cup.entry.status === 'active' ? 'Em disputa' : cup.entry.status === 'eliminated' ? 'Eliminado' : cup.entry.status === 'champion' ? 'Campeão' : cup.entry.status}` : 'Nenhuma participação nesta temporada.'}</Text></Card>}
     {tab === 'Partidas' && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Jogos do clube</Text>{matches.map(match => <View key={match.id} style={{ gap: 8, backgroundColor: '#f4f7fc', borderRadius: 14, padding: 14 }}>
       <Text style={{ color: palette.muted }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR')}</Text><Text style={{ fontWeight: '700', color: palette.ink }}>{match.home_name ?? 'Mandante'} × {match.away_name ?? 'Visitante'}</Text>

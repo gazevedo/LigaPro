@@ -16,7 +16,7 @@ jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn() } }));
 jest.mock('../services/statisticsService', () => ({ statisticsService: { competition: jest.fn() } }));
 jest.mock('../services/calendarService', () => ({ calendarService: { get: jest.fn() } }));
 beforeEach(() => { jest.clearAllMocks(); useCalendarStore.getState().reset(); });
-test('championship owns table, games, reports and cup rankings', async () => {
+test('championship opens league table, games and rankings without a cup selector', async () => {
   jest.mocked(competitionService.get).mockResolvedValue({ season: { number: 1, starts_at: '', ends_at: '' }, division: { name: 'A' }, standings: [{ id: 'row', club_id: 'club', club_name: 'Aurora', position: 1, points: 3, games: 1, wins: 1, draws: 0, losses: 0, goals_for: 2, goals_against: 0, goal_difference: 2 }] });
   jest.mocked(competitionService.matches).mockResolvedValue([{ id: 'match', date: '2026-10-15T18:00:00Z', round: 1, status: 'completed', home_name: 'Aurora', away_name: 'Estrela', home_goals: 2, away_goals: 0 }]);
   jest.mocked(cupService.get).mockResolvedValue({ competition: { id: 'cup', name: 'Copa Nacional', status: 'active' }, entry: { status: 'active', phase: 'Semifinal' }, matches: [] });
@@ -26,6 +26,9 @@ test('championship owns table, games, reports and cup rankings', async () => {
   await screen.findByText('1. Aurora');
   expect(screen.getByRole('tab', { name: 'Tabela', selected: true })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Partidas' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Liga' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Copa Nacional' })).toBeNull();
+  expect(screen.queryByText(/Classificação · P pontos/)).toBeNull();
   expect(screen.getByText('GP')).toBeTruthy();
   expect(screen.getByText('GC')).toBeTruthy();
   expect(screen.getByText('CV')).toBeTruthy();
@@ -34,13 +37,11 @@ test('championship owns table, games, reports and cup rankings', async () => {
   expect(screen.getByRole('tab', { name: 'Partidas', selected: true })).toBeTruthy();
   await fireEvent.press(screen.getByText('Ver relatório'));
   expect(navigate).toHaveBeenCalledWith('MatchReport', { id: 'match' });
-  await fireEvent.press(screen.getByText('Copa Nacional'));
-  await screen.findByText('Semifinal · Em disputa');
   await fireEvent.press(screen.getByText('Artilheiros'));
   expect(screen.queryByText('Estatísticas do campeonato')).toBeNull();
   expect(screen.queryByText('Mais cartões')).toBeNull();
   expect(screen.getByText('Gols')).toBeTruthy();
-  await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('cup', 'goals'));
+  await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('league', 'goals'));
 });
 test('calendar selects event day and loads adjacent month without filters', async () => {
   const now = new Date();
