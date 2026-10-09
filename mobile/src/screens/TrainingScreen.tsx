@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useScreenRefresh } from '../components/useScreenRefresh';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { ActionButton as Button, Choices, GamePage, useAction } from '../components/GameUI';
 import { developmentService } from '../services/developmentService';
 import { PlayerSkill } from '../types/game';
-import { domainStore } from '../stores/domainStore';
-const useTrainingStore = domainStore(developmentService.training);
+import { useTrainingStore } from '../stores/screenStores';
 export function TrainingScreen() {
-  const { data, loading, error, load } = useTrainingStore();
+  const { data, loading, error, load, ensure, refresh } = useTrainingStore();
   const action = useAction();
   const [skill, setSkill] = useState<PlayerSkill>('passing');
-  useEffect(() => { void load(); }, [load]);
+  useScreenRefresh(ensure, refresh);
   return <GamePage loading={loading || action.busy} error={action.error || error}>
     <Button title="Atualizar treinamento" onPress={() => void load()} />
     <Text>A cada 100 treinos, a habilidade escolhida pode ganhar um ponto. A força geral acompanha as habilidades.</Text>

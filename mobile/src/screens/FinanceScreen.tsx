@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useScreenRefresh } from '../components/useScreenRefresh';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useFinanceStore } from '../stores/financeStore';
 import { ScreenTabs } from '../components/ScreenTabs';
@@ -8,9 +9,8 @@ import { TicketingScreen } from './TicketingScreen';
 import { SponsorsScreen } from './SponsorsScreen';
 export function FinanceScreen() {
   const store = useFinanceStore(), [tab, setTab] = useState('Resumo');
-  const load = store.load;
-  useEffect(() => { void load(); }, [load]);
-  return <View style={{ flex: 1 }}><ScreenTabs values={['Resumo', 'Banco', 'Bilheteria', 'Patrocinadores']} value={tab} onChange={value => { setTab(value); if (value === 'Resumo') void load(); }} />
+  useScreenRefresh(store.ensure, store.refresh, tab === 'Resumo');
+  return <View style={{ flex: 1 }}><ScreenTabs values={['Resumo', 'Banco', 'Bilheteria', 'Patrocinadores']} value={tab} onChange={setTab} />
     {tab === 'Resumo' ? <GamePage loading={store.loading} error={store.error}>
       <View style={{ backgroundColor: '#183f63', borderRadius: 24, padding: 24, gap: 12, borderWidth: 2, borderColor: '#142f4c', boxShadow: '0 5px 0 #abc3d3' }}><Text style={{ color: '#bfe0f1', fontWeight: '800', letterSpacing: 2 }}>CAIXA DO CLUBE</Text><Text style={{ color: '#fff', fontSize: 28, fontWeight: '800' }}>Saldo: {money(store.data?.balance ?? 0)}</Text><Text style={{ color: '#bfe0f1' }}>Acompanhamento do mês atual</Text></View>
       {[

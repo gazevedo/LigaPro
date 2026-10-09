@@ -1,13 +1,12 @@
-import { useEffect } from 'react';
+import { useScreenRefresh } from '../components/useScreenRefresh';
 import { Text } from 'react-native';
 import { ActionButton as Button, Card, GamePage, useAction } from '../components/GameUI';
 import { developmentService } from '../services/developmentService';
-import { domainStore } from '../stores/domainStore';
-const useYouthStore = domainStore(developmentService.youth);
+import { useYouthStore } from '../stores/screenStores';
 export function YouthAcademyScreen() {
-  const { data, loading, error, load } = useYouthStore();
+  const { data, loading, error, load, ensure } = useYouthStore();
   const action = useAction();
-  useEffect(() => { void load(); }, [load]);
+  useScreenRefresh(ensure);
   return <GamePage loading={loading || action.busy} error={action.error || error}>
     <Text>A cada temporada, escolha um dos três candidatos para a base. A promoção ocorre a partir dos 18 anos.</Text>
     {data?.map(player => <Card key={player.id}>

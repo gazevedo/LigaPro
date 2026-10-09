@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useScreenRefresh } from '../components/useScreenRefresh';
+import { useBankStore } from '../stores/screenStores';
+import { useState } from 'react';
 import { Text, View } from 'react-native';
-import { Bank } from '../types/game';
 import { financeService } from '../services/financeService';
 import { ActionButton as Button, Field, GamePage, cents, money, useAction } from '../components/GameUI';
 const loanNames: Record<string, string> = { short_term: 'Curto prazo', medium_term: 'Médio prazo', long_term: 'Longo prazo' };
 export function BankScreen() {
-  const [data, setData] = useState<Bank | null>(null), [amount, setAmount] = useState('');
+  const { data, loading, error, ensure, load, refresh } = useBankStore();
+  const [amount, setAmount] = useState('');
   const action = useAction();
-  async function load() { setData(await financeService.bank()); }
-  useEffect(() => { void action.run(load); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <GamePage loading={action.busy} error={action.error}>
+  useScreenRefresh(ensure, refresh);
+  return <GamePage loading={loading || action.busy} error={action.error || error}>
     {data && <Text>Investimento: {data.rules.investment_days} dias, {data.rules.investment_interest_bps / 100}% por contrato. Empréstimo: {data.rules.bank_loan_days} dias, {data.rules.bank_loan_interest_bps / 100}% por contrato. Limite: {money(data.rules.max_bank_loan)}</Text>}
     {data?.credit_limit !== undefined && <Text>Crédito disponível: {money(data.credit_limit)} · Risco: {({low: 'Baixo', moderate: 'Moderado', high: 'Alto'} as Record<string, string>)[data.financial_risk ?? 'low']}</Text>}
     {Object.entries(data?.products ?? {}).map(([product, terms]) => <Button key={product} title={`${loanNames[product]} · ${terms.installments} parcelas · ${Math.round(terms.interest_rate * 100)}% total`} disabled={action.busy || data?.credit_blocked} onPress={() => void action.run(async () => { await financeService.loan(product, cents(amount)); await load(); })} />)}

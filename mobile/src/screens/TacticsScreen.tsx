@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useScreenRefresh } from '../components/useScreenRefresh';
+import { useState } from 'react';
 import { Card, NotificationBubble, GamePage, useAction } from '../components/GameUI';
 import { ComboBox } from '../components/ComboBox';
 import { ScreenTabs } from '../components/ScreenTabs';
@@ -13,7 +14,7 @@ export function TacticsScreen() {
   const store = useTacticsStore(), squad = useSquadStore(), action = useAction();
   const [tab, setTab] = useState('Estratégia'), [message, setMessage] = useState('');
   const load = store.load, loadSquad = squad.load;
-  useEffect(() => { void load(); void loadSquad(); }, [load, loadSquad]);
+  useScreenRefresh(() => Promise.all([store.ensure(), squad.ensure()]));
   const draft = store.data;
   const busy = store.loading || squad.loading || action.busy;
   function change(patch: Partial<Tactics>) {

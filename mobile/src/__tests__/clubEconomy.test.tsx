@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import { CupSummary } from '../components/CupSummary';
 import { FinanceScreen } from '../screens/FinanceScreen';
 import { TicketingScreen } from '../screens/TicketingScreen';
 import { cupService } from '../services/cupService';
 import { financeService } from '../services/financeService';
 import { useFinanceStore } from '../stores/financeStore';
+import { useTicketingStore } from '../stores/screenStores';
 jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn() } }));
 jest.mock('../services/financeService', () => ({ financeService: { get: jest.fn(), tickets: jest.fn(), price: jest.fn() } }));
 beforeEach(() => { jest.clearAllMocks(); useFinanceStore.getState().reset(); });
@@ -33,4 +34,15 @@ test('ticket price previews reduced demand and respects capacity', async () => {
   await screen.findByText('Público estimado com este preço: 1000 pessoas');
   await fireEvent.changeText(screen.getByLabelText('Preço do ingresso (R$)'), '500');
   await waitFor(() => expect(screen.getByText('Público estimado com este preço: 67 pessoas')).toBeTruthy());
+});
+
+test('background ticket refresh preserves an unsaved input price', async () => {
+  const tickets = { price: 2000, capacity: 1000, income: 0, history: [] };
+  jest.mocked(financeService.tickets).mockResolvedValueOnce(tickets).mockResolvedValueOnce({ ...tickets, income: 100000 });
+  useTicketingStore.getState().reset();
+  await render(<TicketingScreen />);
+  await fireEvent.changeText(await screen.findByLabelText('Preço do ingresso (R$)'), '50');
+  await act(async () => { await useTicketingStore.getState().refresh(); });
+  expect(screen.getByLabelText('Preço do ingresso (R$)')).toHaveDisplayValue('50');
+  expect(screen.getByText(/Renda:/)).toHaveTextContent(/1\.000/);
 });

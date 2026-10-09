@@ -19,7 +19,7 @@ import { useClubStore } from '../stores/clubStore';
 import { useStadiumStore } from '../stores/stadiumStore';
 import { useMarketStore } from '../stores/marketStore';
 import { useAuthStore } from '../stores/authStore';
-import { domainStore } from '../stores/domainStore';
+import { domainStore, resetDomainStores } from '../stores/domainStore';
 jest.mock('../services/historyService', () => ({ historyService: { get: jest.fn().mockResolvedValue({ seasons: [], clubs: [], records: [], players: [] }) } }));
 jest.mock('../services/cupService', () => ({ cupService: { get: jest.fn().mockResolvedValue({ competition: null, entry: null, matches: [] }) } }));
 jest.mock('../services/competitionService', () => ({ competitionService: { get: jest.fn().mockResolvedValue(null) } }));
@@ -29,7 +29,7 @@ jest.mock('../services/stadiumService', () => ({ stadiumService: { get: jest.fn(
 jest.mock('../services/marketService', () => ({ marketService: { mine: jest.fn(), accept: jest.fn(), cancelOffer: jest.fn() } }));
 const club = { id: 'club1', name: 'Clube teste', country_id: 'BR', badge_id: 'blue', created_at: '2026-01-01T00:00:00Z', ranking: 0, competition_positions: [], trophies: [] };
 beforeEach(() => {
-  jest.clearAllMocks(); useClubStore.getState().reset(); useStadiumStore.getState().reset(); useMarketStore.getState().reset();
+  jest.clearAllMocks(); resetDomainStores(); useClubStore.getState().reset(); useStadiumStore.getState().reset(); useMarketStore.getState().reset();
   jest.mocked(clubService.status).mockResolvedValue({ club });
   jest.mocked(clubService.get).mockResolvedValue(club);
   jest.mocked(clubService.catalog).mockResolvedValue({ countries: [{ id: 'BR', name: 'Brasil' }], badges: [{ id: 'blue', name: 'blue', symbol: '🛡', color: '#2563eb' }] });
@@ -53,7 +53,7 @@ test('dashboard opens every module', async () => {
 });
 test('public club hides administration for a different owner', async () => {
   useClubStore.setState({ data: { club: { ...club, id: 'other' } } });
-  const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn(), setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
   await render(<ClubScreen {...props} />); await screen.findByText('Clube teste');
   expect(screen.queryByText('Administrar plantel')).toBeNull();
   expect(screen.queryByText('Pedir demissão')).toBeNull();
@@ -107,12 +107,21 @@ test('synchronous double tap runs one financial action', async () => {
 
 test('club hides consultation and management shortcuts', async () => {
   useClubStore.setState({ data: { club } });
-  const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  const props = { route: { params: { id: club.id } }, navigation: { setParams: jest.fn(), setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
   await render(<ClubScreen {...props} />);
   await screen.findByText(club.name);
   expect(screen.queryByText('Gestão do clube')).toBeNull();
   expect(screen.queryByText('Administrar plantel')).toBeNull();
   expect(screen.queryByText('Consultar outro clube')).toBeNull();
+  expect(screen.queryByText('MEU CLUBE')).toBeNull();
+  expect(screen.queryByText('Perfil do técnico')).toBeNull();
+  expect(screen.getByLabelText('País: BR')).toHaveTextContent('🇧🇷');
+  expect(props.navigation.setOptions).toHaveBeenCalledWith({ title: 'Meu clube' });
+  expect(screen.getByRole('tab', { name: 'Informações', selected: true })).toBeTruthy();
+  await fireEvent.press(screen.getByRole('tab', { name: 'Sala de troféus' }));
+  expect(screen.queryByText('Records do clube')).toBeNull();
+  expect(screen.getByText('As próximas conquistas começam aqui.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Sair' })).toBeTruthy();
 });
 
 test('country picker searches without accents and selects the result', async () => {

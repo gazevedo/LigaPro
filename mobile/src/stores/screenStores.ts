@@ -1,0 +1,24 @@
+import { domainStore } from './domainStore';
+import { clubService } from '../services/clubService';
+import { historyService } from '../services/historyService';
+import { competitionService } from '../services/competitionService';
+import { cupService } from '../services/cupService';
+import { statisticsService } from '../services/statisticsService';
+import { financeService } from '../services/financeService';
+import { developmentService } from '../services/developmentService';
+import { marketService } from '../services/marketService';
+
+export const useClubDetailsStore = domainStore(clubService.get);
+export const useHistoryStore = domainStore(historyService.get);
+export const useCatalogStore = domainStore(clubService.catalog);
+export const useCompetitionStore = domainStore(competitionService.get);
+export const useCompetitionMatchesStore = domainStore(competitionService.matches);
+export const useCupStore = domainStore(cupService.get);
+export const useLeagueStatisticsStore = domainStore(() => statisticsService.competition('league', 'goals'));
+export const useCupStatisticsStore = domainStore(() => statisticsService.competition('cup', 'goals'));
+export const useBankStore = domainStore(financeService.bank);
+export const useTicketingStore = domainStore(financeService.tickets);
+export const useSponsorsStore = domainStore(financeService.sponsors);
+export const useTrainingStore = domainStore(developmentService.training);
+export const useYouthStore = domainStore(developmentService.youth);
+export const useMarketPlayersStore = domainStore(marketService.search);

@@ -4,7 +4,7 @@ Jogo de gerenciamento de futebol inspirado no Brasfoot, com clubes próprios, ca
 
 Este README concentra a documentação mantida do projeto. Os arquivos em `prompts/` são requisitos originais e podem descrever etapas anteriores; as regras atuais estão abaixo. JSONs de calibração e relatórios gerados permanecem como evidências, sem duplicar instruções de uso.
 
-O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Histórico, perfil do técnico e logout ficam em Clube; Campeonatos possui abas Tabela, Partidas e Artilheiros, com classificação completa e cartões. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O calendário é uma agenda mensal e o cabeçalho oferece o correio. Para voltar, deslize da borda esquerda para a direita; no app nativo Android, o botão Voltar retorna à tela anterior sem fechar o jogo no dashboard.
+O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Clube mostra o nome do técnico e a bandeira junto ao escudo, com abas Informações e Sala de troféus, histórico, records e logout; Campeonatos possui abas Tabela, Partidas e Artilheiros, com classificação completa e cartões. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O calendário é uma agenda mensal e o cabeçalho oferece o correio. Para voltar, deslize da borda esquerda para a direita; no Android, o comando Voltar retorna à tela anterior e permanece no jogo quando chega ao dashboard.
 
 ## Índice
 
@@ -65,7 +65,7 @@ O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às t
 
 Abra o frontend publicado em HTTPS (`https://ligapro-mobile.vercel.app/`). No Android, use Chrome → menu ⋮ → **Instalar aplicativo** ou **Adicionar à tela inicial**. No iPhone, use Safari → Compartilhar → **Adicionar à Tela de Início**; mantenha **Abrir como App** ativado se essa opção aparecer. Abra pelo ícone LigaPro para usar a janela sem a barra do navegador.
 
-A exportação web inclui manifesto, ícones Android/iOS e service worker. O app precisa de internet para acessar o jogo; offline, mostra uma tela para tentar novamente. Apenas essa tela e ícones públicos entram no cache, sem respostas da API ou credenciais. Após atualizar esses arquivos no Git, faça um novo deploy do frontend com `npx expo export --platform web`, saída `dist`. A PWA não habilita o login Google web, que ainda precisa de integração própria.
+A exportação web inclui manifesto, ícones Android/iOS e service worker. O app precisa de internet para acessar o jogo; offline, mostra uma tela para tentar novamente. O cache persistente do service worker guarda apenas essa tela e ícones públicos, sem respostas da API ou credenciais. Os dados das telas principais são pré-carregados em memória após entrar no clube e descartados ao trocar de conta ou clube. Campeonatos, Financeiro, Mercado, Treinamento e Calendário atualizam os dados a cada três segundos enquanto a tela está visível, preservando conteúdo e campos em edição sem mostrar loader durante a atualização. As consultas não se sobrepõem e a atualização pausa ao sair da tela ou minimizar o aplicativo. Após atualizar esses arquivos no Git, faça um novo deploy do frontend com `npx expo export --platform web`, saída `dist`. A PWA não habilita o login Google web, que ainda precisa de integração própria.
 
 ### Backend local para desenvolvimento
 

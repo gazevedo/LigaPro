@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { calendarMonthFilters } from '../services/prefetchService';
+import { useScreenRefresh } from '../components/useScreenRefresh';
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useCalendarStore } from '../stores/calendarStore';
 import { ActionButton, Card, GamePage, palette } from '../components/GameUI';
@@ -7,8 +9,8 @@ export function CalendarScreen() {
   const store = useCalendarStore();
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selected, setSelected] = useState(() => new Date().getDate());
-  const load = store.load;
-  useEffect(() => { void load({ start: month.toISOString(), end: new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString() }); }, [load, month]);
+  const filters = calendarMonthFilters(month);
+  useScreenRefresh(() => store.ensure(filters), () => store.refresh(filters), true, month.toISOString());
   const events = (store.data ?? []).filter(event => !['financial', 'financial_close', 'ticketing', 'transfer_window_open', 'transfer_window_close', 'transfer_window'].includes(event.kind || event.type)), today = dayKey(new Date());
   const cells = Array.from({ length: month.getDay() + new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate() }, (_, index) => index < month.getDay() ? null : index - month.getDay() + 1);
   function move(offset: number) { setMonth(new Date(month.getFullYear(), month.getMonth() + offset, 1)); setSelected(1); }
