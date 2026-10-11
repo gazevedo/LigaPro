@@ -137,6 +137,9 @@ test('two starters exchange actual field positions and keep them after reloading
   await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: swapped, reserves: ['p11'], manual_positions: true }));
   expect(await screen.findByLabelText('Jogador 1: fora de posição, natural DEF, escalado em ATA')).toBeTruthy();
   expect(screen.getByLabelText('Jogador 9: fora de posição, natural ATA, escalado em DEF')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Jogador 1, titular, força 50' })).toHaveStyle({ backgroundColor: '#fff1b8' });
+  expect(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' })).toHaveStyle({ backgroundColor: '#fff1b8' });
+  expect(screen.getByRole('button', { name: 'Jogador 2, titular, força 50' })).toHaveStyle({ backgroundColor: '#e1efdb' });
 });
 test('tactical selectors expand below the control without a popup or cancel button', async () => {
   await render(<TacticsScreen />);

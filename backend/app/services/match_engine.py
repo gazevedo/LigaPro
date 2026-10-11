@@ -34,8 +34,8 @@ def clamp(value, low, high):
 @dataclass(frozen=True)
 class MatchConfig:
     block_minutes: int = 5
-    compatible_fit: float = 0.90
-    unsuitable_fit: float = 0.72
+    compatible_fit: float = 0.80
+    unsuitable_fit: float = 0.80
     wrong_side_fit: float = 0.96
     home_advantage: float = 1.04
     focus_probability: float = 0.70
@@ -302,7 +302,10 @@ class PositionFitCalculator:
         self.config = config
 
     def calculate(self, player):
-        if player.position == player.assigned_position:
+        if player.position == player.assigned_position or {
+            player.position,
+            player.assigned_position,
+        } == {"CB", "FB"}:
             fit = 1.0
         elif {player.position, player.assigned_position} in (
             {"FB", "CB"},

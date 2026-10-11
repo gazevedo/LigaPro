@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.schemas.game import LineupInput
 from app.services.game import SquadService
 from app.services.match_engine import (
+    SKILLS,
     MatchConfig,
     MatchPlayer,
     PlayerEffectiveStrengthCalculator,
@@ -61,7 +62,7 @@ def test_improvised_lineup_saves_and_has_a_real_strength_penalty():
     calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "classic")
     penalized = calculator.calculate(improvised, "passing")
     improvised.assigned_position = "CB"
-    assert penalized == pytest.approx(calculator.calculate(improvised, "passing") * 0.72)
+    assert penalized == pytest.approx(calculator.calculate(improvised, "passing") * 0.80)
 
 
 def test_missing_keeper_or_incomplete_lineup_is_still_rejected():
@@ -99,8 +100,8 @@ def test_manual_positions_survive_saving_and_match_assignment_with_penalties():
     assert assigned[9].position == "CB"
     assert assigned[9].assigned_position == "ATT"
     calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "classic")
-    assert calculator.fit.calculate(assigned[1]) == 0.72
-    assert calculator.fit.calculate(assigned[9]) == 0.72
+    assert calculator.fit.calculate(assigned[1]) == 0.80
+    assert calculator.fit.calculate(assigned[9]) == 0.80
 
 
 @pytest.mark.parametrize("formation,manual", [("4-4-2", True), ("4-3-3", False)])
@@ -123,3 +124,25 @@ def test_style_changes_keep_manual_positions_and_new_formations_reassign_them(fo
         assert saved["starters"] == lineup["starters"]
     else:
         assert set(saved["starters"]) == {player["_id"] for player in documents}
+
+
+@pytest.mark.parametrize("mode", ["classic", "skills"])
+@pytest.mark.parametrize("position", ["MID", "CB"])
+def test_out_of_position_reduces_all_effective_attributes_by_twenty_percent(mode, position):
+    player = MatchPlayer(
+        "player", position, position, strength=80, skills={skill: 60 for skill in SKILLS}
+    )
+    calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), mode)
+    natural = {skill: calculator.calculate(player, skill) for skill in SKILLS}
+    player.assigned_position = "ATT"
+    for skill in SKILLS:
+        assert calculator.calculate(player, skill) == pytest.approx(natural[skill] * 0.8)
+    assert player.strength == 80
+    assert player.skills == {skill: 60 for skill in SKILLS}
+    player.assigned_position = position
+    assert calculator.calculate(player, "passing") == natural["passing"]
+
+
+def test_defenders_in_the_defensive_sector_are_not_marked_as_improvised():
+    calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "classic")
+    assert calculator.fit.calculate(MatchPlayer("player", "CB", "FB")) == 1

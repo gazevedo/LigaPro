@@ -56,6 +56,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
     replace(target, player.id);
   }
   const assigned = arrangePlayers(selected, formation, true);
+  const improvisedIds = new Set(assigned.filter(slot => slot.outOfPosition).map(slot => slot.player.id));
   const groups = ['ATA', 'MED', 'DEF', 'GOL'].flatMap(group => {
     const players = assigned.filter(slot => sector(slot.position) === group);
     if (group !== 'MED') return [players];
@@ -112,14 +113,14 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
         <View style={styles.roster}>
           <View style={styles.rosterRow}><Text style={styles.role}>T/R</Text><Text style={styles.position}>Pos.</Text><Text style={[styles.rosterName, { fontWeight: '700' }]}>Nome</Text><Text style={styles.number}>Força</Text><Text style={styles.number}>Energia</Text></View>
           <ScrollView style={{ maxHeight: 310 }}>
-            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={saving || unavailable(player.status) || !canSwap(player)} onPress={() => tap(player)} style={[styles.rosterRow, { backgroundColor: replacement === player.id ? '#fff1b8' : starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
+            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={saving || unavailable(player.status) || !canSwap(player)} onPress={() => tap(player)} style={[styles.rosterRow, { backgroundColor: improvisedIds.has(player.id) || replacement === player.id ? '#fff1b8' : starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
               <Text style={styles.role}>{starters.includes(player.id) ? 'T' : reserves.some(item => item.id === player.id) ? 'R' : '—'}</Text><Text style={styles.position}>{sector(player.position)}</Text><Text numberOfLines={1} style={styles.rosterName}>{player.name}</Text><PlayerCards player={player} /><Text style={styles.number}>{player.strength ?? player.overall}</Text><Text style={styles.number}>{player.energy ?? player.physical_condition ?? 100}%</Text>
             </Pressable>)}
           </ScrollView>
         </View>
       </View>
     </View>
-    <Text style={{ color: palette.muted, fontSize: 12 }}>Toque em dois jogadores para trocar. T: titular · R: reserva. Fora de posição reduz o desempenho.</Text>
+    <Text style={{ color: palette.muted, fontSize: 12 }}>Toque em dois jogadores para trocar. T: titular · R: reserva. Fora de posição: atributos −20% em campo.</Text>
   </View>;
 }
 const styles = StyleSheet.create({
