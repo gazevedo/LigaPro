@@ -28,6 +28,7 @@ import { GameBackground, NotificationBubble, palette } from '../components/GameU
 import { SwipeBack } from '../components/SwipeBack';
 import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
+import { SessionLoading } from '../components/SessionLoading';
 import { useClubStore } from '../stores/clubStore';
 import { CreateClubScreen } from '../screens/CreateClubScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -99,7 +100,7 @@ export function AppNavigator() {
         <Stack.Screen name="TransferOffers" component={TransferOffersScreen} options={{ title: 'Propostas' }} />
         <Stack.Screen name="Settings" component={SettingsScreen}
           options={{ title: 'Configurações' }} />
-      </Stack.Navigator>)}</GameBackground> : auth.initialized && !auth.authenticated ? <AuthNavigator /> : null}
+      </Stack.Navigator>)}</GameBackground> : auth.initialized && !auth.authenticated ? <AuthNavigator /> : <SessionLoading loading={!startupError} />}
     </NavigationContainer></SwipeBack>
     {startupError && <View style={{ padding: 12, gap: 8 }}>
       <NotificationBubble message={startupError} />
