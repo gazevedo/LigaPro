@@ -56,6 +56,7 @@ test('restored session stays on splash until the club loads, then opens home', a
   useAuthStore.setState({ authenticated: true, user: { id: 'user1' } as any });
   await render(<AppNavigator />);
   expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
+  expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
   expect(screen.queryByText('Tentar novamente')).toBeNull();
   expect(screen.queryByText('Sair')).toBeNull();
   expect(screen.queryByText('Criar clube')).toBeNull();
@@ -90,6 +91,7 @@ test('session expiry during club loading opens login', async () => {
   useAuthStore.setState({ authenticated: true });
   await render(<AppNavigator />);
   expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
+  expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
   await act(async () => { useAuthStore.setState({ authenticated: false }); });
   expect(screen.getByText('Login')).toBeTruthy();
   expect(screen.queryByText('Sair')).toBeNull();
