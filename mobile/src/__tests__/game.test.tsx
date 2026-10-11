@@ -223,11 +223,11 @@ test('club shows only supporter confidence without board confidence', async () =
   jest.mocked(clubService.get).mockResolvedValue({ ...club, fan_confidence: 15 });
   const props = { route: { params: { id: club.id } }, navigation: { setOptions: jest.fn(), navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
   await render(<ClubScreen {...props} />);
-  const confidence = await screen.findByRole('progressbar', { name: 'Confiança da torcida' });
-  expect(confidence).toHaveAccessibilityValue({ min: 0, max: 100, now: 15 });
+  await screen.findByText('15%');
+  expect(screen.queryByRole('progressbar')).toBeNull();
   expect(screen.getByText('15%')).toBeTruthy();
   expect(screen.queryByText('Confiança da diretoria')).toBeNull();
-  expect(screen.getByText(/Quanto maior a confiança/)).toBeTruthy();
+  expect(screen.getByText('Reputação')).toBeTruthy();
   await fireEvent.press(screen.getByRole('tab', { name: 'Sala de troféus' }));
   expect(screen.queryByRole('progressbar', { name: 'Confiança da torcida' })).toBeNull();
 });

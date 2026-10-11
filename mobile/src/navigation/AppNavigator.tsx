@@ -19,12 +19,12 @@ import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, BackHandler, Image, Platform, Text, View } from 'react-native';
+import { BackHandler, Image, Platform, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
-import { GameBackground, palette } from '../components/GameUI';
+import { GameBackground, NotificationBubble, palette } from '../components/GameUI';
 import { SwipeBack } from '../components/SwipeBack';
 import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
@@ -41,12 +41,11 @@ const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, bac
 export function AppNavigator() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const browserBack = useRef<ReturnType<typeof registerBrowserBack> | null>(null);
-  const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
+  const { apiAvailable, error, initialize } = useAppStore();
   const auth = useAuthStore();
   const game = useClubStore();
   const waitingForClub = auth.authenticated && !game.data;
-  const startupError = error || auth.error || (waitingForClub ? game.error : null);
-  const startupLoading = loading || auth.loading || !initialized || (waitingForClub && (game.loading || !game.error));
+  const startupError = error || (waitingForClub ? game.error : null);
   const loadClub = game.ensure;
   const clubId = game.data?.club?.id;
   useEffect(() => {
@@ -78,18 +77,8 @@ export function AppNavigator() {
     return () => subscription.remove();
   }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
-    {!initialized || !apiAvailable || !auth.initialized || waitingForClub ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
-      {startupLoading ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" /> : startupError ? <>
-        <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : startupError}</Text>
-        <ConnectionRetry onRetry={() => {
-          if (apiAvailable && auth.initialized && waitingForClub) { void loadClub(); return; }
-          void initialize().then(() => {
-            if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
-          });
-        }} />
-      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" />}
-    </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
-      {auth.authenticated ? <GameBackground>{(!game.data?.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
+    <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
+      {auth.authenticated ? <GameBackground>{(game.data && !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
@@ -112,7 +101,16 @@ export function AppNavigator() {
         <Stack.Screen name="Settings" component={SettingsScreen}
           options={{ title: 'Configurações' }} />
       </Stack.Navigator>)}</GameBackground> : <AuthNavigator />}
-    </NavigationContainer></SwipeBack>}
+    </NavigationContainer></SwipeBack>
+    {startupError && <View style={{ padding: 12, gap: 8 }}>
+      <NotificationBubble message={startupError} />
+      <ConnectionRetry key={startupError} onRetry={() => {
+        if (apiAvailable && waitingForClub) { void loadClub(); return; }
+        void initialize().then(() => {
+          if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
+        });
+      }} />
+    </View>}
     <NotificationHost />
   </SafeAreaProvider>;
 }

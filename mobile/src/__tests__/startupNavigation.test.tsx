@@ -52,10 +52,11 @@ test('startup opens login directly when there is no session', async () => {
   expect(load).not.toHaveBeenCalled();
 });
 
-test('restored session waits without a splash logo until the club loads, then opens home', async () => {
+test('restored session opens home while club data loads in the background', async () => {
   useAuthStore.setState({ authenticated: true, user: { id: 'user1' } as any });
   await render(<AppNavigator />);
-  expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
+  expect(screen.queryByLabelText('Carregando aplicativo')).toBeNull();
+  expect(screen.getByText('Tela inicial')).toBeTruthy();
   expect(screen.queryByLabelText('Logotipo LigaPro')).toBeNull();
   expect(screen.queryByText('Tentar novamente')).toBeNull();
   expect(screen.queryByText('Sair')).toBeNull();
@@ -90,9 +91,18 @@ test('club creation opens only after confirming the account has no club', async 
 test('session expiry during club loading opens login', async () => {
   useAuthStore.setState({ authenticated: true });
   await render(<AppNavigator />);
-  expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
+  expect(screen.queryByLabelText('Carregando aplicativo')).toBeNull();
+  expect(screen.getByText('Tela inicial')).toBeTruthy();
   expect(screen.queryByLabelText('Logotipo LigaPro')).toBeNull();
   await act(async () => { useAuthStore.setState({ authenticated: false }); });
   expect(screen.getByText('Login')).toBeTruthy();
   expect(screen.queryByText('Sair')).toBeNull();
+});
+
+test('login is visible while startup checks and session restoration are pending', async () => {
+  useAppStore.setState({ initialized: false, loading: true, apiAvailable: false });
+  useAuthStore.setState({ initialized: false, loading: true });
+  await render(<AppNavigator />);
+  expect(screen.getByText('Login')).toBeTruthy();
+  expect(screen.queryByLabelText('Carregando aplicativo')).toBeNull();
 });

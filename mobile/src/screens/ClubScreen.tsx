@@ -55,12 +55,6 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text><Text style={styles.caption}>{metric.detail}</Text>
       </View>)}
     </View>
-    <Card>
-      <View accessible accessibilityRole="progressbar" accessibilityLabel="Confiança da torcida" accessibilityValue={{ min: 0, max: 100, now: club.fan_confidence ?? club.fan_satisfaction ?? 50 }} style={styles.confidenceTrack}>
-        <View style={{ width: `${Math.max(0, Math.min(100, club.fan_confidence ?? club.fan_satisfaction ?? 50))}%`, height: '100%', backgroundColor: (club.fan_confidence ?? club.fan_satisfaction ?? 50) < 30 ? '#c23c42' : '#087f70' }} />
-      </View>
-      <Text style={styles.caption}>Quanto maior a confiança, maior o público no estádio e melhores as novas propostas de patrocínio.</Text>
-    </Card>
     {own === club.id && <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
     {own === club.id && <>
       <ActionButton title="Abandonar gestão" secondary disabled={auth.loading || action.busy} onPress={() => setConfirmResignation(true)} />
@@ -93,7 +87,6 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { color: palette.ink, fontSize: 28, fontWeight: '800', flexShrink: 1 },
   flag: { fontSize: 28 },
-  confidenceTrack: { height: 10, borderRadius: 6, backgroundColor: '#e4eaf0', overflow: 'hidden' },
   caption: { color: palette.muted, lineHeight: 20 },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metric: { flexGrow: 1, flexBasis: '45%', padding: 18, gap: 8, borderRadius: 20, borderWidth: 2, borderColor: palette.border },

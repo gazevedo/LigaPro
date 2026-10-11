@@ -33,18 +33,26 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   useScreenRefresh(() => Promise.all([table.ensure(), games.ensure()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
   const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
-  return <GamePage loading={loading} error={error}>
+  return <GamePage loading={loading} error={error} horizontalPadding={8}>
     <Tabs values={['Tabela', 'Partidas', 'Artilheiros']} selected={tab} onChange={setTab} />
-    {tab === 'Tabela' && kind === 'league' && league && <View style={{ marginHorizontal: -24, paddingVertical: 16, gap: 12, backgroundColor: '#fff' }}><Text style={{ paddingHorizontal: 8, fontSize: 18, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text>
+    {tab === 'Tabela' && kind === 'league' && league && <View style={{ paddingVertical: 16, gap: 12, backgroundColor: '#fff' }}><Text style={{ paddingHorizontal: 8, fontSize: 18, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text>
       <ScrollView horizontal><View style={{ gap: 4 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', paddingVertical: 8 }}>{columns.map((column, index) => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 4, fontSize: 12, textAlign: index ? 'center' : 'left', fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>
         {league.standings.map(row => <View key={row.id} style={{ flexDirection: 'row', paddingVertical: 8, backgroundColor: row.club_id === clubId ? '#daf4e7' : '#f4f7fc' }}>{[`${row.position}. ${row.club_name}`, row.points, row.games, row.wins, row.draws, row.losses, row.goals_for, row.goals_against, row.goal_difference, row.red_cards ?? 0, row.yellow_cards ?? 0].map((value, i) => <Text key={i} style={{ width: columns[i].width, paddingHorizontal: 4, fontSize: 12, textAlign: i ? 'center' : 'left', color: palette.ink }}>{value}</Text>)}</View>)}
       </View></ScrollView>
     </View>}
     {tab === 'Tabela' && kind === 'cup' && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Copa Nacional</Text><Text>{cup?.entry ? `${cup.entry.phase} · ${cup.entry.status === 'active' ? 'Em disputa' : cup.entry.status === 'eliminated' ? 'Eliminado' : cup.entry.status === 'champion' ? 'Campeão' : cup.entry.status}` : 'Nenhuma participação nesta temporada.'}</Text></Card>}
-    {tab === 'Partidas' && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Jogos do clube</Text>{matches.map(match => <View key={match.id} style={{ gap: 8, backgroundColor: '#f4f7fc', borderRadius: 14, padding: 14 }}>
-      <Text style={{ color: palette.muted }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR')}</Text><Text style={{ fontWeight: '700', color: palette.ink }}>{match.home_name ?? 'Mandante'} × {match.away_name ?? 'Visitante'}</Text>
-      {match.status === 'completed' ? <><Text>{match.home_goals ?? 0} × {match.away_goals ?? 0}</Text><ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: match.id })} /></> : match.status === 'live' || match.status === 'in_progress' ? <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: match.id })} /> : <Text style={{ color: palette.muted }}>Agendada</Text>}
-    </View>)}{!matches.length && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}</Card>}
+    {tab === 'Partidas' && <View style={{ backgroundColor: '#fff', paddingHorizontal: 8 }}>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: palette.ink, paddingVertical: 12 }}>Jogos do clube</Text>
+      {matches.map(match => <View key={match.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderTopWidth: 1, borderColor: palette.border }}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={{ color: palette.muted, fontSize: 12 }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR')}</Text>
+          <Text style={{ fontWeight: '700', color: palette.ink }}>{match.home_name ?? 'Mandante'} × {match.away_name ?? 'Visitante'}</Text>
+          {match.status === 'completed' && <Text>{match.home_goals ?? 0} × {match.away_goals ?? 0}</Text>}
+        </View>
+        {match.status === 'completed' ? <ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: match.id })} /> : match.status === 'live' || match.status === 'in_progress' ? <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: match.id })} /> : <Text style={{ color: palette.muted }}>Agendada</Text>}
+      </View>)}
+      {!matches.length && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}
+    </View>}
     {tab === 'Artilheiros' && <CompetitionStatistics key={kind} kind={kind} openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
   </GamePage>;
 }
