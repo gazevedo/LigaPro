@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
     google_web_client_id: str | None = None
     auth_rate_limit_per_minute: int = Field(default=10, ge=1)
+    web_push_public_key: str | None = None
+    web_push_private_key: SecretStr | None = None
+    web_push_subject: str | None = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

@@ -1,3 +1,4 @@
+import { MatchNotifications } from '../components/MatchNotifications';
 import { useState } from 'react';
 import version from '../../version.json';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -51,6 +52,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.tileTitle}>{shortcut.title}</Text>
       </Pressable>)}
     </View>
+    <MatchNotifications />
     <Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text>
   </GamePage>;
 }

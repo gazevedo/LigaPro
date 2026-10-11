@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
 
 from app.config.settings import get_settings
-from app.controllers import auth, game, health, live, settings
+from app.controllers import auth, game, health, live, push, settings
 from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
@@ -18,6 +18,7 @@ from app.services.game import process_due
 from app.services.monthly_finance import bootstrap_economy
 from app.services.player_contracts import ContractService
 from app.services.player_development import bootstrap_player_attributes
+from app.services.push_notifications import send_match_reminders
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -39,6 +40,8 @@ async def lifespan(app: FastAPI):
         app.state.database["user_sessions"].create_index("user_id")
         app.state.database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
         app.state.database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
+        app.state.database.push_subscriptions.create_index("user_id")
+        app.state.database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
         repository = GameRepository(app.state.database)
         repository.initialize()
         CompetitionService(repository).bootstrap()
@@ -56,6 +59,7 @@ async def lifespan(app: FastAPI):
                 try:
                     await app.state.match_rooms.start_due()
                     await asyncio.to_thread(process_due, repository)
+                    await asyncio.to_thread(send_match_reminders, repository, config)
                 except Exception as exc:
                     logger.error("Game maintenance failed (%s)", type(exc).__name__)
                 await asyncio.sleep(30)
@@ -107,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(game.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(health.router, prefix="/api")
+    app.include_router(push.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     return app
 

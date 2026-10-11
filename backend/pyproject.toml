@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "API do jogo de gerenciamento de futebol LigaPro"
 requires-python = ">=3.12"
 dependencies = [
+    "pywebpush==2.1.2",
     "fastapi==0.142.2",
     "uvicorn==0.54.0",
     "pydantic==2.13.5",
