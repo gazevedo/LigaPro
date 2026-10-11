@@ -1,9 +1,8 @@
-import { ReactNode, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Player, Squad } from '../types/game';
 import { squadService } from '../services/squadService';
 import { useSquadStore } from '../stores/squadStore';
-import { ComboBox } from './ComboBox';
 import { NotificationBubble, palette, useAction } from './GameUI';
 const unavailable = (status?: string) => ['injured', 'suspended', 'retired'].includes(status || '');
 const sector = (position: string) => position === 'GK' ? 'GOL' : ['CB', 'FB'].includes(position) ? 'DEF' : position === 'MID' ? 'MED' : position === 'ATT' ? 'ATA' : position;
@@ -22,27 +21,47 @@ function PlayerMarker({ player, reserve = false }: { player: Player; reserve?: b
     <Text style={styles.playerEnergy}>{sector(player.position)} · {player.energy ?? player.physical_condition ?? 100}%</Text>
   </>;
 }
-export function LineupEditor({ squad, formation, children }: { squad: Squad; formation: string; children?: ReactNode }) {
+function PlayerCards({ player }: { player: Player }) {
+  const yellows = player.yellow_cards_accumulated || (player.discipline_yellow_suspension && (player.suspension_matches_remaining ?? 0) > 0 ? 3 : 0);
+  const red = player.discipline_red_card && (player.suspension_matches_remaining ?? 0) > 0;
+  return <View style={{ flexDirection: 'row', gap: 3 }}>
+    {yellows > 0 && <View accessible accessibilityRole="image" accessibilityLabel={`${yellows} cartões amarelos`} style={{ backgroundColor: '#f1c232', width: 13, height: 18, borderRadius: 2, alignItems: 'center' }}><Text style={{ fontSize: 10 }}>{yellows}</Text></View>}
+    {red && <View accessible accessibilityRole="image" accessibilityLabel="Cartão vermelho" style={{ backgroundColor: '#d83232', width: 13, height: 18, borderRadius: 2 }} />}
+  </View>;
+}
+export function LineupEditor({ squad, formation }: { squad: Squad; formation: string }) {
   const { width } = useWindowDimensions();
   const [starters, setStarters] = useState(squad.lineup.starters.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
   const [replacement, setReplacement] = useState<string | null>(null);
+  const [reserveIds, setReserveIds] = useState(squad.lineup.reserves.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
   const action = useAction();
   const selected = starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
-  const reserves = squad.players.filter(player => !starters.includes(player.id) && !unavailable(player.status));
+  const reserves = [...reserveIds, ...squad.players.filter(player => !starters.includes(player.id) && !reserveIds.includes(player.id) && !unavailable(player.status)).map(player => player.id)].map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
+  const target = squad.players.find(player => player.id === replacement);
+  const canSwap = (player: Player) => !target || target.id === player.id || (!starters.includes(target.id) && !starters.includes(player.id)) || sector(target.position) === sector(player.position);
+  function tap(player: Player) {
+    if (action.busy || unavailable(player.status) || !canSwap(player)) return;
+    if (!target) { setReplacement(player.id); return; }
+    if (target.id === player.id) { setReplacement(null); return; }
+    replace(target, player.id);
+  }
   const groups = ['ATA', 'MED', 'DEF', 'GOL'].flatMap(group => {
     const players = selected.filter(player => sector(player.position) === group);
     return group === 'MED' && players.length === 4 ? [players.slice(0, 2), players.slice(2)] : [players];
   });
-  function replace(player: Player | undefined, identity: string) {
+  function replace(player: Player, identity: string) {
     if (action.busy) return;
     const previous = starters;
-    const next = player ? starters.map(id => id === player.id ? identity : id) : [...starters, identity];
-    setStarters(next); setReplacement(null);
+    const previousReserves = reserves.map(item => item.id);
+    const swap = (id: string) => id === player.id ? identity : id === identity ? player.id : id;
+    const next = starters.map(swap);
+    const nextReserves = previousReserves.map(swap);
+    setStarters(next); setReserveIds(nextReserves); setReplacement(null);
     if (next.length === 11) void action.run(async () => {
       try {
-        await squadService.save({ formation, starters: next, reserves: squad.players.filter(candidate => !next.includes(candidate.id) && !unavailable(candidate.status)).map(candidate => candidate.id) });
+        await squadService.save({ formation, starters: next, reserves: nextReserves });
         await useSquadStore.getState().load();
-      } catch (error) { setStarters(previous); throw error; }
+      } catch (error) { setStarters(previous); setReserveIds(previousReserves); throw error; }
     });
   }
   return <View style={{ gap: 12 }}>
@@ -61,7 +80,7 @@ export function LineupEditor({ squad, formation, children }: { squad: Squad; for
           <View pointerEvents="none" style={[styles.goalArea, { bottom: 8 }]} />
           <Text style={styles.formation}>{formation}</Text>
           <View style={styles.positions}>{groups.map((players, index) => <View key={index} style={styles.row}>
-            {players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Substituir ${player.name}`} disabled={action.busy} onPress={() => setReplacement(player.id)} style={[styles.marker, replacement === player.id && styles.activeMarker]}>
+            {players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Substituir ${player.name}`} disabled={action.busy} onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}>
               <PlayerMarker player={player} />
             </Pressable>)}
           </View>)}</View>
@@ -69,35 +88,22 @@ export function LineupEditor({ squad, formation, children }: { squad: Squad; for
         <View style={{ width: 68, gap: 10, alignItems: 'center' }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Reservas</Text>
           <ScrollView style={{ maxHeight: 450 }} contentContainerStyle={{ gap: 12 }}>
-            {reserves.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Reserva ${player.name}`} disabled={!replacement || action.busy || sector(player.position) !== sector(selected.find(item => item.id === replacement)?.position ?? '')} onPress={() => replace(selected.find(item => item.id === replacement), player.id)} style={styles.marker}><PlayerMarker player={player} reserve /></Pressable>)}
+            {reserves.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Reserva ${player.name}`} disabled={action.busy || !canSwap(player)} onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}><PlayerMarker player={player} reserve /></Pressable>)}
           </ScrollView>
         </View>
       </View>
       <View style={{ flex: width >= 720 ? 2 : undefined, gap: 12 }}>
         <View style={styles.roster}>
-          <View style={styles.rosterRow}><Text style={styles.position}>Pos.</Text><Text style={[styles.rosterName, { fontWeight: '700' }]}>Nome</Text><Text style={styles.number}>Força</Text><Text style={styles.number}>Energia</Text></View>
+          <View style={styles.rosterRow}><Text style={styles.role}>T/R</Text><Text style={styles.position}>Pos.</Text><Text style={[styles.rosterName, { fontWeight: '700' }]}>Nome</Text><Text style={styles.number}>Força</Text><Text style={styles.number}>Energia</Text></View>
           <ScrollView style={{ maxHeight: 310 }}>
-            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={action.busy || unavailable(player.status) || !replacement || starters.includes(player.id) || sector(player.position) !== sector(selected.find(item => item.id === replacement)?.position ?? '')} onPress={() => replace(selected.find(item => item.id === replacement), player.id)} style={[styles.rosterRow, { backgroundColor: starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
-              <Text style={styles.position}>{sector(player.position)}</Text><Text numberOfLines={1} style={styles.rosterName}>{player.name}</Text><Text style={styles.number}>{player.strength ?? player.overall}</Text><Text style={styles.number}>{player.energy ?? player.physical_condition ?? 100}%</Text>
+            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={action.busy || unavailable(player.status) || !canSwap(player)} onPress={() => tap(player)} style={[styles.rosterRow, { backgroundColor: replacement === player.id ? '#fff1b8' : starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
+              <Text style={styles.role}>{starters.includes(player.id) ? 'T' : reserves.some(item => item.id === player.id) ? 'R' : '—'}</Text><Text style={styles.position}>{sector(player.position)}</Text><Text numberOfLines={1} style={styles.rosterName}>{player.name}</Text><PlayerCards player={player} /><Text style={styles.number}>{player.strength ?? player.overall}</Text><Text style={styles.number}>{player.energy ?? player.physical_condition ?? 100}%</Text>
             </Pressable>)}
           </ScrollView>
         </View>
-        {children}
       </View>
     </View>
-    <Text style={{ color: palette.muted, fontSize: 12 }}>Selecione um titular no campo e um reserva da mesma posição para substituir. As alterações são salvas automaticamente.</Text>
-    <View style={{ gap: 10 }}>
-      {['GOL', ...Object.keys(squad.formations[formation] ?? {})].flatMap(group => {
-        const count = group === 'GOL' ? 1 : squad.formations[formation][group];
-        const current = selected.filter(player => sector(player.position) === group);
-        return Array.from({ length: count }, (_, index) => {
-          const player = current[index];
-          return <ComboBox key={`${group}-${index}`} label={`${group} ${index + 1}`} value={player?.id ?? ''} disabled={action.busy}
-            options={squad.players.filter(candidate => sector(candidate.position) === group && !unavailable(candidate.status) && (!starters.includes(candidate.id) || candidate.id === player?.id)).map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.strength ?? candidate.overall}` }))}
-            onChange={identity => replace(player, identity)} />;
-        });
-      })}
-    </View>
+    <Text style={{ color: palette.muted, fontSize: 12 }}>Toque em dois jogadores para trocar. Titulares exigem a mesma posição. T: titular · R: reserva. As alterações são salvas automaticamente.</Text>
   </View>;
 }
 const styles = StyleSheet.create({
@@ -116,6 +122,7 @@ const styles = StyleSheet.create({
   playerEnergy: { color: '#edf3de', fontSize: 9 },
   roster: { borderWidth: 1, borderColor: '#b5c9a2', backgroundColor: '#fff', borderRadius: 6, overflow: 'hidden' },
   rosterRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#edf1e8', gap: 4 },
+  role: { width: 22, fontSize: 11, fontWeight: '800', color: palette.primary },
   position: { width: 30, fontSize: 11, color: palette.ink },
   rosterName: { flex: 1, fontSize: 12, color: palette.ink },
   number: { width: 42, textAlign: 'right', fontSize: 11, color: palette.ink },

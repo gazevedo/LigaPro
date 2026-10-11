@@ -24,6 +24,8 @@ FACILITIES = {
 }
 DEFAULT_RULES = {
     "formations": FORMATIONS,
+    "YELLOW_CARD_SUSPENSION_THRESHOLD": 3,
+    "CARD_SUSPENSION_MATCHES": 1,
     "initial_balance": 10_000_000,
     "upgrade_base_cost": 100_000,
     "initial_capacity": 10000,

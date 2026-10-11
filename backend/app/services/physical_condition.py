@@ -41,7 +41,17 @@ class PhysicalConditionService:
             "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
         ):
             changes = self.recover(player, now, medical)
-            if player.get("suspended_until") and player["suspended_until"] <= now:
+            if player.get("suspension_matches_remaining", 0) > 0:
+                changes["status"] = (
+                    "injured"
+                    if player.get("injury_return_at") and player["injury_return_at"] > now
+                    else "suspended"
+                )
+            if (
+                not player.get("suspension_matches_remaining", 0)
+                and player.get("suspended_until")
+                and player["suspended_until"] <= now
+            ):
                 changes.update(
                     status="injured"
                     if player.get("injury_return_at")
@@ -53,7 +63,8 @@ class PhysicalConditionService:
             if player.get("injury_return_at") and player["injury_return_at"] <= now:
                 changes.update(
                     status="suspended"
-                    if player.get("suspended_until") and player["suspended_until"] > now
+                    if player.get("suspension_matches_remaining", 0) > 0
+                    or (player.get("suspended_until") and player["suspended_until"] > now)
                     else "available",
                     injury_return_at=None,
                     injury_type=None,
@@ -69,7 +80,7 @@ class PhysicalConditionService:
         if updates:
             repo.database.players.bulk_write(updates, session=repo.session)
 
-    def after_match(self, repo, match, result, summaries):
+    def after_match(self, repo, match, result, summaries, *, discipline=True):
         documents = {
             p["_id"]: p
             for p in repo.many(
@@ -83,14 +94,35 @@ class PhysicalConditionService:
             for team in result.get("final_lineups", [])
             for p in team["lineup"] + team.get("reserves", [])
         }
-        teams = {
-            result["snapshot"][side]["id"]: result["snapshot"][side] for side in ("home", "away")
-        }
-        updates = []
+        teams = (
+            {result["snapshot"][side]["id"]: result["snapshot"][side] for side in ("home", "away")}
+            if summaries
+            else {}
+        )
+        rules = GameConfig.from_rules(repo.rules())
+        changes_by_player = {}
+        # A suspension is served by missing a completed team match, never by elapsed time.
+        for identity, player in documents.items():
+            remaining = player.get("suspension_matches_remaining", 0)
+            if not discipline or remaining <= 0:
+                continue
+            remaining -= 1
+            changes = {"suspension_matches_remaining": remaining}
+            if remaining == 0:
+                changes.update(
+                    suspended_until=None,
+                    discipline_red_card=False,
+                    discipline_yellow_suspension=False,
+                    status="injured"
+                    if player.get("injury_return_at") and player["injury_return_at"] > match["date"]
+                    else "available",
+                )
+            changes_by_player[identity] = changes
         for row in summaries:
             player = documents[ObjectId(row["player_id"])]
             team = teams[row["club_id"]]
             changes = {
+                **changes_by_player.get(player["_id"], {}),
                 "physical_condition": max(
                     0,
                     round(
@@ -104,26 +136,48 @@ class PhysicalConditionService:
                 ),
                 "condition_updated_at": match["date"],
             }
-            if row["red_cards"]:
-                from app.services.news import NewsService
+            if discipline:
+                second_yellow = any(
+                    event["type"] == "red_card"
+                    and event.get("reason") == "second_yellow"
+                    and event.get("player_id") == row["player_id"]
+                    for event in result.get("events", [])
+                )
+                accumulated = player.get("yellow_cards_accumulated", 0)
+                if not second_yellow:
+                    accumulated += row["yellow_cards"]
+                threshold_reached = accumulated >= rules.YELLOW_CARD_SUSPENSION_THRESHOLD
+                changes["yellow_cards_accumulated"] = 0 if threshold_reached else accumulated
+                if row["red_cards"] or threshold_reached:
+                    from app.services.news import NewsService
 
-                NewsService.publish(
-                    repo,
-                    "suspension",
-                    f"{player['name']} suspenso",
-                    player["current_club_id"],
-                    match["_id"],
-                    player_id=player["_id"],
-                    now=match["date"],
-                )
-                spacing = GameConfig.from_rules(repo.rules()).SEASON_DURATION_DAYS / 38
-                changes.update(
-                    status="suspended",
-                    suspended_until=match["date"] + timedelta(days=spacing * 1.05),
-                )
-            updates.append(UpdateOne({"_id": player["_id"]}, {"$set": changes}))
-        if updates:
-            repo.database.players.bulk_write(updates, session=repo.session)
+                    NewsService.publish(
+                        repo,
+                        "suspension",
+                        f"{player['name']} suspenso",
+                        player["current_club_id"],
+                        match["_id"],
+                        player_id=player["_id"],
+                        body=f"Suspensão de {rules.CARD_SUSPENSION_MATCHES} jogo(s) por "
+                        + ("expulsão." if row["red_cards"] else "acúmulo de cartões amarelos."),
+                        now=match["date"],
+                    )
+                    changes.update(
+                        status="suspended",
+                        suspension_matches_remaining=rules.CARD_SUSPENSION_MATCHES,
+                        discipline_red_card=bool(row["red_cards"]),
+                        discipline_yellow_suspension=threshold_reached,
+                        suspended_until=None,
+                    )
+            changes_by_player[player["_id"]] = changes
+        if changes_by_player:
+            repo.database.players.bulk_write(
+                [
+                    UpdateOne({"_id": identity}, {"$set": changes})
+                    for identity, changes in changes_by_player.items()
+                ],
+                session=repo.session,
+            )
 
 
 class InjuryService:

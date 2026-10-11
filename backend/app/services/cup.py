@@ -237,7 +237,8 @@ class CupService:
             if summaries:
                 PlayerMoraleService().after_match(repo, match, result, summaries)
                 ChemistryService().after_match(repo, match, result, summaries)
-                PhysicalConditionService().after_match(repo, match, result, summaries)
+            PhysicalConditionService().after_match(repo, match, result, summaries)
+            if summaries:
                 InjuryService.after_match(repo, match, result)
             goals = [result["score"][str(match[f"{side}_club_id"])] for side in ("home", "away")]
             FanBaseService.after_match(repo, match, *goals, importance=1.3)

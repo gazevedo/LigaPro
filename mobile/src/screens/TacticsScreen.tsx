@@ -25,14 +25,15 @@ export function TacticsScreen() {
   }
   const options = (labels: Record<string, string>) => Object.entries(labels).map(([value, label]) => ({ value, label }));
   return <GamePage loading={busy} error={action.error || store.error || squad.error} horizontalPadding={8}>
-    {draft && squad.data && <LineupEditor key={JSON.stringify([squad.data.lineup, draft.formation])} squad={squad.data} formation={draft.formation}>
+    {draft && squad.data && <>
     <Card>
-      <ComboBox label="Formação" value={draft.formation} options={Object.keys(squad.data?.formations ?? {}).map(value => ({ value, label: value }))} disabled={busy} onChange={formation => change({ formation })} />
-      <ComboBox label="Estilo de jogo" value={draft.play_style} options={options(styles)} disabled={busy} onChange={play_style => change({ play_style: play_style as Tactics['play_style'] })} />
-      <ComboBox label="Marcação" value={draft.marking} options={options(markings)} disabled={busy} onChange={marking => change({ marking: marking as Tactics['marking'] })} />
-      <ComboBox label="Foco dos ataques" value={draft.attack_focus} options={options(focuses)} disabled={busy} onChange={attack_focus => change({ attack_focus: attack_focus as Tactics['attack_focus'] })} />
+      <ComboBox inline label="Formação" value={draft.formation} options={Object.keys(squad.data?.formations ?? {}).map(value => ({ value, label: value }))} disabled={busy} onChange={formation => change({ formation })} />
+      <ComboBox inline label="Estilo de jogo" value={draft.play_style} options={options(styles)} disabled={busy} onChange={play_style => change({ play_style: play_style as Tactics['play_style'] })} />
+      <ComboBox inline label="Marcação" value={draft.marking} options={options(markings)} disabled={busy} onChange={marking => change({ marking: marking as Tactics['marking'] })} />
+      <ComboBox inline label="Foco dos ataques" value={draft.attack_focus} options={options(focuses)} disabled={busy} onChange={attack_focus => change({ attack_focus: attack_focus as Tactics['attack_focus'] })} />
     </Card>
-    </LineupEditor>}
+    <LineupEditor key={JSON.stringify([squad.data.lineup, draft.formation])} squad={squad.data} formation={draft.formation} />
+    </>}
     <NotificationBubble message={message} tone="info" />
   </GamePage>;
 }

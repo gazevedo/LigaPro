@@ -667,7 +667,8 @@ class CompetitionService:
             if summaries:
                 PlayerMoraleService().after_match(repo, match, result, summaries)
                 ChemistryService().after_match(repo, match, result, summaries)
-                PhysicalConditionService().after_match(repo, match, result, summaries)
+            PhysicalConditionService().after_match(repo, match, result, summaries)
+            if summaries:
                 InjuryService.after_match(repo, match, result)
             repo.update(
                 "matches",

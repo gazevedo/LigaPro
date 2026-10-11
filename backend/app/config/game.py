@@ -12,6 +12,8 @@ class GameConfig:
     SEASON_DURATION_DAYS: int = 30
     PROMOTION_COUNT: int = 4
     RELEGATION_COUNT: int = 4
+    YELLOW_CARD_SUSPENSION_THRESHOLD: int = 3
+    CARD_SUSPENSION_MATCHES: int = 1
     INITIAL_SQUAD_SIZE: int = 25
     MAX_PLAYER_LEVEL: int = 100
     YOUTH_PLAYERS_PER_SEASON: int = 3
@@ -49,6 +51,8 @@ class GameConfig:
             "PROMOTION_COUNT",
             "RELEGATION_COUNT",
             "INITIAL_SQUAD_SIZE",
+            "YELLOW_CARD_SUSPENSION_THRESHOLD",
+            "CARD_SUSPENSION_MATCHES",
             "MAX_PLAYER_LEVEL",
             "YOUTH_PLAYERS_PER_SEASON",
             "MAX_YOUTH_PLAYERS",
@@ -57,6 +61,8 @@ class GameConfig:
         )
         if any(type(getattr(self, key)) is not int for key in integer_fields):
             raise ValueError("Integer game rules must be integers")
+        if self.YELLOW_CARD_SUSPENSION_THRESHOLD < 1 or self.CARD_SUSPENSION_MATCHES < 1:
+            raise ValueError("Card discipline rules must be positive")
         if self.YOUTH_PROMOTION_AGE < 1 or self.PLAYER_DECLINE_AGE < 1:
             raise ValueError("Age thresholds must be positive")
         if self.TEAMS_PER_DIVISION != 20:

@@ -192,7 +192,7 @@ class FriendlyService:
 
                 rows = match_player_summaries(result)
                 PlayerRatingService.after_match(repo, match, result, rows)
-                PhysicalConditionService().after_match(repo, match, result, rows)
+                PhysicalConditionService().after_match(repo, match, result, rows, discipline=False)
                 InjuryService.after_match(repo, match, result)
                 FanBaseService.after_match(
                     repo,

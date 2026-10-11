@@ -25,9 +25,10 @@ test('selecting a strategy saves immediately without a save button', async () =>
 test('integrated lineup saves a replacement automatically and excludes injured reserves', async () => {
   await render(<TacticsScreen />);
   await screen.findByRole('combobox', { name: 'Formação' });
-  await fireEvent.press(screen.getByRole('combobox', { name: 'DEF 1' }));
-  expect(screen.queryByRole('button', { name: 'Jogador 12 · 50' })).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'Jogador 11 · 50' }));
+  expect(screen.queryByRole('combobox', { name: 'DEF 1' })).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
+  expect(screen.getByRole('button', { name: 'Jogador 12, reserva, força 50' })).toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
   expect(screen.queryByText('Salvar escalação')).toBeNull();
 });
@@ -46,7 +47,7 @@ test('the strategy shows the pitch, roster and controls together and swaps a res
   expect(screen.getByRole('combobox', { name: 'Formação' })).toBeTruthy();
   expect(screen.getByText('Energia')).toBeTruthy();
   expect(screen.queryByRole('tab', { name: 'Escalação' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Reserva Jogador 11' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reserva Jogador 11' })).not.toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
@@ -59,4 +60,30 @@ test('failed replacement keeps the original starter on the pitch', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   await screen.findByText('Não foi possível salvar a escalação.');
   expect(screen.getByRole('button', { name: 'Substituir Jogador 1' })).toBeTruthy();
+});
+
+test('selecting a reserve allows swapping with a compatible starter from the player list', async () => {
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  expect(screen.getAllByText('T')).toHaveLength(11);
+  expect(screen.getAllByText('R')).toHaveLength(1);
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  expect(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' })).toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Jogador 1, titular, força 50' }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
+});
+test('two reserves can swap their places through touches without changing the starters', async () => {
+  const extra = { ...players[9], id: 'p13', name: 'Jogador 13' };
+  jest.mocked(squadService.get).mockResolvedValueOnce({ players: [...players, extra], lineup: { formation: '4-4-2', starters, reserves: ['p11', 'p13'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Jogador 13, reserva, força 50' }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters, reserves: ['p13', 'p11'] }));
+});
+test('the player list displays accumulated yellows and a red card for a suspended player', async () => {
+  jest.mocked(squadService.get).mockResolvedValueOnce({ players: players.map(player => player.id === 'p0' ? { ...player, yellow_cards_accumulated: 2 } : player.id === 'p12' ? { ...player, status: 'suspended', discipline_red_card: true, suspension_matches_remaining: 1 } : player), lineup: { formation: '4-4-2', starters, reserves: ['p11'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
+  await render(<TacticsScreen />);
+  expect(await screen.findByLabelText('2 cartões amarelos')).toBeTruthy();
+  expect(screen.getByLabelText('Cartão vermelho')).toBeTruthy();
 });
