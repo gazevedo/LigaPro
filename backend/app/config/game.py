@@ -40,10 +40,12 @@ class GameConfig:
         (41, 0.35),
         (42, 0.50),
     )
+    MATCH_INTERVAL_MINUTES: int = 10
     ROUND_OFFSETS_DAYS: tuple = ()
 
     def __post_init__(self):
         integer_fields = (
+            "MATCH_INTERVAL_MINUTES",
             "TEAMS_PER_DIVISION",
             "PRESEASON_DAYS",
             "MIDSEASON_TRANSFER_WINDOW_DAYS",
@@ -61,6 +63,8 @@ class GameConfig:
         )
         if any(type(getattr(self, key)) is not int for key in integer_fields):
             raise ValueError("Integer game rules must be integers")
+        if self.MATCH_INTERVAL_MINUTES < 1:
+            raise ValueError("Match interval must be positive")
         if self.YELLOW_CARD_SUSPENSION_THRESHOLD < 1 or self.CARD_SUSPENSION_MATCHES < 1:
             raise ValueError("Card discipline rules must be positive")
         if self.YOUTH_PROMOTION_AGE < 1 or self.PLAYER_DECLINE_AGE < 1:
@@ -123,12 +127,8 @@ class GameConfig:
     def round_offsets(self):
         if self.ROUND_OFFSETS_DAYS:
             return self.ROUND_OFFSETS_DAYS
-        first_start = self.PRESEASON_DAYS
-        second_start = self.midseason_start + self.MIDSEASON_TRANSFER_WINDOW_DAYS
-        # Twenty rounds before the midseason window and eighteen after it:
-        # two rounds per playing day, with twelve hours between kickoffs.
-        return tuple(first_start + i / 2 for i in range(20)) + tuple(
-            second_start + i / 2 for i in range(18)
+        return tuple(
+            self.PRESEASON_DAYS + i * self.MATCH_INTERVAL_MINUTES / 1440 for i in range(38)
         )
 
     @classmethod

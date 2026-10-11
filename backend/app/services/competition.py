@@ -131,6 +131,7 @@ class CompetitionService:
             "starts_at": starts_at,
             "ends_at": starts_at + timedelta(days=config.SEASON_DURATION_DAYS),
             "config": config.snapshot(),
+            "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
         }
         repo.insert("seasons", season)
         return season
@@ -464,6 +465,33 @@ class CompetitionService:
             },
         )
 
+    @classmethod
+    def update_league_interval(cls, repo):
+        cls.lock(repo)
+        season = cls.current(repo)
+        if not season or season.get("league_interval_minutes") == 10:
+            return
+        matches = repo.many(
+            "matches",
+            {"season_id": season["_id"], "division_id": {"$exists": True}, "status": "scheduled"},
+            limit=None,
+        )
+        rounds = sorted({match["round"] for match in matches})
+        start = utcnow()
+        dates = {
+            number: start + timedelta(minutes=10 * (index + 1))
+            for index, number in enumerate(rounds)
+        }
+        for match in matches:
+            date = dates[match["round"]]
+            repo.update(
+                "matches", {"_id": match["_id"], "status": "scheduled"}, {"$set": {"date": date}}
+            )
+            repo.database.calendar_events.update_many(
+                {"reference_id": match["_id"]}, {"$set": {"date": date}}, session=repo.session
+            )
+        repo.update("seasons", {"_id": season["_id"]}, {"$set": {"league_interval_minutes": 10}})
+
     def bootstrap(self):
         self.ensure_lock(self.repo)
         # Upgrade old generic bot labels once; keep existing custom names.
@@ -486,6 +514,8 @@ class CompetitionService:
                 self.generate_youth(repo, current, season, self.season_config(season))
 
             self.repo.transaction(enroll_existing)
+
+        self.repo.transaction(self.update_league_interval)
 
     def table(self, user):
         club = self.repo.owned(user.id)
