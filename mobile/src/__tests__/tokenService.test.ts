@@ -44,3 +44,14 @@ test('corrupt browser session is removed', async () => {
   expect(await tokenService.read()).toBeNull();
   expect(globalThis.localStorage.getItem('ligapro.auth.tokens')).toBeNull();
 });
+
+test('saved user restores with the tokens and logout removes both', async () => {
+  const user = { id: 'user', name: 'Diretor', email: 'demo@example.com', active: true, auth_provider: 'local', avatar_url: null, email_verified: true, created_at: '', updated_at: '', last_login_at: null };
+  const saved = { access_token: 'access', refresh_token: 'refresh', user };
+  await tokenService.save(saved);
+  jest.mocked(SecureStore.getItemAsync).mockResolvedValueOnce(JSON.stringify(saved));
+  await tokenService.read();
+  expect(tokenService.currentUser()).toEqual(user);
+  await tokenService.clear();
+  expect(tokenService.currentUser()).toBeNull();
+});

@@ -64,9 +64,8 @@ export function AppNavigator() {
   }, [navigationRef]);
   useEffect(() => { if (auth.user?.id) void loadClub(); }, [auth.user?.id, loadClub]);
   useEffect(() => {
-    void initialize().then(() => {
-      if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
-    });
+    void useAuthStore.getState().restoreSession();
+    void initialize();
   }, [initialize]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -100,7 +99,7 @@ export function AppNavigator() {
         <Stack.Screen name="TransferOffers" component={TransferOffersScreen} options={{ title: 'Propostas' }} />
         <Stack.Screen name="Settings" component={SettingsScreen}
           options={{ title: 'Configurações' }} />
-      </Stack.Navigator>)}</GameBackground> : <AuthNavigator />}
+      </Stack.Navigator>)}</GameBackground> : auth.initialized && !auth.authenticated ? <AuthNavigator /> : null}
     </NavigationContainer></SwipeBack>
     {startupError && <View style={{ padding: 12, gap: 8 }}>
       <NotificationBubble message={startupError} />

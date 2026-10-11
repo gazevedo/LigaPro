@@ -9,9 +9,9 @@ jest.mock('../services/authService', () => ({ authService: {
 } }));
 jest.mock('../services/googleService', () => ({ getGoogleIdToken: jest.fn() }));
 jest.mock('../services/tokenService', () => {
-  let saved: Tokens | null = null;
-  return { tokenService: { current: jest.fn(() => saved), read: jest.fn(async () => saved),
-    save: jest.fn(async (value: Tokens) => { saved = value; }), clear: jest.fn(async () => { saved = null; }) } };
+  let saved: (Tokens & { user?: AuthResponse["user"] }) | null = null;
+  return { tokenService: { current: jest.fn(() => saved), currentUser: jest.fn(() => saved?.user ?? null), saveUser: jest.fn(async (user: AuthResponse["user"]) => { if (saved) saved = { ...saved, user }; }), read: jest.fn(async () => saved),
+    save: jest.fn(async (value: Tokens & { user?: AuthResponse["user"] }) => { saved = value; }), clear: jest.fn(async () => { saved = null; }) } };
 });
 const response: AuthResponse = {
   access_token: 'test-access', refresh_token: 'test-refresh', token_type: 'bearer', expires_in: 900,
@@ -95,4 +95,25 @@ test('a late /me response cannot restore a cleared session', async () => {
   await useAuthStore.getState().clearSession();
   resolve(response.user); await restoring;
   expect(useAuthStore.getState()).toMatchObject({ authenticated: false, loading: false });
+});
+
+test('a saved user restores immediately while server validation continues in background', async () => {
+  await tokenService.save(response);
+  let finish!: (user: AuthResponse['user']) => void;
+  jest.mocked(authService.me).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const restoring = useAuthStore.getState().restoreSession();
+  await Promise.resolve(); await Promise.resolve();
+  expect(useAuthStore.getState()).toMatchObject({ user: response.user, authenticated: true, initialized: true, loading: false });
+  finish(response.user);
+  await restoring;
+});
+test('network failure keeps the saved session but a revoked session returns to login', async () => {
+  await tokenService.save(response);
+  jest.mocked(authService.me).mockRejectedValueOnce(new Error('Offline'));
+  await useAuthStore.getState().restoreSession();
+  expect(useAuthStore.getState().authenticated).toBe(true);
+  jest.mocked(authService.me).mockRejectedValueOnce(new ApiError(401, 'Sessão expirada.'));
+  await useAuthStore.getState().restoreSession();
+  expect(useAuthStore.getState().authenticated).toBe(false);
+  expect(tokenService.current()).toBeNull();
 });

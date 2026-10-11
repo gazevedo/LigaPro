@@ -73,8 +73,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
           try {
             const tokens = await tokenService.read();
             if (tokens) {
+              const savedUser = tokenService.currentUser();
+              if (savedUser && generation === ticket) set({ user: savedUser, authenticated: true, initialized: true, loading: false });
               const user = await authService.me();
-              if (generation === ticket) set({ user, authenticated: true });
+              if (generation === ticket) {
+                await tokenService.saveUser(user);
+                if (generation === ticket) set({ user, authenticated: true });
+              }
             } else if (generation === ticket) { set({ user: null, authenticated: false }); }
           } catch (error) {
             if (generation === ticket) {
