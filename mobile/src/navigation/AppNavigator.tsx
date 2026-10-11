@@ -24,7 +24,7 @@ import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@r
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppStore } from '../stores/appStore';
-import { ActionButton, GameBackground, GamePage, palette } from '../components/GameUI';
+import { GameBackground, palette } from '../components/GameUI';
 import { SwipeBack } from '../components/SwipeBack';
 import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
@@ -47,9 +47,12 @@ export function AppNavigator() {
   // Installed PWAs already show the Android/iOS launch screen before React starts.
   const installedWebApp = Platform.OS === 'web' && typeof window !== 'undefined' &&
     (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches);
-  const showStartupLogo = !installedWebApp || (initialized && !loading && Boolean(error || auth.error));
   const game = useClubStore();
-  const loadClub = game.load;
+  const waitingForClub = auth.authenticated && !game.data;
+  const startupError = error || auth.error || (waitingForClub ? game.error : null);
+  const startupLoading = loading || auth.loading || !initialized || (waitingForClub && (game.loading || !game.error));
+  const showStartupLogo = !installedWebApp || (initialized && !startupLoading && Boolean(startupError));
+  const loadClub = game.ensure;
   const clubId = game.data?.club?.id;
   useEffect(() => {
     if (!auth.authenticated || !clubId) return;
@@ -80,16 +83,19 @@ export function AppNavigator() {
     return () => subscription.remove();
   }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
-    {!initialized || !apiAvailable || !auth.initialized ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
+    {!initialized || !apiAvailable || !auth.initialized || waitingForClub ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
       {showStartupLogo && <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />}
-      {loading || auth.loading || !initialized ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} /> : error || auth.error ? <>
-        <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : auth.error}</Text>
-        <ConnectionRetry onRetry={() => { void initialize().then(() => {
-          if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
-        }); }} />
+      {startupLoading ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} /> : startupError ? <>
+        <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : startupError}</Text>
+        <ConnectionRetry onRetry={() => {
+          if (apiAvailable && auth.initialized && waitingForClub) { void loadClub(); return; }
+          void initialize().then(() => {
+            if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
+          });
+        }} />
       </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: showStartupLogo ? width / 4 + 16 : 0 }} />}
     </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
-      {auth.authenticated ? <GameBackground>{(!game.data ? <GamePage loading={game.loading} error={game.error}><ActionButton title="Tentar novamente" disabled={game.loading} onPress={() => void game.load()} /><ActionButton secondary title="Sair" onPress={() => void auth.logout()} /></GamePage> : !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
+      {auth.authenticated ? <GameBackground>{(!game.data?.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />

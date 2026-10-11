@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { useUpcomingMatchesStore } from '../stores/screenStores';
 import { UpcomingMatches } from '../components/UpcomingMatches';
 import { calendarService } from '../services/calendarService';
 import { liveMatchService } from '../services/liveMatchService';
@@ -10,6 +11,7 @@ const upcoming = jest.mocked(liveMatchService.upcoming);
 const first = { id: 'first', date: '2026-10-08T15:41:20Z', round: 1, status: 'scheduled' };
 const second = { id: 'second', date: '2026-10-09T08:06:36Z', round: 2, status: 'scheduled' };
 beforeEach(() => {
+  useUpcomingMatchesStore.getState().reset();
   upcoming.mockReset(); calendar.mockReset();
   calendar.mockResolvedValue([first, second].map(match => ({
     id: `event-${match.id}`, reference_id: match.id, type: 'match', kind: 'league_match',
@@ -65,4 +67,16 @@ test('uses the calendar date instead of the match endpoint date and ignores unre
   upcoming.mockResolvedValue([first]);
   await render(<UpcomingMatches open={jest.fn()} />);
   expect(await screen.findByText(`Rodada 1 · ${new Date(date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`)).toBeTruthy();
+});
+
+test('opening and reopening the dashboard reuse prefetched upcoming matches', async () => {
+  upcoming.mockResolvedValue([first]);
+  await useUpcomingMatchesStore.getState().ensure();
+  const view = await render(<UpcomingMatches open={jest.fn()} />);
+  expect(screen.getByText('Próxima partida')).toBeTruthy();
+  await view.unmount();
+  await render(<UpcomingMatches open={jest.fn()} />);
+  expect(screen.getByText('Próxima partida')).toBeTruthy();
+  expect(upcoming).toHaveBeenCalledTimes(1);
+  expect(calendar).toHaveBeenCalledTimes(1);
 });

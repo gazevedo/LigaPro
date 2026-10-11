@@ -4,18 +4,19 @@ import { useInboxStore } from '../stores/inboxStore';
 
 export function MailboxButton({ open, focused }: { open: () => void; focused?: () => boolean }) {
   const count = useInboxStore(state => state.data?.unread_count || 0);
-  const load = useInboxStore(state => state.load);
+  const ensure = useInboxStore(state => state.ensure);
+  const reload = useInboxStore(state => state.refresh);
   useEffect(() => {
-    function refresh() {
+    function refresh(initial = false) {
       if (focused && !focused()) return;
       if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
-      if (!useInboxStore.getState().loading) void load();
+      void (initial ? ensure() : reload());
     }
-    refresh();
-    const timer = setInterval(refresh, 60000);
+    refresh(true);
+    const timer = setInterval(() => refresh(), 60000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
     return () => { clearInterval(timer); subscription.remove(); };
-  }, [load, focused]);
+  }, [ensure, reload, focused]);
   const description = count === 1 ? 'mensagem não lida' : 'mensagens não lidas';
   return <Pressable accessibilityRole="button" accessibilityLabel={`Correio, ${count} ${description}`}
     onPress={open} hitSlop={8} style={({ pressed }) => ({ width: 40, height: 40,

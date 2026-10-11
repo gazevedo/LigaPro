@@ -1,42 +1,19 @@
 import { ActionButton as Button, NotificationBubble } from '../components/GameUI';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
-import { settingsService } from '../services/settingsService';
+import { useSettingsStore } from '../stores/screenStores';
 import { useAuthStore } from '../stores/authStore';
-import { AppSetting } from '../types/api';
 export function SettingsScreen() {
   const logout = useAuthStore(state => state.logout);
   const loggingOut = useAuthStore(state => state.loading);
-  const [settings, setSettings] = useState<AppSetting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  async function fetchSettings() {
-    try { setSettings(await settingsService.list()); }
-    catch (error) {
-      setError(error instanceof Error ? error.message : 'Falha ao carregar configurações.');
-    } finally { setLoading(false); }
-  }
-  useEffect(() => {
-    let active = true;
-    void settingsService.list()
-      .then((items) => { if (active) setSettings(items); })
-      .catch((error: unknown) => {
-        if (active) setError(error instanceof Error ? error.message : 'Falha ao carregar configurações.');
-      })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-  function load() {
-    setLoading(true);
-    setError(null);
-    void fetchSettings();
-  }
+  const { data: settings, loading, error, ensure, load } = useSettingsStore();
+  useEffect(() => { void ensure(); }, [ensure]);
   return <View style={styles.container}>
     <Button title={loggingOut ? 'Saindo…' : 'Sair da conta'} disabled={loggingOut} onPress={() => { void logout(); }} />
     {loading ? <ActivityIndicator accessibilityLabel="Carregando configurações" /> : error ?
       <><NotificationBubble message={error} />
         <Button title="Tentar novamente" onPress={() => { void load(); }} /></> :
-      <FlatList data={settings} keyExtractor={(item) => item.id}
+      <FlatList data={settings ?? []} keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text>Nenhuma configuração cadastrada.</Text>}
         renderItem={({ item }) => <Text>{item.key}: {JSON.stringify(item.value)}</Text>} />}
   </View>;

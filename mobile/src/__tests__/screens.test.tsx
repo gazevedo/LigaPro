@@ -1,5 +1,6 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { HomeScreen } from '../screens/HomeScreen';
+import { useSettingsStore } from '../stores/screenStores';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { useAuthStore } from '../stores/authStore';
 import { settingsService } from '../services/settingsService';
@@ -7,7 +8,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 jest.mock('../services/settingsService', () => ({ settingsService: { list: jest.fn() } }));
 const list = jest.mocked(settingsService.list);
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); useSettingsStore.getState().reset(); });
 test('home navigates only to settings; game buttons disabled', async () => {
   const navigate = jest.fn();
   const props = { navigation: { navigate }, route: { key: 'Home', name: 'Home' } } as unknown as NativeStackScreenProps<RootStackParamList, 'Home'>;
@@ -48,4 +49,13 @@ test('settings logs out using the existing session handler', async () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Sair da conta' }));
     expect(logout).toHaveBeenCalledTimes(1);
   } finally { useAuthStore.setState({ logout: previous }); }
+});
+
+test('settings reuse data loaded before opening the screen', async () => {
+  list.mockResolvedValueOnce([]);
+  await useSettingsStore.getState().ensure();
+  await render(<SettingsScreen />);
+  expect(screen.getByText('Nenhuma configuração cadastrada.')).toBeTruthy();
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(screen.queryByLabelText('Carregando configurações')).toBeNull();
 });

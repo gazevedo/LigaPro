@@ -92,3 +92,12 @@ test('refreshes the badge for new messages only while the dashboard is focused',
     await view.unmount();
   } finally { jest.useRealTimers(); }
 });
+
+test('prefetched inbox is shared by the header and inbox screen without another request', async () => {
+  await useInboxStore.getState().ensure();
+  const view = await render(<><MailboxButton open={jest.fn()} /><InboxScreen /></>);
+  expect(screen.getByRole('button', { name: 'Não lida: Receita registrada' })).toBeTruthy();
+  await view.unmount();
+  await render(<InboxScreen />);
+  expect(historyService.inbox).toHaveBeenCalledTimes(1);
+});

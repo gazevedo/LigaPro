@@ -1,3 +1,6 @@
+import { settingsService } from '../services/settingsService';
+import { calendarService } from '../services/calendarService';
+import { liveMatchService } from '../services/liveMatchService';
 import { domainStore } from './domainStore';
 import { clubService } from '../services/clubService';
 import { historyService } from '../services/historyService';
@@ -8,6 +11,7 @@ import { financeService } from '../services/financeService';
 import { developmentService } from '../services/developmentService';
 import { marketService } from '../services/marketService';
 
+export const useSettingsStore = domainStore(settingsService.list);
 export const useClubDetailsStore = domainStore(clubService.get);
 export const useHistoryStore = domainStore(historyService.get);
 export const useCatalogStore = domainStore(clubService.catalog);
@@ -22,3 +26,13 @@ export const useSponsorsStore = domainStore(financeService.sponsors);
 export const useTrainingStore = domainStore(developmentService.training);
 export const useYouthStore = domainStore(developmentService.youth);
 export const useMarketPlayersStore = domainStore(marketService.search);
+
+// Share the dashboard's upcoming matches between background loading and remounts.
+export const useUpcomingMatchesStore = domainStore(async () => {
+  const [events, upcoming] = await Promise.all([calendarService.get(), liveMatchService.upcoming()]);
+  return events.flatMap(event => {
+    if (!['match', 'league_match', 'cup_match', 'friendly'].includes(event.kind || event.type)) return [];
+    const match = upcoming.find(item => item.id === event.reference_id);
+    return match ? [{ ...match, date: event.date }] : [];
+  });
+});

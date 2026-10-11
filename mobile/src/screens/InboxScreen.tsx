@@ -4,10 +4,10 @@ import { ActionButton, GamePage, palette, useAction } from '../components/GameUI
 import { loadMoreMessages, readMessage, useInboxStore } from '../stores/inboxStore';
 
 export function InboxScreen() {
-  const { data, loading, error, load } = useInboxStore();
+  const { data, loading, error, load, ensure } = useInboxStore();
   const [opened, setOpened] = useState<string | null>(null);
   const action = useAction();
-  useEffect(() => { if (!useInboxStore.getState().loading) void load(); }, [load]);
+  useEffect(() => { void ensure(); }, [ensure]);
   return <GamePage loading={loading || action.busy} error={action.error || error}>
     <Text style={{ fontSize: 28, fontWeight: '800', color: palette.ink }}>Mensagens e notícias</Text>
     <Text style={{ color: palette.muted }}>{data ? `${data.unread_count} ${data.unread_count === 1 ? 'não lida' : 'não lidas'}` : 'Carregando seu correio…'}</Text>
