@@ -10,7 +10,7 @@ export function ComboBox({ label, value, options, onChange, disabled = false, in
     {createElement('select', {
       id, value, disabled, 'aria-labelledby': `${id}-label`,
       onChange: (event: React.ChangeEvent<HTMLSelectElement>) => onChange(event.target.value),
-      style: { flex: inline ? 1 : undefined, minWidth: 0, width: inline ? undefined : '100%', padding: 14, border: `1px solid ${palette.border}`, borderRadius: 12, backgroundColor: '#fff', color: palette.ink, fontFamily: 'system-ui, sans-serif', fontSize: 14, opacity: disabled ? .5 : 1 },
+      style: { flex: inline ? 1 : undefined, minWidth: 0, width: inline ? undefined : '100%', padding: 6, border: `1px solid ${palette.border}`, borderRadius: 2, backgroundColor: '#fff', color: palette.ink, fontFamily: 'system-ui, sans-serif', fontSize: 14, opacity: disabled ? .5 : 1 },
     }, options.map(option => createElement('option', { key: option.value, value: option.value }, option.label)))}
   </View>;
 }

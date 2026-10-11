@@ -144,3 +144,29 @@ test('tactical selectors expand below the control without a popup or cancel butt
   expect(screen.getByRole('button', { name: 'Pesada' })).toBeTruthy();
   expect(screen.queryByText('Cancelar')).toBeNull();
 });
+
+test('editing stays enabled during saving and rapid changes persist the latest combined choices', async () => {
+  let finish!: () => void;
+  jest.mocked(tacticsService.save).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ ...tactics, play_style: 'all_out_attack' }); }));
+  const latest = { ...tactics, play_style: 'all_out_attack', marking: 'heavy', attack_focus: 'wings' } as const;
+  await render(<TacticsScreen />);
+  await fireEvent.press(await screen.findByRole('combobox', { name: 'Estilo de jogo' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Ataque total' }));
+  expect(screen.getByRole('combobox', { name: 'Marcação' })).not.toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Formação' })).not.toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Substituir Jogador 1' })).not.toBeDisabled();
+  await fireEvent.press(screen.getByRole('combobox', { name: 'Marcação' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Pesada' }));
+  await fireEvent.press(screen.getByRole('combobox', { name: 'Foco dos ataques' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Laterais' }));
+  expect(tacticsService.save).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('Pesada')).toBeTruthy();
+  expect(screen.getByText('Laterais')).toBeTruthy();
+  jest.mocked(tacticsService.get).mockResolvedValue(latest);
+  finish();
+  await waitFor(() => expect(tacticsService.save).toHaveBeenCalledTimes(2));
+  expect(tacticsService.save).toHaveBeenLastCalledWith(latest);
+  await waitFor(() => expect(tacticsService.get).toHaveBeenCalledTimes(2));
+  expect(screen.getByText('Pesada')).toBeTruthy();
+  expect(screen.getByText('Laterais')).toBeTruthy();
+});
