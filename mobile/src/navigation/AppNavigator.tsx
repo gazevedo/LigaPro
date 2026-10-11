@@ -28,7 +28,6 @@ import { GameBackground, NotificationBubble, palette } from '../components/GameU
 import { SwipeBack } from '../components/SwipeBack';
 import { ConnectionRetry } from '../components/ConnectionRetry';
 import { NotificationHost } from '../components/NotificationHost';
-import { SessionLoading } from '../components/SessionLoading';
 import { useClubStore } from '../stores/clubStore';
 import { CreateClubScreen } from '../screens/CreateClubScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -37,6 +36,7 @@ import { useAuthStore } from '../stores/authStore';
 import { RootStackParamList } from './types';
 import { registerBrowserBack } from './browserBack';
 import { prefetchGameData } from '../services/prefetchService';
+import { hideStartupSplash } from '../services/startupSplash';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
 export function AppNavigator() {
@@ -47,6 +47,8 @@ export function AppNavigator() {
   const game = useClubStore();
   const waitingForClub = auth.authenticated && !game.data;
   const startupError = error || (waitingForClub ? game.error : null);
+  const startupReady = (auth.initialized && (!auth.authenticated || !!game.data)) || !!startupError;
+  useEffect(() => { if (startupReady) void hideStartupSplash(); }, [startupReady]);
   const loadClub = game.ensure;
   const clubId = game.data?.club?.id;
   useEffect(() => {
@@ -100,7 +102,7 @@ export function AppNavigator() {
         <Stack.Screen name="TransferOffers" component={TransferOffersScreen} options={{ title: 'Propostas' }} />
         <Stack.Screen name="Settings" component={SettingsScreen}
           options={{ title: 'Configurações' }} />
-      </Stack.Navigator>)}</GameBackground> : auth.initialized && !auth.authenticated ? <AuthNavigator /> : <SessionLoading loading={!startupError} />}
+      </Stack.Navigator>)}</GameBackground> : auth.initialized && !auth.authenticated ? <AuthNavigator /> : null}
     </NavigationContainer></SwipeBack>
     {startupError && <View style={{ padding: 12, gap: 8 }}>
       <NotificationBubble message={startupError} />

@@ -10,6 +10,12 @@ module.exports = () => ({ ...expo,
     runtimeVersion: { policy: 'fingerprint' },
   } : {}),
   plugins: ['expo-secure-store',
+    ['expo-splash-screen', {
+      image: './assets/brand/logo-ligapro.png',
+      backgroundColor: '#dceef8',
+      imageWidth: 220,
+      resizeMode: 'contain',
+    }],
     ...(process.env.GOOGLE_IOS_URL_SCHEME ? [
       ['@react-native-google-signin/google-signin', { iosUrlScheme: process.env.GOOGLE_IOS_URL_SCHEME }],
     ] : []),
