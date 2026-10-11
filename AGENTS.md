@@ -161,3 +161,11 @@ Para funcionalidades maiores:
 ## Git
 
 Trabalhe sempre na branch `main`. Não crie novas branches.
+
+## Experiência de uso
+
+As ações não podem bloquear a tela nem impedir novas edições enquanto salvam.
+Atualize a interface imediatamente e salve em background, preservando a última escolha.
+Serialize gravações relacionadas para evitar respostas antigas sobrescrevendo alterações novas.
+Em caso de falha, informe o erro sem bloquear a tela e preserve ou restaure o último estado confirmado.
+Bloqueie controles apenas por regras do jogo, como jogadores lesionados ou suspensos, nunca pela gravação em andamento.

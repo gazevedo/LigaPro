@@ -59,7 +59,7 @@ export function TacticsScreen() {
       <ComboBox inline label="Marcação" value={draft.marking} options={options(markings)} onChange={marking => change({ marking: marking as Tactics['marking'] })} />
       <ComboBox inline label="Foco dos ataques" value={draft.attack_focus} options={options(focuses)} onChange={attack_focus => change({ attack_focus: attack_focus as Tactics['attack_focus'] })} />
     </Card>
-    <LineupEditor key={JSON.stringify([squad.data.lineup, draft.formation])} squad={squad.data} formation={draft.formation} />
+    <LineupEditor key={draft.formation} squad={squad.data} formation={draft.formation} />
     </>}
   </GamePage>;
 }

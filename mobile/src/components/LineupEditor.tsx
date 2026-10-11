@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Badge, Player, Squad } from '../types/game';
+import { Badge, Lineup, Player, Squad } from '../types/game';
 import { squadService } from '../services/squadService';
 import { useSquadStore } from '../stores/squadStore';
 import { useClubStore } from '../stores/clubStore';
 import { arrangePlayers, positionSector } from './formation';
-import { NotificationBubble, palette, useAction } from './GameUI';
+import { NotificationBubble, palette } from './GameUI';
 const unavailable = (status?: string) => ['injured', 'suspended', 'retired'].includes(status || '');
 const sector = positionSector;
 function Shirt({ badge, goalkeeper = false }: { badge?: Badge; goalkeeper?: boolean }) {
@@ -37,20 +37,22 @@ function PlayerCards({ player }: { player: Player }) {
     {red && <View accessible accessibilityRole="image" accessibilityLabel="Cartão vermelho" style={{ backgroundColor: '#d83232', width: 13, height: 18, borderRadius: 2 }} />}
   </View>;
 }
-export function LineupEditor({ squad, formation, disabled = false }: { squad: Squad; formation: string; disabled?: boolean }) {
+export function LineupEditor({ squad, formation }: { squad: Squad; formation: string }) {
   const badge = useClubStore(state => state.data?.club?.badge);
   const { width } = useWindowDimensions();
   const [starters, setStarters] = useState(() => arrangePlayers(squad.lineup.starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player && !unavailable(player.status)), formation, !!squad.lineup.manual_positions && squad.lineup.formation === formation).map(slot => slot.player.id));
   const [replacement, setReplacement] = useState<string | null>(null);
   const [reserveIds, setReserveIds] = useState(squad.lineup.reserves.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
-  const action = useAction();
-  const saving = action.busy || disabled;
+  const [error, setError] = useState<string | null>(null);
+  const desired = useRef<Lineup | null>(null);
+  const saving = useRef(false);
+  const confirmed = useRef({ starters, reserves: reserveIds });
   const selected = starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
   const reserves = [...reserveIds, ...squad.players.filter(player => !starters.includes(player.id) && !reserveIds.includes(player.id) && !unavailable(player.status)).map(player => player.id)].map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
   const target = squad.players.find(player => player.id === replacement);
   const canSwap = (player: Player) => !target || (!starters.includes(target.id) && !starters.includes(player.id)) || (sector(target.position) === 'GOL') === (sector(player.position) === 'GOL');
   function tap(player: Player) {
-    if (saving || unavailable(player.status) || !canSwap(player)) return;
+    if (unavailable(player.status) || !canSwap(player)) return;
     if (!target) { setReplacement(player.id); return; }
     if (target.id === player.id) { setReplacement(null); return; }
     replace(target, player.id);
@@ -68,22 +70,42 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
     return players.length >= 4 ? [players.slice(0, Math.ceil(players.length / 2)), players.slice(Math.ceil(players.length / 2))] : [players];
   });
   function replace(player: Player, identity: string) {
-    if (saving) return;
-    const previous = starters;
     const previousReserves = reserves.map(item => item.id);
     const swap = (id: string) => id === player.id ? identity : id === identity ? player.id : id;
     const next = starters.map(swap);
     const nextReserves = previousReserves.map(swap);
     setStarters(next); setReserveIds(nextReserves); setReplacement(null);
-    if (next.length === 11) void action.run(async () => {
-      try {
-        await squadService.save({ formation, starters: next, reserves: nextReserves, manual_positions: true });
-        await useSquadStore.getState().load();
-      } catch (error) { setStarters(previous); setReserveIds(previousReserves); throw error; }
-    });
+    if (next.length === 11) {
+      desired.current = { formation, starters: next, reserves: nextReserves, manual_positions: true };
+      setError(null);
+      void flush();
+    }
+  }
+  async function flush() {
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      while (desired.current) {
+        const target = desired.current;
+        try {
+          await squadService.save(target);
+          confirmed.current = { starters: target.starters, reserves: target.reserves };
+          if (desired.current !== target) continue;
+          await useSquadStore.getState().load();
+          if (desired.current !== target) continue;
+          desired.current = null;
+        } catch (reason) {
+          if (desired.current !== target) continue;
+          desired.current = null;
+          setStarters(confirmed.current.starters);
+          setReserveIds(confirmed.current.reserves);
+          setError(reason instanceof Error ? reason.message : 'Não foi possível salvar a escalação.');
+        }
+      }
+    } finally { saving.current = false; }
   }
   return <View style={{ gap: 12 }}>
-    <NotificationBubble message={action.error} />
+    <NotificationBubble message={error} />
     <View style={{ flexDirection: width >= 720 ? 'row' : 'column', gap: 12, alignItems: 'stretch' }}>
       <View style={{ flex: width >= 720 ? 3 : undefined, flexDirection: 'row', backgroundColor: '#486b21', padding: 8, gap: 6, borderRadius: 8 }}>
         <View accessibilityLabel={`Campo: formação ${formation}`} style={styles.pitch}>
@@ -97,7 +119,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
           <View pointerEvents="none" style={[styles.goalArea, { bottom: 8 }]} />
           <Text style={styles.formation}>{formation}</Text>
           <View style={styles.positions}>{groups.map((players, index) => <View key={index} accessibilityLabel={`Linha ${players.length ? sector(players[0].position) : "vazia"}: ${players.length} jogadores`} style={styles.row}>
-            {players.map(({ player, position, outOfPosition }) => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Substituir ${player.name}`} disabled={saving} onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}>
+            {players.map(({ player, position, outOfPosition }) => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Substituir ${player.name}`}  onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}>
               <PlayerMarker player={player} badge={badge} position={position} outOfPosition={outOfPosition} />
             </Pressable>)}
           </View>)}</View>
@@ -105,7 +127,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
         <View style={{ width: 68, gap: 10, alignItems: 'center' }}>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Reservas</Text>
           <ScrollView style={{ maxHeight: 450 }} contentContainerStyle={{ gap: 12 }}>
-            {reserves.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Reserva ${player.name}`} disabled={saving || !canSwap(player)} onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}><PlayerMarker player={player} badge={badge} /></Pressable>)}
+            {reserves.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Reserva ${player.name}`} disabled={!canSwap(player)} onPress={() => tap(player)} style={[styles.marker, replacement === player.id && styles.activeMarker]}><PlayerMarker player={player} badge={badge} /></Pressable>)}
           </ScrollView>
         </View>
       </View>
@@ -113,7 +135,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
         <View style={styles.roster}>
           <View style={styles.rosterRow}><Text style={styles.role}>T/R</Text><Text style={styles.position}>Pos.</Text><Text style={[styles.rosterName, { fontWeight: '700' }]}>Nome</Text><Text style={styles.number}>Força</Text><Text style={styles.number}>Energia</Text></View>
           <ScrollView style={{ maxHeight: 310 }}>
-            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={saving || unavailable(player.status) || !canSwap(player)} onPress={() => tap(player)} style={[styles.rosterRow, { backgroundColor: improvisedIds.has(player.id) || replacement === player.id ? '#fff1b8' : starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
+            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={unavailable(player.status) || !canSwap(player)} onPress={() => tap(player)} style={[styles.rosterRow, { backgroundColor: improvisedIds.has(player.id) || replacement === player.id ? '#fff1b8' : starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
               <Text style={styles.role}>{starters.includes(player.id) ? 'T' : reserves.some(item => item.id === player.id) ? 'R' : '—'}</Text><Text style={styles.position}>{sector(player.position)}</Text><Text numberOfLines={1} style={styles.rosterName}>{player.name}</Text><PlayerCards player={player} /><Text style={styles.number}>{player.strength ?? player.overall}</Text><Text style={styles.number}>{player.energy ?? player.physical_condition ?? 100}%</Text>
             </Pressable>)}
           </ScrollView>

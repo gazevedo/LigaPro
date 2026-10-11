@@ -173,3 +173,20 @@ test('editing stays enabled during saving and rapid changes persist the latest c
   expect(screen.getByText('Pesada')).toBeTruthy();
   expect(screen.getByText('Laterais')).toBeTruthy();
 });
+
+test('rapid player swaps stay editable and save the final lineup in order', async () => {
+  let finish!: () => void;
+  jest.mocked(squadService.save).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ formation: '4-4-2', starters, reserves: ['p11'] }); }));
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  expect(screen.getByRole('button', { name: 'Substituir Jogador 2' })).not.toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 2' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 9' }));
+  expect(squadService.save).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Jogador 2: fora de posição, natural DEF, escalado em ATA')).toBeTruthy();
+  finish();
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledTimes(2));
+  expect(squadService.save).toHaveBeenLastCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id === 'p2' ? 'p9' : id === 'p9' ? 'p2' : id), reserves: ['p1'], manual_positions: true });
+});
