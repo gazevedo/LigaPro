@@ -1,2 +1,3 @@
 import { AppNavigator } from './src/navigation/AppNavigator';
-export default function App() { return <AppNavigator />; }
+import { useVersionMonitor } from './src/components/useVersionMonitor';
+export default function App() { useVersionMonitor(); return <AppNavigator />; }

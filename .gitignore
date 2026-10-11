@@ -17,5 +17,6 @@ __pycache__/
 coverage/
 secrets/
 credentials/
+mobile/public/app-version.json
 *.pem
 *.key
