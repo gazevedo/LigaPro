@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useAuthStore } from '../stores/authStore';
-const appVersion = `${version.major}.${version.minor}.${version.patch}.${version.revision}`;
+const appVersion = `${version.major}.${version.minor}.${version.patch}`;
 export function AuthForm({ register = false, onCreateAccount, onLogin, background }: {
   register?: boolean; onCreateAccount?: () => void; onLogin?: () => void; background?: ImageSourcePropType;
 }) {

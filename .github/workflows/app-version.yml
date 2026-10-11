@@ -25,7 +25,7 @@ jobs:
           PREVIOUS_REVISION: ${{ github.event.before }}
         run: |
           if ! git cat-file -e "${PREVIOUS_REVISION}:mobile/version.json" 2>/dev/null; then
-            echo 'Initial release: v1.0.0.0'
+            echo 'Initial release: v1.0.0'
             exit 0
           fi
           git pull --ff-only origin main
