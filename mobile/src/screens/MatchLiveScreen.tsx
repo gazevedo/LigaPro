@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { ActionButton as Button, Choices, GamePage } from '../components/GameUI';
+import { ActionButton as Button, Choices, GamePage, NotificationBubble } from '../components/GameUI';
 import { LiveEvent, LiveMessage, LiveState, liveMatchService } from '../services/liveMatchService';
 export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'MatchLive'>) {
   const [state, setState] = useState<LiveState | null>(null), [error, setError] = useState(''), [connected, setConnected] = useState(false), [clock, setClock] = useState(0), [overlay, setOverlay] = useState('');
@@ -88,7 +88,7 @@ export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<Ro
         <Text>Banco · escolha quem entra</Text>{team.reserves.map(p => <Button key={p.id} disabled={!enabled || p.injured} title={`${incoming === p.id ? '✓ ' : ''}${p.name} · ${p.position} · Energia ${Math.round(p.energy)} · Condição ${Math.round(p.physical_condition)}`} onPress={() => setIncoming(p.id)} />)}
         <Button title="Confirmar substituição" disabled={!enabled || !outgoing || !incoming || team.substitutions_used >= 3} onPress={() => { send('substitution', { out_player_id: outgoing, in_player_id: incoming }); setOutgoing(''); setIncoming(''); }} />
       </>}
-      {!!notice && <Text>{notice}</Text>}
+      <NotificationBubble message={notice} tone="info" />
     </>}
     <Button title="Voltar ao calendário" onPress={() => navigation.navigate('Calendar')} />
   </GamePage>;

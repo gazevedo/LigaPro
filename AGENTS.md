@@ -169,3 +169,5 @@ Atualize a interface imediatamente e salve em background, preservando a última 
 Serialize gravações relacionadas para evitar respostas antigas sobrescrevendo alterações novas.
 Em caso de falha, informe o erro sem bloquear a tela e preserve ou restaure o último estado confirmado.
 Bloqueie controles apenas por regras do jogo, como jogadores lesionados ou suspensos, nunca pela gravação em andamento.
+
+Mensagens de erro, aviso e confirmação devem usar o componente compartilhado NotificationBubble, com opção de fechar. Não use texto solto, alertas nativos ou popups para essas mensagens. Falhas de atualização da próxima partida devem ser silenciosas, preservando os dados já carregados.

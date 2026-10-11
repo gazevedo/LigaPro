@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { AppState, Text, View } from 'react-native';
 import { useUpcomingMatchesStore } from '../stores/screenStores';
-import { ActionButton, NotificationBubble, palette } from './GameUI';
+import { ActionButton, palette } from './GameUI';
 
 export function UpcomingMatches({ open }: { open: (id: string) => void }) {
-  const { data: matches, error, ensure, refresh } = useUpcomingMatchesStore();
+  const { data: matches, ensure, refresh } = useUpcomingMatchesStore();
   useEffect(() => {
     function load() {
       if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
@@ -20,7 +20,6 @@ export function UpcomingMatches({ open }: { open: (id: string) => void }) {
   const match = ordered.find(item => item.status === 'live') || ordered.find(item => item.status === 'scheduled');
   const live = match?.status === 'live';
   return <View style={{ gap: 10 }}>
-    <NotificationBubble message={error ? 'Não foi possível atualizar a próxima partida.' : null} />
     {match ? <>
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: live ? palette.primary : palette.ink, fontWeight: '700', fontSize: 15 }}>{live ? 'Partida em andamento' : 'Próxima partida'}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color: palette.muted, fontSize: 12 }}>{match.round ? `Rodada ${match.round}` : 'Partida'} · {new Date(match.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</Text>
