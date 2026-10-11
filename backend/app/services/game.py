@@ -512,6 +512,11 @@ class CalendarService:
         self.repo = repository
 
     def get(self, user, filters):
+        from app.services.competition import CompetitionService
+
+        season = CompetitionService.current(self.repo)
+        if season and season.get("league_schedule_revision") != 2:
+            self.repo.transaction(CompetitionService.update_league_interval)
         query = {"club_id": self.repo.owned(user.id)["_id"]}
         if filters.type:
             query["$or"] = [{"type": filters.type}, {"kind": filters.type}]

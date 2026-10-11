@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from app.config.game import GameConfig
 from app.config.names import club_name
 from app.services.competition import CompetitionService, division_name, movement, round_robin
+from app.services.game import CalendarService
 from app.services.player_development import PlayerAgingService, PlayerGeneratorService
 
 
@@ -124,6 +125,25 @@ class CompetitionRulesTests(unittest.TestCase):
             CompetitionService(repo).process_due(now)
         repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
         play.assert_called_once_with(updated, now)
+
+    def test_calendar_read_repairs_pending_schedule_before_reading_events(self):
+        repo = Mock()
+        repo.owned.return_value = {"_id": "club"}
+        repo.find.return_value = {"_id": "season"}
+        repo.many.return_value = []
+        CalendarService(repo).get(
+            SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
+        )
+        repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
+        repo.many.assert_called_once_with(
+            "calendar_events", {"club_id": "club"}, limit=500, sort=[("date", 1)]
+        )
+        repo.reset_mock()
+        repo.find.return_value = {"_id": "season", "league_schedule_revision": 2}
+        CalendarService(repo).get(
+            SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
+        )
+        repo.transaction.assert_not_called()
 
     def test_bot_name_combinations_are_varied_and_reproducible(self):
         names = {club_name(Random(seed)) for seed in range(30)}
