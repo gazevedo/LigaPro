@@ -52,11 +52,11 @@ test('startup opens login directly when there is no session', async () => {
   expect(load).not.toHaveBeenCalled();
 });
 
-test('restored session stays on splash until the club loads, then opens home', async () => {
+test('restored session waits without a splash logo until the club loads, then opens home', async () => {
   useAuthStore.setState({ authenticated: true, user: { id: 'user1' } as any });
   await render(<AppNavigator />);
   expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
-  expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
+  expect(screen.queryByLabelText('Logotipo LigaPro')).toBeNull();
   expect(screen.queryByText('Tentar novamente')).toBeNull();
   expect(screen.queryByText('Sair')).toBeNull();
   expect(screen.queryByText('Criar clube')).toBeNull();
@@ -66,7 +66,7 @@ test('restored session stays on splash until the club loads, then opens home', a
   expect(screen.queryByLabelText('Carregando aplicativo')).toBeNull();
 });
 
-test('club loading failure retries on splash without the intermediate screen', async () => {
+test('club loading failure retries without a splash logo or the intermediate screen', async () => {
   jest.useFakeTimers();
   try {
     useAuthStore.setState({ authenticated: true });
@@ -91,7 +91,7 @@ test('session expiry during club loading opens login', async () => {
   useAuthStore.setState({ authenticated: true });
   await render(<AppNavigator />);
   expect(screen.getByLabelText('Carregando aplicativo')).toBeTruthy();
-  expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
+  expect(screen.queryByLabelText('Logotipo LigaPro')).toBeNull();
   await act(async () => { useAuthStore.setState({ authenticated: false }); });
   expect(screen.getByText('Login')).toBeTruthy();
   expect(screen.queryByText('Sair')).toBeNull();

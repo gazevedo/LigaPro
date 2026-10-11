@@ -19,7 +19,7 @@ import { SquadScreen } from '../screens/SquadScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, BackHandler, Image, Platform, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, Platform, Text, View } from 'react-native';
 import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,7 +41,6 @@ const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, bac
 export function AppNavigator() {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const browserBack = useRef<ReturnType<typeof registerBrowserBack> | null>(null);
-  const { width } = useWindowDimensions();
   const { initialized, loading, apiAvailable, error, initialize } = useAppStore();
   const auth = useAuthStore();
   const game = useClubStore();
@@ -80,8 +79,7 @@ export function AppNavigator() {
   }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
     {!initialized || !apiAvailable || !auth.initialized || waitingForClub ? <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, gap: 16, backgroundColor: '#fff' }}>
-      <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: '100%', height: width / 2 }} />
-      {startupLoading ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} /> : startupError ? <>
+      {startupLoading ? <ActivityIndicator accessibilityLabel="Carregando aplicativo" /> : startupError ? <>
         <Text>{error ? 'Servidor em manutenção, tente mais tarde.' : startupError}</Text>
         <ConnectionRetry onRetry={() => {
           if (apiAvailable && auth.initialized && waitingForClub) { void loadClub(); return; }
@@ -89,7 +87,7 @@ export function AppNavigator() {
             if (useAppStore.getState().apiAvailable) return useAuthStore.getState().restoreSession();
           });
         }} />
-      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" style={{ position: 'absolute', top: '50%', marginTop: width / 4 + 16 }} />}
+      </> : <ActivityIndicator accessibilityLabel="Restaurando sessão" />}
     </View> : <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
       {auth.authenticated ? <GameBackground>{(!game.data?.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />

@@ -35,8 +35,6 @@
         flex: 1;
       }
       @media (pointer: coarse) { html, body, #root { touch-action: pan-x pan-y; } }
-      /* Installed apps already have a launch logo supplied by the operating system. */
-      @media (display-mode: standalone), (display-mode: fullscreen) { #root > div > img { display: none; } }
     </style>
   </head>
 
@@ -46,6 +44,6 @@
       Ative o JavaScript para abrir o LigaPro.
     </noscript>
     <!-- The root element for your Expo app. -->
-    <div id="root"><div style="flex:1;display:flex;align-items:center;justify-content:center;background:#fff"><img src="/brand/logo-ligapro.png" alt="Logotipo LigaPro" style="width:100%;height:auto;aspect-ratio:2;object-fit:contain" /></div></div>
+    <div id="root"></div>
   </body>
 </html>
