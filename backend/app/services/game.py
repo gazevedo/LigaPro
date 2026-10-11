@@ -277,9 +277,9 @@ class SquadService:
             positions = Counter(
                 legacy_position(p["position"]) for p in players if str(p["_id"]) in data.starters
             )
-            if dict(positions) != {"GOL": 1, **formation}:
+            if len(data.starters) != 11 or positions["GOL"] != 1:
                 raise HTTPException(
-                    422, "Titulares incompatíveis com a formação; é necessário um goleiro."
+                    422, "São necessários 11 titulares e exatamente um goleiro."
                 )
 
             previous = repo.find("lineups", {"_id": club["_id"]})

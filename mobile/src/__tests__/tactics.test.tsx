@@ -13,7 +13,7 @@ beforeEach(() => {
   jest.clearAllMocks(); useTacticsStore.getState().reset(); useSquadStore.getState().reset();
   jest.mocked(tacticsService.get).mockResolvedValue(tactics);
   jest.mocked(tacticsService.save).mockResolvedValue(tactics);
-  jest.mocked(squadService.get).mockResolvedValue({ players, lineup: { formation: '4-4-2', starters, reserves: ['p11', 'p12'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 }, '4-3-3': { DEF: 4, MED: 3, ATA: 3 } } });
+  jest.mocked(squadService.get).mockResolvedValue({ players, lineup: { formation: '4-4-2', starters, reserves: ['p11', 'p12'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 }, '4-3-3': { DEF: 4, MED: 3, ATA: 3 }, '3-4-3': { DEF: 3, MED: 4, ATA: 3 }, '4-2-3-1': { DEF: 4, MED: 5, ATA: 1 } } });
 });
 test('selecting a strategy saves immediately without a save button', async () => {
   await render(<TacticsScreen />);
@@ -62,13 +62,13 @@ test('failed replacement keeps the original starter on the pitch', async () => {
   expect(screen.getByRole('button', { name: 'Substituir Jogador 1' })).toBeTruthy();
 });
 
-test('selecting a reserve allows swapping with a compatible starter from the player list', async () => {
+test('selecting a reserve allows swapping with a starter from the player list', async () => {
   await render(<TacticsScreen />);
   await screen.findByLabelText('Campo: formação 4-4-2');
   expect(screen.getAllByText('T')).toHaveLength(11);
   expect(screen.getAllByText('R')).toHaveLength(1);
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
-  expect(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' })).not.toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Jogador 1, titular, força 50' }));
   await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
 });
@@ -86,4 +86,42 @@ test('the player list displays accumulated yellows and a red card for a suspende
   await render(<TacticsScreen />);
   expect(await screen.findByLabelText('2 cartões amarelos')).toBeTruthy();
   expect(screen.getByLabelText('Cartão vermelho')).toBeTruthy();
+});
+
+test('changing formation rearranges the pitch immediately and shows improvisation without save messages', async () => {
+  let finish!: () => void;
+  jest.mocked(tacticsService.save).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ ...tactics, formation: '3-4-3' }); }));
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('combobox', { name: 'Formação' }));
+  await fireEvent.press(screen.getByRole('button', { name: '3-4-3' }));
+  expect(screen.getByLabelText('Campo: formação 3-4-3')).toBeTruthy();
+  expect(screen.getByLabelText('Linha ATA: 3 jogadores')).toBeTruthy();
+  expect(screen.getAllByLabelText('Linha MED: 2 jogadores')).toHaveLength(2);
+  expect(screen.getByLabelText('Linha DEF: 3 jogadores')).toBeTruthy();
+  expect(screen.getByLabelText(/fora de posição/)).toBeTruthy();
+  expect(screen.queryByText(/Salvamento automático/)).toBeNull();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  jest.mocked(tacticsService.get).mockResolvedValue({ ...tactics, formation: '3-4-3' });
+  finish();
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Formação' })).not.toBeDisabled());
+  expect(screen.queryByText('Tática salva.')).toBeNull();
+});
+test('an outfield reserve can replace a different position and goalkeeper swaps stay restricted', async () => {
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  expect(screen.getByRole('button', { name: 'Jogador 0, titular, força 50' })).toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p9' ? 'p11' : id), reserves: ['p9'] }));
+});
+
+test('4-2-3-1 displays both midfield lines instead of grouping all midfielders together', async () => {
+  jest.mocked(tacticsService.get).mockResolvedValue({ ...tactics, formation: '4-2-3-1' });
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-2-3-1');
+  expect(screen.getByLabelText('Linha ATA: 1 jogadores')).toBeTruthy();
+  expect(screen.getByLabelText('Linha MED: 3 jogadores')).toBeTruthy();
+  expect(screen.getByLabelText('Linha MED: 2 jogadores')).toBeTruthy();
+  expect(screen.getByLabelText('Linha DEF: 4 jogadores')).toBeTruthy();
 });
