@@ -29,7 +29,7 @@ test('integrated lineup saves a replacement automatically and excludes injured r
   await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
   expect(screen.getByRole('button', { name: 'Jogador 12, reserva, força 50' })).toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
-  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'], manual_positions: true }));
   expect(screen.queryByText('Salvar escalação')).toBeNull();
 });
 test('failed strategy save keeps the previous strategy and shows the error', async () => {
@@ -50,7 +50,7 @@ test('the strategy shows the pitch, roster and controls together and swaps a res
   expect(screen.getByRole('button', { name: 'Reserva Jogador 11' })).not.toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
-  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'], manual_positions: true }));
 });
 test('failed replacement keeps the original starter on the pitch', async () => {
   jest.mocked(squadService.save).mockRejectedValueOnce(new Error('Não foi possível salvar a escalação.'));
@@ -70,7 +70,7 @@ test('selecting a reserve allows swapping with a starter from the player list', 
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   expect(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' })).not.toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Jogador 1, titular, força 50' }));
-  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'], manual_positions: true }));
 });
 test('two reserves can swap their places through touches without changing the starters', async () => {
   const extra = { ...players[9], id: 'p13', name: 'Jogador 13' };
@@ -79,7 +79,7 @@ test('two reserves can swap their places through touches without changing the st
   await screen.findByLabelText('Campo: formação 4-4-2');
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Jogador 13, reserva, força 50' }));
-  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters, reserves: ['p13', 'p11'] }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters, reserves: ['p13', 'p11'], manual_positions: true }));
 });
 test('the player list displays accumulated yellows and a red card for a suspended player', async () => {
   jest.mocked(squadService.get).mockResolvedValueOnce({ players: players.map(player => player.id === 'p0' ? { ...player, yellow_cards_accumulated: 2 } : player.id === 'p12' ? { ...player, status: 'suspended', discipline_red_card: true, suspension_matches_remaining: 1 } : player), lineup: { formation: '4-4-2', starters, reserves: ['p11'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
@@ -113,7 +113,7 @@ test('an outfield reserve can replace a different position and goalkeeper swaps 
   await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
   expect(screen.getByRole('button', { name: 'Jogador 0, titular, força 50' })).toBeDisabled();
   await fireEvent.press(screen.getByRole('button', { name: 'Jogador 9, titular, força 50' }));
-  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p9' ? 'p11' : id), reserves: ['p9'] }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p9' ? 'p11' : id), reserves: ['p9'], manual_positions: true }));
 });
 
 test('4-2-3-1 displays both midfield lines instead of grouping all midfielders together', async () => {
@@ -124,4 +124,23 @@ test('4-2-3-1 displays both midfield lines instead of grouping all midfielders t
   expect(screen.getByLabelText('Linha MED: 3 jogadores')).toBeTruthy();
   expect(screen.getByLabelText('Linha MED: 2 jogadores')).toBeTruthy();
   expect(screen.getByLabelText('Linha DEF: 4 jogadores')).toBeTruthy();
+});
+
+test('two starters exchange actual field positions and keep them after reloading the saved lineup', async () => {
+  const swapped = starters.map(id => id === 'p1' ? 'p9' : id === 'p9' ? 'p1' : id);
+  const data = { players, lineup: { formation: '4-4-2', starters, reserves: ['p11'] }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } };
+  jest.mocked(squadService.get).mockResolvedValueOnce(data).mockResolvedValue({ ...data, lineup: { ...data.lineup, starters: swapped, manual_positions: true } });
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 9' }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: swapped, reserves: ['p11'], manual_positions: true }));
+  expect(await screen.findByLabelText('Jogador 1: fora de posição, natural DEF, escalado em ATA')).toBeTruthy();
+  expect(screen.getByLabelText('Jogador 9: fora de posição, natural ATA, escalado em DEF')).toBeTruthy();
+});
+test('tactical selectors expand below the control without a popup or cancel button', async () => {
+  await render(<TacticsScreen />);
+  await fireEvent.press(await screen.findByRole('combobox', { name: 'Marcação' }));
+  expect(screen.getByRole('button', { name: 'Pesada' })).toBeTruthy();
+  expect(screen.queryByText('Cancelar')).toBeNull();
 });

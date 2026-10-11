@@ -216,7 +216,7 @@ class MatchTeam:
             raise ValueError("Lineup sectors must match formation")
 
 
-def arrange_formation(players, formation):
+def arrange_formation(players, formation, *, preserve_order=False):
     """Keep actual players and their current energy; assign roles and sides."""
     if formation not in FORMATIONS:
         raise ValueError("Unknown formation")
@@ -239,7 +239,7 @@ def arrange_formation(players, formation):
                 player.assigned_position == role,
             )
 
-        player = max(pool, key=suitability)
+        player = pool[0] if preserve_order else max(pool, key=suitability)
         pool.remove(player)
         player.assigned_position, player.side = role, side
         assigned.append(player)

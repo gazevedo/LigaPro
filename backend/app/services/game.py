@@ -277,10 +277,13 @@ class SquadService:
             positions = Counter(
                 legacy_position(p["position"]) for p in players if str(p["_id"]) in data.starters
             )
-            if len(data.starters) != 11 or positions["GOL"] != 1:
-                raise HTTPException(
-                    422, "São necessários 11 titulares e exatamente um goleiro."
-                )
+            manual_keeper = next((p for p in players if str(p["_id"]) == data.starters[0]), None)
+            if (
+                len(data.starters) != 11
+                or positions["GOL"] != 1
+                or (data.manual_positions and legacy_position(manual_keeper["position"]) != "GOL")
+            ):
+                raise HTTPException(422, "São necessários 11 titulares e exatamente um goleiro.")
 
             previous = repo.find("lineups", {"_id": club["_id"]})
             ChemistryService().lineup_change(
@@ -304,6 +307,7 @@ class SquadService:
                     {
                         "$set": {
                             "formation": data.formation,
+                            "manual_positions": data.manual_positions,
                             "starters": [ObjectId(p) for p in data.starters],
                             "reserves": [ObjectId(p) for p in data.reserves],
                         }

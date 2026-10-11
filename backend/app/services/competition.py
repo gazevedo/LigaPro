@@ -580,7 +580,9 @@ class CompetitionService:
         pool = selected + [p for p in documents if p not in selected]
         pool_documents = pool[:11]
         players = arrange_formation(
-            [MatchPlayer.from_document(p) for p in pool_documents], formation
+            [MatchPlayer.from_document(p) for p in pool_documents],
+            formation,
+            preserve_order=lineup.get("manual_positions", False),
         )
         pool = pool[11:]
         return MatchTeam(

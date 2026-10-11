@@ -55,7 +55,10 @@ class TacticsService:
             if any(identity not in by_id for identity in lineup["starters"]):
                 raise HTTPException(409, "Atualize a escalação antes de salvar a tática.")
             assigned = arrange_formation(
-                [MatchPlayer.from_document(by_id[i]) for i in lineup["starters"]], data.formation
+                [MatchPlayer.from_document(by_id[i]) for i in lineup["starters"]],
+                data.formation,
+                preserve_order=lineup.get("manual_positions", False)
+                and data.formation == lineup["formation"],
             )
             ChemistryService().lineup_change(
                 repo, club["_id"], lineup, lineup["starters"], data.formation
@@ -67,6 +70,8 @@ class TacticsService:
                 {
                     "$set": {
                         "formation": data.formation,
+                        "manual_positions": lineup.get("manual_positions", False)
+                        and data.formation == lineup["formation"],
                         "starters": [ObjectId(p.id) for p in assigned],
                     }
                 },

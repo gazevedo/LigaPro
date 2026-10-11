@@ -13,6 +13,7 @@ from app.services.match_engine import (
     PlayerEffectiveStrengthCalculator,
     arrange_formation,
 )
+from app.services.tactics import TacticsService
 
 
 def setup_squad():
@@ -74,3 +75,51 @@ def test_missing_keeper_or_incomplete_lineup_is_still_rejected():
         with pytest.raises(HTTPException) as error:
             SquadService(repo).save(SimpleNamespace(id="user"), data)
         assert error.value.status_code == 422
+
+
+def test_manual_positions_survive_saving_and_match_assignment_with_penalties():
+    repo, documents, data = setup_squad()
+    data.manual_positions = True
+    data.starters[1], data.starters[9] = data.starters[9], data.starters[1]
+    with (
+        patch("app.services.game.ChemistryService.lineup_change"),
+        patch("app.services.game.TacticsService.persist"),
+    ):
+        saved = SquadService(repo).save(SimpleNamespace(id="user"), data)
+    assert saved["manual_positions"] is True
+    by_id = {str(player["_id"]): player for player in documents}
+    assigned = arrange_formation(
+        [MatchPlayer.from_document(by_id[identity]) for identity in saved["starters"]],
+        "4-4-2",
+        preserve_order=True,
+    )
+    assert [player.id for player in assigned] == saved["starters"]
+    assert assigned[1].position == "ATT"
+    assert assigned[1].assigned_position == "FB"
+    assert assigned[9].position == "CB"
+    assert assigned[9].assigned_position == "ATT"
+    calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "classic")
+    assert calculator.fit.calculate(assigned[1]) == 0.72
+    assert calculator.fit.calculate(assigned[9]) == 0.72
+
+
+@pytest.mark.parametrize("formation,manual", [("4-4-2", True), ("4-3-3", False)])
+def test_style_changes_keep_manual_positions_and_new_formations_reassign_them(formation, manual):
+    repo, documents, _ = setup_squad()
+    lineup = repo.find.return_value
+    lineup["manual_positions"] = True
+    lineup["starters"][1], lineup["starters"][9] = (
+        lineup["starters"][9],
+        lineup["starters"][1],
+    )
+    data = SimpleNamespace(formation=formation, model_dump=lambda: {"formation": formation})
+    with patch("app.services.tactics.ChemistryService.lineup_change"):
+        TacticsService(repo).save(SimpleNamespace(id="user"), data)
+    saved = next(
+        call.args[2]["$set"] for call in repo.update.call_args_list if call.args[0] == "lineups"
+    )
+    assert saved["manual_positions"] is manual
+    if manual:
+        assert saved["starters"] == lineup["starters"]
+    else:
+        assert set(saved["starters"]) == {player["_id"] for player in documents}

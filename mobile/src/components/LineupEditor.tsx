@@ -26,7 +26,7 @@ function PlayerMarker({ player, badge, position, outOfPosition = false }: { play
     <Shirt badge={badge} goalkeeper={sector(position ?? player.position) === 'GOL'} />
     <Text numberOfLines={1} style={styles.playerName}>{player.name}</Text>
     <Text style={styles.playerEnergy}>{sector(position ?? player.position)} · {player.energy ?? player.physical_condition ?? 100}%</Text>
-    {outOfPosition && <Text accessibilityLabel={`${player.name}: fora de posição`} style={{ color: '#ffe386', fontSize: 9 }}>⚠ Fora de posição</Text>}
+    {outOfPosition && <Text accessibilityLabel={`${player.name}: fora de posição, natural ${sector(player.position)}, escalado em ${sector(position ?? player.position)}`} style={{ color: '#ffe386', fontSize: 9 }}>⚠ {sector(player.position)} → {sector(position ?? player.position)}</Text>}
   </>;
 }
 function PlayerCards({ player }: { player: Player }) {
@@ -40,7 +40,7 @@ function PlayerCards({ player }: { player: Player }) {
 export function LineupEditor({ squad, formation, disabled = false }: { squad: Squad; formation: string; disabled?: boolean }) {
   const badge = useClubStore(state => state.data?.club?.badge);
   const { width } = useWindowDimensions();
-  const [starters, setStarters] = useState(squad.lineup.starters.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
+  const [starters, setStarters] = useState(() => arrangePlayers(squad.lineup.starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player && !unavailable(player.status)), formation, !!squad.lineup.manual_positions && squad.lineup.formation === formation).map(slot => slot.player.id));
   const [replacement, setReplacement] = useState<string | null>(null);
   const [reserveIds, setReserveIds] = useState(squad.lineup.reserves.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
   const action = useAction();
@@ -55,7 +55,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
     if (target.id === player.id) { setReplacement(null); return; }
     replace(target, player.id);
   }
-  const assigned = arrangePlayers(selected, formation);
+  const assigned = arrangePlayers(selected, formation, true);
   const groups = ['ATA', 'MED', 'DEF', 'GOL'].flatMap(group => {
     const players = assigned.filter(slot => sector(slot.position) === group);
     if (group !== 'MED') return [players];
@@ -76,7 +76,7 @@ export function LineupEditor({ squad, formation, disabled = false }: { squad: Sq
     setStarters(next); setReserveIds(nextReserves); setReplacement(null);
     if (next.length === 11) void action.run(async () => {
       try {
-        await squadService.save({ formation, starters: next, reserves: nextReserves });
+        await squadService.save({ formation, starters: next, reserves: nextReserves, manual_positions: true });
         await useSquadStore.getState().load();
       } catch (error) { setStarters(previous); setReserveIds(previousReserves); throw error; }
     });

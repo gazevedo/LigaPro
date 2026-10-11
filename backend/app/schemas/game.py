@@ -31,6 +31,7 @@ class ResignClubInput(Input):
 
 
 class LineupInput(Input):
+    manual_positions: bool = False
     formation: str
     starters: list[str] = Field(min_length=11, max_length=11)
     reserves: list[str]
