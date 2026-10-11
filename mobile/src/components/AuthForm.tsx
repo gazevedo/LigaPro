@@ -2,7 +2,7 @@ import { useState } from 'react';
 import version from '../../version.json';
 import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
+import { ActionButton, Card, Field, GamePage, NotificationBubble, pageLayout, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useClubStore } from '../stores/clubStore';
 import { useAuthStore } from '../stores/authStore';
@@ -83,7 +83,7 @@ function GoogleButton({ disabled, onPress }: { disabled: boolean; onPress: () =>
 const styles = StyleSheet.create({
   background: { flex: 1, width: '100%', overflow: 'hidden', backgroundColor: '#031d30' },
   overlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#00132355' },
-  page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
+  page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: pageLayout.paddingHorizontal, paddingVertical: pageLayout.paddingVertical },
   content: { width: '100%', maxWidth: 420, alignSelf: 'center', gap: 14 },
   brand: { alignItems: 'center', gap: 6 },
   logo: { width: '100%', maxWidth: 310, height: 104, backgroundColor: '#fffffff5', borderRadius: 22 },
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   line: { flex: 1, height: 1, backgroundColor: '#d6e1e7' },
   google: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#747775', borderRadius: 4, minHeight: 44 },
   googleText: { color: '#1f1f1f', fontSize: 14, fontWeight: '500', letterSpacing: 0.25 },
-  footer: { alignItems: 'flex-end', paddingHorizontal: 24, paddingBottom: 12 },
+  footer: { alignItems: 'flex-end', paddingHorizontal: pageLayout.paddingHorizontal, paddingBottom: 12 },
   version: { color: '#d5e5ee', fontSize: 12 },
   signup: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 7 },
 });

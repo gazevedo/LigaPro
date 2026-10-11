@@ -22,8 +22,9 @@ export function GameBackground({ children }: { children: ReactNode }) {
     <BackgroundContext.Provider value>{children}</BackgroundContext.Provider>
   </ImageBackground>;
 }
-export function GamePage({ children, loading, error, horizontalPadding = 24 }: { children: ReactNode; loading?: boolean; error?: string | null; horizontalPadding?: number }) {
-  return <GameBackground><ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, paddingHorizontal: horizontalPadding, gap: 18, width: '100%', maxWidth: 1000, alignSelf: 'center', paddingBottom: 48 }}>{loading && <ActivityIndicator color={palette.primary} />}<NotificationBubble message={error} />{children}</ScrollView></GameBackground>;
+export const pageLayout = { paddingVertical: 24, paddingHorizontal: 8, gap: 18, width: '100%' as const, maxWidth: 1000, alignSelf: 'center' as const, paddingBottom: 48 };
+export function GamePage({ children, loading, error }: { children: ReactNode; loading?: boolean; error?: string | null }) {
+  return <GameBackground><ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} keyboardShouldPersistTaps="handled" contentContainerStyle={pageLayout}>{loading && <ActivityIndicator color={palette.primary} />}<NotificationBubble message={error} />{children}</ScrollView></GameBackground>;
 }
 export function Field({ label, value, onChange, numeric = false, ...props }: { label: string; value: string; onChange: (value: string) => void; numeric?: boolean } & Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'>) {
   return <View style={{ gap: 8 }}><Text style={{ fontWeight: '600', color: palette.ink }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} keyboardType={numeric ? 'numeric' : 'default'} placeholderTextColor={palette.muted} {...props} style={{ borderWidth: 1, borderColor: palette.border, backgroundColor: '#fff', color: palette.ink, padding: 14, borderRadius: 12, fontSize: 16 }} /></View>;

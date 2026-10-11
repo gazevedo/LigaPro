@@ -24,7 +24,7 @@ export function TacticsScreen() {
     });
   }
   const options = (labels: Record<string, string>) => Object.entries(labels).map(([value, label]) => ({ value, label }));
-  return <GamePage loading={busy} error={action.error || store.error || squad.error} horizontalPadding={8}>
+  return <GamePage loading={busy} error={action.error || store.error || squad.error}>
     {draft && squad.data && <>
     <Card>
       <ComboBox inline label="Formação" value={draft.formation} options={Object.keys(squad.data?.formations ?? {}).map(value => ({ value, label: value }))} disabled={busy} onChange={formation => change({ formation })} />

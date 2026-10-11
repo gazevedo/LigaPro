@@ -33,7 +33,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   useScreenRefresh(() => Promise.all([table.ensure(), games.ensure()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
   const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
-  return <GamePage loading={loading} error={error} horizontalPadding={8}>
+  return <GamePage loading={loading} error={error}>
     <Tabs values={['Tabela', 'Partidas', 'Artilheiros']} selected={tab} onChange={setTab} />
     {tab === 'Tabela' && kind === 'league' && league && <View style={{ paddingVertical: 16, gap: 12, backgroundColor: '#fff' }}><Text style={{ paddingHorizontal: 8, fontSize: 18, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text>
       <ScrollView horizontal><View style={{ gap: 4 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', paddingVertical: 8 }}>{columns.map((column, index) => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 4, fontSize: 12, textAlign: index ? 'center' : 'left', fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>
