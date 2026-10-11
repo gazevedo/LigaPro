@@ -9,7 +9,7 @@ export function useScreenRefresh(ensure: () => Promise<unknown>, refresh?: () =>
   useEffect(() => { callbacks.current = { ensure, refresh }; }, [ensure, refresh]);
   useEffect(() => {
     if (!enabled) return;
-    let pending = false, disposed = false, timer: ReturnType<typeof setInterval> | undefined;
+    let pending = false, disposed = false;
     const visible = () => !disposed && (!navigation || navigation.isFocused()) &&
       AppState.currentState !== 'background' && AppState.currentState !== 'inactive' &&
       (typeof document === 'undefined' || document.visibilityState !== 'hidden');
@@ -20,12 +20,12 @@ export function useScreenRefresh(ensure: () => Promise<unknown>, refresh?: () =>
       catch { /* Stores expose request errors while preserving the last successful data. */ }
       finally { pending = false; }
     }
-    function stop() { if (timer !== undefined) clearInterval(timer); timer = undefined; }
+    function stop() { /* The authenticated session owns the minute refresh timer. */ }
     function start() {
       stop();
       if (!visible()) return;
       void run(false);
-      if (callbacks.current.refresh) timer = setInterval(() => { void run(true); }, 3000);
+
     }
     const focus = navigation?.addListener('focus', start);
     const blur = navigation?.addListener('blur', stop);

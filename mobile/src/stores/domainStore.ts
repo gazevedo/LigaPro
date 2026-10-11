@@ -21,7 +21,7 @@ export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Prom
     const userId = useAuthStore.getState().user?.id;
     return userId ? cacheName === 'club-status' ? userId : `${userId}:${activeClubId ?? 'none'}` : undefined;
   };
-  const store = create<{ data: T | null; loading: boolean; error: string | null; load: (...args: A) => Promise<void>; ensure: (...args: A) => Promise<void>; refresh: (...args: A) => Promise<void>; reset: () => void }>((set, get) => ({
+  const store = create<{ data: T | null; loading: boolean; error: string | null; load: (...args: A) => Promise<void>; ensure: (...args: A) => Promise<void>; refresh: (...args: A) => Promise<void>; refreshCurrent: () => Promise<void>; reset: () => void }>((set, get) => ({
     data: null, loading: false, error: null,
     load: (...args) => {
       const ticket = ++generation;
@@ -70,6 +70,7 @@ export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Prom
       });
     },
     refresh: (...args) => pending.get(keyFor(args)) ?? get().load(...args),
+    refreshCurrent: () => currentKey ? get().refresh(...JSON.parse(currentKey) as A) : Promise.resolve(),
     reset: () => { generation++; ownerGeneration++; currentKey = ''; cached.clear(); pending.clear(); latestRequest.clear(); set({ data: null, loading: false, error: null }); },
   }));
   // Persist successful local mutations (for example, reading inbox messages) too.

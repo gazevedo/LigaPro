@@ -37,13 +37,13 @@ test('prioritizes a live match and opens it using Assistir', async () => {
   expect(open).toHaveBeenCalledWith('second');
 });
 
-test('updates automatically when the server marks the match live and clears the timer on unmount', async () => {
+test('shows the central background refresh without creating a component timer', async () => {
   jest.useFakeTimers();
   try {
     upcoming.mockResolvedValueOnce([first]).mockResolvedValue([{ ...first, status: 'live' }]);
     const view = await render(<UpcomingMatches open={jest.fn()} />);
     expect(screen.queryByRole('button', { name: 'Assistir' })).toBeNull();
-    await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+    await act(async () => { await useUpcomingMatchesStore.getState().refreshCurrent(); });
     expect(screen.getByRole('button', { name: 'Assistir' })).toBeTruthy();
     await view.unmount();
     await act(async () => { await jest.advanceTimersByTimeAsync(60000); });

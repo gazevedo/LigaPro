@@ -36,7 +36,7 @@ import { AuthNavigator } from './AuthNavigator';
 import { useAuthStore } from '../stores/authStore';
 import { RootStackParamList } from './types';
 import { registerBrowserBack } from './browserBack';
-import { prefetchGameData } from '../services/prefetchService';
+import { startGameDataRefresh } from '../services/prefetchService';
 import { hideStartupSplash } from '../services/startupSplash';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationTheme = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
@@ -54,9 +54,7 @@ export function AppNavigator() {
   const clubId = game.data?.club?.id;
   useEffect(() => {
     if (!auth.authenticated || !clubId) return;
-    let active = true;
-    void prefetchGameData(clubId, () => active && useAuthStore.getState().authenticated && useClubStore.getState().data?.club?.id === clubId);
-    return () => { active = false; };
+    return startGameDataRefresh(clubId, () => useAuthStore.getState().authenticated && useClubStore.getState().data?.club?.id === clubId);
   }, [auth.authenticated, auth.user?.id, clubId]);
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;

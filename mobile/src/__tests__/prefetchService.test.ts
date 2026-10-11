@@ -1,4 +1,4 @@
-import { calendarMonthFilters, prefetchGameData } from '../services/prefetchService';
+import { calendarMonthFilters, prefetchGameData, startGameDataRefresh, refreshGameData } from '../services/prefetchService';
 import { apiRequest } from '../services/apiClient';
 import { resetDomainStores } from '../stores/domainStore';
 import { useSquadStore } from '../stores/squadStore';
@@ -49,4 +49,54 @@ test('queued prefetch jobs stop after leaving the session and concurrency is lim
   for (const finish of finishes) finish();
   await task;
   expect(apiRequest).toHaveBeenCalledTimes(4);
+});
+
+
+test('login fetches fresh data once, refreshes every minute and stops after logout', async () => {
+  await prefetchGameData('club', () => true);
+  jest.mocked(apiRequest).mockClear();
+  jest.useFakeTimers();
+  let active = true;
+  const stop = startGameDataRefresh('club', () => active);
+  try {
+    await jest.advanceTimersByTimeAsync(0);
+    const initial = jest.mocked(apiRequest).mock.calls.length;
+    expect(initial).toBeGreaterThan(20);
+    await jest.advanceTimersByTimeAsync(59999);
+    expect(apiRequest).toHaveBeenCalledTimes(initial);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(jest.mocked(apiRequest).mock.calls.length).toBeGreaterThan(initial);
+    const refreshed = jest.mocked(apiRequest).mock.calls.length;
+    active = false; stop();
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(apiRequest).toHaveBeenCalledTimes(refreshed);
+  } finally { stop(); jest.useRealTimers(); }
+});
+
+test('background refresh preserves selected calendar month and market filters', async () => {
+  await prefetchGameData('club', () => true);
+  const month = calendarMonthFilters(new Date(2027, 0, 1));
+  const filters = { name: 'João', position: 'MID', sort: 'strength_desc' };
+  await useCalendarStore.getState().ensure(month);
+  await screens.useMarketPlayersStore.getState().ensure(filters);
+  jest.mocked(apiRequest).mockClear();
+  await refreshGameData(() => true);
+  expect(apiRequest).toHaveBeenCalledWith(`/calendar?${new URLSearchParams(month)}`);
+  expect(apiRequest).toHaveBeenCalledWith(`/market/players?${new URLSearchParams(filters)}`);
+  expect(jest.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/market/players?'))).toHaveLength(1);
+});
+
+
+test('minute ticks do not overlap a slow initial load', async () => {
+  jest.useFakeTimers();
+  const finishes: (() => void)[] = [];
+  jest.mocked(apiRequest).mockImplementation(() => new Promise(resolve => { finishes.push(() => resolve({})); }));
+  const stop = startGameDataRefresh('club', () => true);
+  try {
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(apiRequest).toHaveBeenCalledTimes(4);
+    stop();
+    for (const finish of finishes) finish();
+    await jest.advanceTimersByTimeAsync(0);
+  } finally { stop(); jest.useRealTimers(); }
 });

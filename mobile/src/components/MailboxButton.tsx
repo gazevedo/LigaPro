@@ -1,22 +1,11 @@
 import { useEffect } from 'react';
-import { AppState, Image, Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import { useInboxStore } from '../stores/inboxStore';
 
 export function MailboxButton({ open, focused }: { open: () => void; focused?: () => boolean }) {
   const count = useInboxStore(state => state.data?.unread_count || 0);
   const ensure = useInboxStore(state => state.ensure);
-  const reload = useInboxStore(state => state.refresh);
-  useEffect(() => {
-    function refresh(initial = false) {
-      if (focused && !focused()) return;
-      if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
-      void (initial ? ensure() : reload());
-    }
-    refresh(true);
-    const timer = setInterval(() => refresh(), 60000);
-    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
-    return () => { clearInterval(timer); subscription.remove(); };
-  }, [ensure, reload, focused]);
+  useEffect(() => { if (!focused || focused()) void ensure(); }, [ensure, focused]);
   const description = count === 1 ? 'mensagem não lida' : 'mensagens não lidas';
   return <Pressable accessibilityRole="button" accessibilityLabel={`Correio, ${count} ${description}`}
     onPress={open} hitSlop={8} style={({ pressed }) => ({ width: 40, height: 40,

@@ -79,14 +79,14 @@ test('a GET started before a read cannot restore an unread badge', async () => {
   expect(useInboxStore.getState().data?.items[0].read).toBe(true);
 });
 
-test('refreshes the badge for new messages only while the dashboard is focused', async () => {
+test('shows badge changes from central refresh without a separate timer', async () => {
   jest.useFakeTimers();
   try {
     let focused = true;
     jest.mocked(historyService.inbox).mockResolvedValueOnce(inbox).mockResolvedValue({ ...inbox, unread_count: 3, total: 3 });
     const view = await render(<MailboxButton open={jest.fn()} focused={() => focused} />);
     expect(screen.getByRole('button', { name: 'Correio, 2 mensagens não lidas' })).toBeTruthy();
-    await act(async () => { await jest.advanceTimersByTimeAsync(60000); });
+    await act(async () => { await useInboxStore.getState().refreshCurrent(); });
     expect(screen.getByRole('button', { name: 'Correio, 3 mensagens não lidas' })).toBeTruthy();
     focused = false;
     await act(async () => { await jest.advanceTimersByTimeAsync(60000); });
