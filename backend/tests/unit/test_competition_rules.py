@@ -88,10 +88,42 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertEqual(dates[0], dates[1])
         self.assertEqual((dates[0] - now).total_seconds(), 600)
         self.assertEqual((dates[2] - dates[0]).total_seconds(), 600)
+        saved = repo.update.call_args.args[2]["$set"]
+        self.assertEqual(saved["config.MATCH_INTERVAL_MINUTES"], 10)
+        self.assertEqual(saved["config.ROUND_OFFSETS_DAYS"], [])
         repo.reset_mock()
-        repo.find.return_value = {**season, "league_interval_minutes": 10}
+        repo.find.return_value = {
+            **season,
+            "league_interval_minutes": 10,
+            "league_schedule_revision": 2,
+        }
         CompetitionService.update_league_interval(repo)
         repo.many.assert_not_called()
+
+    def test_old_saved_offsets_cannot_restore_two_matches_per_day(self):
+        repo = Mock()
+        repo.rules.return_value = {
+            "MATCH_INTERVAL_MINUTES": 720,
+            "ROUND_OFFSETS_DAYS": [2 + i / 2 for i in range(20)] + [17 + i / 2 for i in range(18)],
+        }
+        season = CompetitionService.create_season(repo, datetime(2026, 10, 11, tzinfo=UTC))
+        offsets = GameConfig(**season["config"]).round_offsets()
+        self.assertEqual(season["league_schedule_revision"], 2)
+        for first, second in zip(offsets, offsets[1:]):
+            self.assertAlmostEqual((second - first) * 1440, 10)
+
+    def test_periodic_processing_applies_pending_calendar_migration(self):
+        repo = Mock()
+        now = datetime(2026, 10, 11, tzinfo=UTC)
+        old = {"_id": "season", "ends_at": datetime(2026, 11, 1, tzinfo=UTC)}
+        updated = {**old, "league_schedule_revision": 2}
+        with (
+            patch.object(CompetitionService, "current", side_effect=[old, updated]),
+            patch.object(CompetitionService, "play_due") as play,
+        ):
+            CompetitionService(repo).process_due(now)
+        repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
+        play.assert_called_once_with(updated, now)
 
     def test_bot_name_combinations_are_varied_and_reproducible(self):
         names = {club_name(Random(seed)) for seed in range(30)}

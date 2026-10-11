@@ -123,7 +123,9 @@ class CompetitionService:
 
     @staticmethod
     def create_season(repo, starts_at, number=1):
-        config = GameConfig.from_rules(repo.rules())
+        config = GameConfig.from_rules(
+            {**repo.rules(), "MATCH_INTERVAL_MINUTES": 10, "ROUND_OFFSETS_DAYS": ()}
+        )
         season = {
             "_id": ObjectId(),
             "number": number,
@@ -132,6 +134,7 @@ class CompetitionService:
             "ends_at": starts_at + timedelta(days=config.SEASON_DURATION_DAYS),
             "config": config.snapshot(),
             "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
+            "league_schedule_revision": 2,
         }
         repo.insert("seasons", season)
         return season
@@ -469,7 +472,7 @@ class CompetitionService:
     def update_league_interval(cls, repo):
         cls.lock(repo)
         season = cls.current(repo)
-        if not season or season.get("league_interval_minutes") == 10:
+        if not season or season.get("league_schedule_revision") == 2:
             return
         matches = repo.many(
             "matches",
@@ -490,7 +493,18 @@ class CompetitionService:
             repo.database.calendar_events.update_many(
                 {"reference_id": match["_id"]}, {"$set": {"date": date}}, session=repo.session
             )
-        repo.update("seasons", {"_id": season["_id"]}, {"$set": {"league_interval_minutes": 10}})
+        repo.update(
+            "seasons",
+            {"_id": season["_id"]},
+            {
+                "$set": {
+                    "league_interval_minutes": 10,
+                    "league_schedule_revision": 2,
+                    "config.MATCH_INTERVAL_MINUTES": 10,
+                    "config.ROUND_OFFSETS_DAYS": [],
+                }
+            },
+        )
 
     def bootstrap(self):
         self.ensure_lock(self.repo)
@@ -831,6 +845,9 @@ class CompetitionService:
         self.ensure_lock(self.repo)
         now = now or utcnow()
         while season := self.current(self.repo):
+            if season.get("league_schedule_revision") != 2:
+                self.repo.transaction(self.update_league_interval)
+                season = self.current(self.repo)
             self.play_due(season, now)
             if season["ends_at"] > now or any(
                 self.repo.find(collection, {"season_id": season["_id"], "status": "live"})
