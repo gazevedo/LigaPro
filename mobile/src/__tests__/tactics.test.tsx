@@ -190,3 +190,15 @@ test('rapid player swaps stay editable and save the final lineup in order', asyn
   await waitFor(() => expect(squadService.save).toHaveBeenCalledTimes(2));
   expect(squadService.save).toHaveBeenLastCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id === 'p2' ? 'p9' : id === 'p9' ? 'p2' : id), reserves: ['p1'], manual_positions: true });
 });
+
+
+test('only five reserves are selected and an unselected player can replace one', async () => {
+  const bench = Array.from({ length: 7 }, (_, i) => ({ ...players[11], id: `bench${i}`, name: `Banco ${i}` }));
+  jest.mocked(squadService.get).mockResolvedValueOnce({ players: [...players.slice(0, 11), ...bench], lineup: { formation: '4-4-2', starters, reserves: bench.map(p => p.id) }, formations: { '4-4-2': { DEF: 4, MED: 4, ATA: 2 } } });
+  await render(<TacticsScreen />);
+  await screen.findByRole('button', { name: 'Reserva Banco 0' });
+  expect(screen.queryByRole('button', { name: 'Reserva Banco 5' })).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Banco 0' }));
+  await fireEvent.press(screen.getByRole('button', { name: /Banco 5, reserva/ }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters, reserves: ['bench5', 'bench1', 'bench2', 'bench3', 'bench4'], manual_positions: true }));
+});

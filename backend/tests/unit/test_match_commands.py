@@ -92,7 +92,7 @@ class MatchCommandTests(unittest.TestCase):
         self.assertTrue(any(e["type"] == "command_rejected" for e in result["events"]))
         self.assertEqual(home.reserves[0].energy, 90)
 
-    def test_five_substitutions_and_invalid_ids_do_not_abort(self):
+    def test_three_substitutions_and_invalid_ids_do_not_abort(self):
         home = team("home")
         home.reserves = [MatchPlayer(f"bench-{i}", "CB", "CB") for i in range(6)]
         commands = [
@@ -108,7 +108,7 @@ class MatchCommandTests(unittest.TestCase):
         self.assertEqual(
             sum(e["type"] == "substitution" for e in result["events"]), MAX_SUBSTITUTIONS
         )
-        self.assertEqual(sum(e["type"] == "command_rejected" for e in result["events"]), 1)
+        self.assertEqual(sum(e["type"] == "command_rejected" for e in result["events"]), 3)
 
     def test_formation_keeps_energy_players_and_sides(self):
         players = team("home").lineup
@@ -202,7 +202,7 @@ class MatchCommandTests(unittest.TestCase):
         home.reserves = [MatchPlayer(f"bench-{i}", "CB", "CB") for i in range(6)]
         result = MatchEngine().simulate(home, away, 3)
         self.assertTrue(any(e["type"] == "play_style_change" for e in result["events"]))
-        self.assertLessEqual(sum(e["type"] == "substitution" for e in result["events"]), 5)
+        self.assertLessEqual(sum(e["type"] == "substitution" for e in result["events"]), 3)
 
 
 if __name__ == "__main__":

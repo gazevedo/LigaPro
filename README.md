@@ -309,7 +309,7 @@ Foco em centro/alas tem probabilidade alvo de 70%, não quota obrigatória. Poss
 
 Seed, configuração, escalações iniciais, atributos e comandos permitem reprodução determinística. Snapshot inicial e resultado são persistidos. A mesma sequência de entrada produz o mesmo resultado offline/ao vivo; velocidade e presença de usuários não alteram probabilidades.
 
-Táticas persistem formação, estilo (`balanced`, `all_out_attack`, `counter_attack`), marcação (`light`, `heavy`, `very_heavy`) e foco (`normal`, `center`, `wings`). Formações suportadas: 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 4-5-1 e 3-4-3. O plano pré-jogo continua sendo aplicado offline; mudanças só afetam blocos futuros. Até cinco substituições por clube, sem reentrada, e até 30 comandos táticos aceitos por técnico. Comandos inviáveis geram rejeição, sem paralisar o jogo.
+Táticas persistem formação, estilo (`balanced`, `all_out_attack`, `counter_attack`), marcação (`light`, `heavy`, `very_heavy`) e foco (`normal`, `center`, `wings`). Formações suportadas: 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 4-5-1 e 3-4-3. O plano pré-jogo continua sendo aplicado offline; mudanças só afetam blocos futuros. Até cinco reservas escalados e três substituições por clube, sem reentrada, e até 30 comandos táticos aceitos por técnico. Comandos inviáveis geram rejeição, sem paralisar o jogo.
 
 Bots usam quatro presets (equilibrado, agressivo, contra-ataque e defensivo com marcação pesada), revisam estratégia em 45/65/80 minutos e substituem em 60/75. Reservas preservam energia até entrar. Menos de onze ativos ou clube inativo gera indisponibilidade/W.O.; o resultado normal é 3–0, ou 0–0 se ambos indisponíveis. Não são inventados jogadores para completar o time.
 

@@ -13,7 +13,7 @@ from app.config.physical import PhysicalConfig
 from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.services.discipline import DuelResolver, FoulResolver, PenaltyService
 
-MAX_SUBSTITUTIONS = 5
+MAX_SUBSTITUTIONS = 3
 FORMATIONS = {"4-4-2", "4-3-3", "4-2-3-1", "3-5-2", "5-3-2", "4-5-1", "3-4-3"}
 BOT_PRESETS = {
     "balanced": ("balanced", "light", "normal"),

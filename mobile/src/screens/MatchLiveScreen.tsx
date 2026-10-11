@@ -84,9 +84,9 @@ export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<Ro
         <Choices values={['light', 'heavy', 'very_heavy']} value={marking} onChange={setMarking} disabled={!enabled} />
         <Choices values={['normal', 'center', 'wings']} value={focus} onChange={setFocus} disabled={!enabled} />
         <Button title="Aplicar mudanças táticas" disabled={!enabled} onPress={() => send('combined_change', { formation, play_style: style, marking, attack_focus: focus })} />
-        <Text>Titulares · escolha quem sai · {team.substitutions_used}/5 substituições</Text>{team.lineup.map(p => <Button key={p.id} disabled={!enabled || (p.dismissed && !p.injured)} title={`${outgoing === p.id ? '✓ ' : ''}${p.name} · ${p.assigned_position} · Energia ${Math.round(p.energy)} · Condição ${Math.round(p.physical_condition)} · ${p.yellow_cards} amarelo(s)${p.injured ? ' · Lesionado' : ''}${p.dismissed && !p.injured ? ' · Expulso' : ''}`} onPress={() => setOutgoing(p.id)} />)}
+        <Text>Titulares · escolha quem sai · {team.substitutions_used}/3 substituições</Text>{team.lineup.map(p => <Button key={p.id} disabled={!enabled || (p.dismissed && !p.injured)} title={`${outgoing === p.id ? '✓ ' : ''}${p.name} · ${p.assigned_position} · Energia ${Math.round(p.energy)} · Condição ${Math.round(p.physical_condition)} · ${p.yellow_cards} amarelo(s)${p.injured ? ' · Lesionado' : ''}${p.dismissed && !p.injured ? ' · Expulso' : ''}`} onPress={() => setOutgoing(p.id)} />)}
         <Text>Banco · escolha quem entra</Text>{team.reserves.map(p => <Button key={p.id} disabled={!enabled || p.injured} title={`${incoming === p.id ? '✓ ' : ''}${p.name} · ${p.position} · Energia ${Math.round(p.energy)} · Condição ${Math.round(p.physical_condition)}`} onPress={() => setIncoming(p.id)} />)}
-        <Button title="Confirmar substituição" disabled={!enabled || !outgoing || !incoming || team.substitutions_used >= 5} onPress={() => { send('substitution', { out_player_id: outgoing, in_player_id: incoming }); setOutgoing(''); setIncoming(''); }} />
+        <Button title="Confirmar substituição" disabled={!enabled || !outgoing || !incoming || team.substitutions_used >= 3} onPress={() => { send('substitution', { out_player_id: outgoing, in_player_id: incoming }); setOutgoing(''); setIncoming(''); }} />
       </>}
       {!!notice && <Text>{notice}</Text>}
     </>}

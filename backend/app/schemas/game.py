@@ -34,7 +34,7 @@ class LineupInput(Input):
     manual_positions: bool = False
     formation: str
     starters: list[str] = Field(min_length=11, max_length=11)
-    reserves: list[str]
+    reserves: list[str] = Field(max_length=5)
 
 
 class MoneyInput(Input):

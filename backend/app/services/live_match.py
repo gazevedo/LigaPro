@@ -16,6 +16,7 @@ from pymongo import UpdateOne
 
 from app.models.game import public, utcnow
 from app.services.match_engine import (
+    MAX_SUBSTITUTIONS,
     MatchConfig,
     MatchEngine,
     MatchPlayer,
@@ -688,7 +689,7 @@ class MatchRoom:
                         or outgoing["dismissed"]
                         and not outgoing["injured"]
                         or incoming["injured"]
-                        or own["substitutions_used"] + len(pending_subs) >= 5
+                        or own["substitutions_used"] + len(pending_subs) >= MAX_SUBSTITUTIONS
                         or any(
                             incoming["id"] == r["engine_command"]["payload"]["in_player_id"]
                             or outgoing["id"] == r["engine_command"]["payload"]["out_player_id"]

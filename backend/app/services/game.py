@@ -203,6 +203,8 @@ class SquadService:
         players = self.repo.many(
             "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
         )
+        lineup = self.repo.find("lineups", {"_id": club["_id"]})
+        lineup = {**lineup, "reserves": lineup.get("reserves", [])[:5]}
         identities = [player["_id"] for player in players]
         contracts = {
             row["player_id"]: row
@@ -239,7 +241,7 @@ class SquadService:
                     for player in players
                 ],
                 "team_chemistry": ChemistryService().get(self.repo, club["_id"])["value"],
-                "lineup": self.repo.find("lineups", {"_id": club["_id"]}),
+                "lineup": lineup,
                 "formations": self.repo.rules()["formations"],
             }
         )
@@ -260,11 +262,11 @@ class SquadService:
                 {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
                 limit=None,
             )
-            if set(ids) != {
-                str(p["_id"]) for p in players if p.get("status") not in {"injured", "suspended"}
-            }:
+            if not set(ids).issubset(
+                {str(p["_id"]) for p in players if p.get("status") not in {"injured", "suspended"}}
+            ):
                 raise HTTPException(
-                    422, "Escalação deve incluir exatamente os jogadores do plantel."
+                    422, "Escalação deve incluir apenas jogadores disponíveis do plantel."
                 )
             selected = set(data.starters + data.reserves)
             if any(

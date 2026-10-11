@@ -5,7 +5,12 @@ from fastapi import HTTPException
 
 from app.models.game import public, utcnow
 from app.services.chemistry import ChemistryService
-from app.services.match_engine import MatchPlayer, arrange_formation, validate_commands
+from app.services.match_engine import (
+    MAX_SUBSTITUTIONS,
+    MatchPlayer,
+    arrange_formation,
+    validate_commands,
+)
 
 
 class TacticsService:
@@ -98,12 +103,12 @@ class TacticsService:
             if len(queued) >= 30:
                 raise HTTPException(422, "Limite de 30 comandos por clube.")
             if data.type == "substitution":
-                if sum(c["type"] == "substitution" for c in queued) >= 5:
-                    raise HTTPException(422, "Máximo de cinco substituições.")
+                if sum(c["type"] == "substitution" for c in queued) >= MAX_SUBSTITUTIONS:
+                    raise HTTPException(422, "Máximo de três substituições.")
                 lineup = repo.find("lineups", {"_id": club["_id"]})
                 starters, reserves = (
                     {str(i) for i in lineup["starters"]},
-                    {str(i) for i in lineup["reserves"]},
+                    {str(i) for i in lineup["reserves"][:5]},
                 )
                 for previous in sorted(queued + [command], key=lambda c: c["minute"]):
                     if previous["type"] != "substitution":

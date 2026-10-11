@@ -42,13 +42,13 @@ export function LineupEditor({ squad, formation }: { squad: Squad; formation: st
   const { width } = useWindowDimensions();
   const [starters, setStarters] = useState(() => arrangePlayers(squad.lineup.starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player && !unavailable(player.status)), formation, !!squad.lineup.manual_positions && squad.lineup.formation === formation).map(slot => slot.player.id));
   const [replacement, setReplacement] = useState<string | null>(null);
-  const [reserveIds, setReserveIds] = useState(squad.lineup.reserves.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
+  const [reserveIds, setReserveIds] = useState(squad.lineup.reserves.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))).slice(0, 5));
   const [error, setError] = useState<string | null>(null);
   const desired = useRef<Lineup | null>(null);
   const saving = useRef(false);
   const confirmed = useRef({ starters, reserves: reserveIds });
   const selected = starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
-  const reserves = [...reserveIds, ...squad.players.filter(player => !starters.includes(player.id) && !reserveIds.includes(player.id) && !unavailable(player.status)).map(player => player.id)].map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
+  const reserves = [...reserveIds, ...squad.players.filter(player => !starters.includes(player.id) && !reserveIds.includes(player.id) && !unavailable(player.status)).map(player => player.id)].slice(0, 5).map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
   const target = squad.players.find(player => player.id === replacement);
   const canSwap = (player: Player) => !target || (!starters.includes(target.id) && !starters.includes(player.id)) || (sector(target.position) === 'GOL') === (sector(player.position) === 'GOL');
   function tap(player: Player) {

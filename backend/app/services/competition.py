@@ -592,7 +592,9 @@ class CompetitionService:
             tactics["play_style"],
             tactics["marking"],
             tactics["attack_focus"],
-            [MatchPlayer.from_document(p) for p in pool if p["_id"] in lineup.get("reserves", [])],
+            [MatchPlayer.from_document(p) for p in pool if p["_id"] in lineup.get("reserves", [])][
+                :5
+            ],
             bool(repo.find("clubs", {"_id": club_id}, {"is_bot": 1}).get("is_bot", False)),
             ChemistryService().available(repo, club_id, pool_documents),
         )

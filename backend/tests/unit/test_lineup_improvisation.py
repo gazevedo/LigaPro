@@ -146,3 +146,22 @@ def test_out_of_position_reduces_all_effective_attributes_by_twenty_percent(mode
 def test_defenders_in_the_defensive_sector_are_not_marked_as_improvised():
     calculator = PlayerEffectiveStrengthCalculator(MatchConfig(), "classic")
     assert calculator.fit.calculate(MatchPlayer("player", "CB", "FB")) == 1
+
+
+def test_lineup_can_leave_players_out_and_select_only_five_reserves():
+    repo, players, data = setup_squad()
+    bench = [{"_id": ObjectId(), "position": "CB", "status": "available"} for _ in range(7)]
+    players.extend(bench)
+    data.reserves = [str(player["_id"]) for player in bench[:5]]
+    with (
+        patch("app.services.game.ChemistryService.lineup_change"),
+        patch("app.services.game.TacticsService.persist"),
+    ):
+        result = SquadService(repo).save(SimpleNamespace(id="user"), data)
+    assert result["reserves"] == data.reserves
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        LineupInput(
+            formation="4-4-2", starters=data.starters, reserves=[str(p["_id"]) for p in bench[:6]]
+        )
