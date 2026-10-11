@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Chaves de notificações · LigaPro</title>
+<style>
+*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#dceef8;color:#14243a;margin:0;padding:24px 16px}main{max-width:560px;margin:auto;background:white;padding:24px;border-radius:20px}h1{font-size:24px}p{line-height:1.5}button{background:#087f67;color:white;border:0;border-radius:8px;padding:14px;font:inherit;cursor:pointer;width:100%;margin:8px 0}label{display:block;font-weight:600;margin-top:20px}textarea,input{width:100%;padding:12px;margin-top:8px;font:14px monospace;border:1px solid #cddbe8;border-radius:6px}textarea{resize:none}small{display:block;line-height:1.5}#status{min-height:24px}
+</style>
+</head>
+<body><main>
+<h1>Chaves de notificações</h1>
+<p>Gere um par de chaves e copie os valores para as variáveis da hospedagem do backend.</p>
+<p>As chaves são geradas neste navegador e não são enviadas ao servidor. Guarde o mesmo par para as próximas publicações.</p>
+<button id="generate">Gerar chaves</button>
+<section id="keys" hidden>
+<label for="public">WEB_PUSH_PUBLIC_KEY</label><textarea id="public" rows="3" readonly></textarea>
+<button id="copy-public">Copiar chave pública</button>
+<label for="private">WEB_PUSH_PRIVATE_KEY</label><input id="private" type="password" readonly autocomplete="off">
+<button id="copy-private">Copiar chave privada</button>
+<small>A chave privada deve ficar somente na hospedagem do backend. Copie e guarde antes de fechar esta página.</small>
+<label for="subject">WEB_PUSH_SUBJECT</label><input id="subject" type="email" placeholder="seu@email.com" autocomplete="email">
+<button id="copy-subject">Copiar contato</button>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+const field = id => document.getElementById(id);
+const decode = value => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')), char => char.charCodeAt(0));
+const encode = value => btoa(String.fromCharCode(...value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+field('generate').onclick = async () => {
+  try {
+    if (field('public').value && !confirm('Gerar outro par? Guarde as chaves atuais antes de continuar.')) return;
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    const key = await crypto.subtle.exportKey('jwk', pair.privateKey);
+    field('public').value = encode(new Uint8Array([4, ...decode(key.x), ...decode(key.y)]));
+    field('private').value = key.d;
+    field('keys').hidden = false;
+    field('status').textContent = 'Chaves prontas. Copie os dois valores para o backend.';
+  } catch { field('status').textContent = 'Não foi possível gerar as chaves. Abra esta página pelo Chrome em HTTPS.'; }
+};
+async function copy(value) {
+  try { await navigator.clipboard.writeText(value); field('status').textContent = 'Copiado.'; }
+  catch { field('status').textContent = 'Não foi possível copiar automaticamente. Tente novamente no Chrome.'; }
+}
+field('copy-public').onclick = () => copy(field('public').value);
+field('copy-private').onclick = () => copy(field('private').value);
+field('copy-subject').onclick = () => {
+  if (!field('subject').value || !field('subject').checkValidity()) { field('status').textContent = 'Informe seu e-mail.'; return; }
+  return copy('mailto:' + field('subject').value.trim());
+};
+</script>
+</body></html>
