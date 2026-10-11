@@ -22,10 +22,9 @@ test('selecting a strategy saves immediately without a save button', async () =>
   await waitFor(() => expect(tacticsService.save).toHaveBeenCalledWith({ ...tactics, play_style: 'all_out_attack' }));
   expect(screen.queryByText('Salvar tática do clube')).toBeNull();
 });
-test('lineup tab saves a replacement automatically and excludes injured reserves', async () => {
+test('integrated lineup saves a replacement automatically and excludes injured reserves', async () => {
   await render(<TacticsScreen />);
   await screen.findByRole('combobox', { name: 'Formação' });
-  await fireEvent.press(screen.getByRole('tab', { name: 'Escalação' }));
   await fireEvent.press(screen.getByRole('combobox', { name: 'DEF 1' }));
   expect(screen.queryByRole('button', { name: 'Jogador 12 · 50' })).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Jogador 11 · 50' }));
@@ -39,4 +38,25 @@ test('failed strategy save keeps the previous strategy and shows the error', asy
   await fireEvent.press(screen.getByRole('button', { name: 'Pesada' }));
   await screen.findByText('Partida em andamento.');
   expect(screen.getByText('Leve')).toBeTruthy();
+});
+
+test('the strategy shows the pitch, roster and controls together and swaps a reserve from the pitch', async () => {
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  expect(screen.getByRole('combobox', { name: 'Formação' })).toBeTruthy();
+  expect(screen.getByText('Energia')).toBeTruthy();
+  expect(screen.queryByRole('tab', { name: 'Escalação' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Reserva Jogador 11' })).toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  await waitFor(() => expect(squadService.save).toHaveBeenCalledWith({ formation: '4-4-2', starters: starters.map(id => id === 'p1' ? 'p11' : id), reserves: ['p1'] }));
+});
+test('failed replacement keeps the original starter on the pitch', async () => {
+  jest.mocked(squadService.save).mockRejectedValueOnce(new Error('Não foi possível salvar a escalação.'));
+  await render(<TacticsScreen />);
+  await screen.findByLabelText('Campo: formação 4-4-2');
+  await fireEvent.press(screen.getByRole('button', { name: 'Substituir Jogador 1' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Reserva Jogador 11' }));
+  await screen.findByText('Não foi possível salvar a escalação.');
+  expect(screen.getByRole('button', { name: 'Substituir Jogador 1' })).toBeTruthy();
 });

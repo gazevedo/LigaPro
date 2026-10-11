@@ -1,45 +1,122 @@
-import { useState } from 'react';
-import { Text, View } from 'react-native';
-import { Squad } from '../types/game';
+import { ReactNode, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Player, Squad } from '../types/game';
 import { squadService } from '../services/squadService';
 import { useSquadStore } from '../stores/squadStore';
 import { ComboBox } from './ComboBox';
-import { Card, NotificationBubble, palette, useAction } from './GameUI';
+import { NotificationBubble, palette, useAction } from './GameUI';
 const unavailable = (status?: string) => ['injured', 'suspended', 'retired'].includes(status || '');
 const sector = (position: string) => position === 'GK' ? 'GOL' : ['CB', 'FB'].includes(position) ? 'DEF' : position === 'MID' ? 'MED' : position === 'ATT' ? 'ATA' : position;
-export function LineupEditor({ squad, formation }: { squad: Squad; formation: string }) {
-  const [starters, setStarters] = useState(squad.lineup.starters.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
-  const action = useAction();
-  const selected = squad.players.filter(player => starters.includes(player.id));
-  return <Card>
-    <Text style={{ color: palette.muted }}>Titulares: {starters.length}/11 · Entrosamento: {squad.team_chemistry ?? 40}/100</Text>
-    <NotificationBubble message={action.error} />
-    <View style={{ backgroundColor: '#3b9b77', borderRadius: 20, borderWidth: 3, borderColor: '#bcebd3', padding: 12, gap: 18 }}>
-      {['ATA', 'MED', 'DEF', 'GOL'].map(group => <View key={group} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, minHeight: 60 }}>
-        {selected.filter(player => sector(player.position) === group).map(player => <View key={player.id} style={{ alignItems: 'center', width: 76, gap: 4 }}>
-          <View style={{ backgroundColor: '#fff4c8', width: 34, height: 34, borderRadius: 12, borderWidth: 2, borderColor: '#18364a', justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontWeight: '800', color: palette.ink }}>{player.position}</Text></View>
-          <Text numberOfLines={1} style={{ fontSize: 11, color: '#fff', fontWeight: '700' }}>{player.name}</Text>
-        </View>)}
-        {!selected.some(player => sector(player.position) === group) && <Text style={{ color: '#d9f5e7', alignSelf: 'center' }}>{group}</Text>}
-      </View>)}
-    </View>
-    {['GOL', ...Object.keys(squad.formations[formation] ?? {})].flatMap(group => {
-      const count = group === 'GOL' ? 1 : squad.formations[formation][group];
-      const current = selected.filter(player => sector(player.position) === group);
-      return Array.from({ length: count }, (_, index) => {
-        const player = current[index];
-        return <ComboBox key={`${group}-${index}`} label={`${group} ${index + 1}`} value={player?.id ?? ''} disabled={action.busy}
-          options={squad.players.filter(candidate => sector(candidate.position) === group && !unavailable(candidate.status) && (!starters.includes(candidate.id) || candidate.id === player?.id)).map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.strength ?? candidate.overall}` }))}
-          onChange={identity => {
-            const next = player ? starters.map(id => id === player.id ? identity : id) : [...starters, identity];
-            setStarters(next);
-            if (next.length === 11) void action.run(async () => {
-              await squadService.save({ formation, starters: next, reserves: squad.players.filter(candidate => !next.includes(candidate.id) && !unavailable(candidate.status)).map(candidate => candidate.id) });
-              await useSquadStore.getState().load();
-            });
-          }} />;
-      });
-    })}
-
-  </Card>;
+function Shirt({ goalkeeper = false, reserve = false }: { goalkeeper?: boolean; reserve?: boolean }) {
+  const color = goalkeeper ? '#303743' : reserve ? '#e7c857' : '#288ac0';
+  return <View accessible={false} style={{ width: 32, height: 30, alignItems: 'center' }}>
+    <View style={{ position: 'absolute', top: 3, width: 32, height: 11, backgroundColor: color, borderRadius: 3 }} />
+    <View style={{ width: 20, height: 24, backgroundColor: color, borderRadius: 3, borderBottomWidth: 3, borderBottomColor: '#e7c857' }} />
+    <View style={{ width: 18, height: 6, backgroundColor: goalkeeper ? '#202630' : '#f0db78' }} />
+  </View>;
 }
+function PlayerMarker({ player, reserve = false }: { player: Player; reserve?: boolean }) {
+  return <>
+    <Shirt goalkeeper={sector(player.position) === 'GOL'} reserve={reserve} />
+    <Text numberOfLines={1} style={styles.playerName}>{player.name}</Text>
+    <Text style={styles.playerEnergy}>{sector(player.position)} · {player.energy ?? player.physical_condition ?? 100}%</Text>
+  </>;
+}
+export function LineupEditor({ squad, formation, children }: { squad: Squad; formation: string; children?: ReactNode }) {
+  const { width } = useWindowDimensions();
+  const [starters, setStarters] = useState(squad.lineup.starters.filter(id => squad.players.some(player => player.id === id && !unavailable(player.status))));
+  const [replacement, setReplacement] = useState<string | null>(null);
+  const action = useAction();
+  const selected = starters.map(id => squad.players.find(player => player.id === id)).filter((player): player is Player => !!player);
+  const reserves = squad.players.filter(player => !starters.includes(player.id) && !unavailable(player.status));
+  const groups = ['ATA', 'MED', 'DEF', 'GOL'].flatMap(group => {
+    const players = selected.filter(player => sector(player.position) === group);
+    return group === 'MED' && players.length === 4 ? [players.slice(0, 2), players.slice(2)] : [players];
+  });
+  function replace(player: Player | undefined, identity: string) {
+    if (action.busy) return;
+    const previous = starters;
+    const next = player ? starters.map(id => id === player.id ? identity : id) : [...starters, identity];
+    setStarters(next); setReplacement(null);
+    if (next.length === 11) void action.run(async () => {
+      try {
+        await squadService.save({ formation, starters: next, reserves: squad.players.filter(candidate => !next.includes(candidate.id) && !unavailable(candidate.status)).map(candidate => candidate.id) });
+        await useSquadStore.getState().load();
+      } catch (error) { setStarters(previous); throw error; }
+    });
+  }
+  return <View style={{ gap: 12 }}>
+    <Text style={{ color: palette.muted, fontSize: 12 }}>Salvamento automático · Titulares: {starters.length}/11 · Entrosamento: {squad.team_chemistry ?? 40}/100</Text>
+    <NotificationBubble message={action.error} />
+    <View style={{ flexDirection: width >= 720 ? 'row' : 'column', gap: 12, alignItems: 'stretch' }}>
+      <View style={{ flex: width >= 720 ? 3 : undefined, flexDirection: 'row', backgroundColor: '#486b21', padding: 8, gap: 6, borderRadius: 8 }}>
+        <View accessibilityLabel={`Campo: formação ${formation}`} style={styles.pitch}>
+          {Array.from({ length: 10 }, (_, index) => <View key={index} style={{ position: 'absolute', top: `${index * 10}%`, height: '10%', left: 0, right: 0, backgroundColor: index % 2 ? '#41681f' : '#4a7624' }} />)}
+          <View pointerEvents="none" style={styles.boundary} />
+          <View pointerEvents="none" style={styles.halfway} />
+          <View pointerEvents="none" style={styles.circle} />
+          <View pointerEvents="none" style={[styles.penalty, { top: 8 }]} />
+          <View pointerEvents="none" style={[styles.penalty, { bottom: 8 }]} />
+          <View pointerEvents="none" style={[styles.goalArea, { top: 8 }]} />
+          <View pointerEvents="none" style={[styles.goalArea, { bottom: 8 }]} />
+          <Text style={styles.formation}>{formation}</Text>
+          <View style={styles.positions}>{groups.map((players, index) => <View key={index} style={styles.row}>
+            {players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Substituir ${player.name}`} disabled={action.busy} onPress={() => setReplacement(player.id)} style={[styles.marker, replacement === player.id && styles.activeMarker]}>
+              <PlayerMarker player={player} />
+            </Pressable>)}
+          </View>)}</View>
+        </View>
+        <View style={{ width: 68, gap: 10, alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Reservas</Text>
+          <ScrollView style={{ maxHeight: 450 }} contentContainerStyle={{ gap: 12 }}>
+            {reserves.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Reserva ${player.name}`} disabled={!replacement || action.busy || sector(player.position) !== sector(selected.find(item => item.id === replacement)?.position ?? '')} onPress={() => replace(selected.find(item => item.id === replacement), player.id)} style={styles.marker}><PlayerMarker player={player} reserve /></Pressable>)}
+          </ScrollView>
+        </View>
+      </View>
+      <View style={{ flex: width >= 720 ? 2 : undefined, gap: 12 }}>
+        <View style={styles.roster}>
+          <View style={styles.rosterRow}><Text style={styles.position}>Pos.</Text><Text style={[styles.rosterName, { fontWeight: '700' }]}>Nome</Text><Text style={styles.number}>Força</Text><Text style={styles.number}>Energia</Text></View>
+          <ScrollView style={{ maxHeight: 310 }}>
+            {squad.players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`${player.name}, ${starters.includes(player.id) ? 'titular' : 'reserva'}, força ${player.strength ?? player.overall}`} disabled={action.busy || unavailable(player.status) || !replacement || starters.includes(player.id) || sector(player.position) !== sector(selected.find(item => item.id === replacement)?.position ?? '')} onPress={() => replace(selected.find(item => item.id === replacement), player.id)} style={[styles.rosterRow, { backgroundColor: starters.includes(player.id) ? '#e1efdb' : '#fff', opacity: unavailable(player.status) ? 0.45 : 1 }]}>
+              <Text style={styles.position}>{sector(player.position)}</Text><Text numberOfLines={1} style={styles.rosterName}>{player.name}</Text><Text style={styles.number}>{player.strength ?? player.overall}</Text><Text style={styles.number}>{player.energy ?? player.physical_condition ?? 100}%</Text>
+            </Pressable>)}
+          </ScrollView>
+        </View>
+        {children}
+      </View>
+    </View>
+    <Text style={{ color: palette.muted, fontSize: 12 }}>Selecione um titular no campo e um reserva da mesma posição para substituir. As alterações são salvas automaticamente.</Text>
+    <View style={{ gap: 10 }}>
+      {['GOL', ...Object.keys(squad.formations[formation] ?? {})].flatMap(group => {
+        const count = group === 'GOL' ? 1 : squad.formations[formation][group];
+        const current = selected.filter(player => sector(player.position) === group);
+        return Array.from({ length: count }, (_, index) => {
+          const player = current[index];
+          return <ComboBox key={`${group}-${index}`} label={`${group} ${index + 1}`} value={player?.id ?? ''} disabled={action.busy}
+            options={squad.players.filter(candidate => sector(candidate.position) === group && !unavailable(candidate.status) && (!starters.includes(candidate.id) || candidate.id === player?.id)).map(candidate => ({ value: candidate.id, label: `${candidate.name} · ${candidate.strength ?? candidate.overall}` }))}
+            onChange={identity => replace(player, identity)} />;
+        });
+      })}
+    </View>
+  </View>;
+}
+const styles = StyleSheet.create({
+  pitch: { flex: 1, height: 470, overflow: 'hidden', position: 'relative' },
+  boundary: { position: 'absolute', top: 8, bottom: 8, left: 6, right: 6, borderWidth: 1, borderColor: '#dce8c3' },
+  halfway: { position: 'absolute', top: '50%', left: 6, right: 6, height: 1, backgroundColor: '#dce8c3' },
+  circle: { position: 'absolute', top: '40%', left: '30%', width: '40%', height: '20%', borderRadius: 100, borderWidth: 1, borderColor: '#dce8c3' },
+  penalty: { position: 'absolute', left: '16%', right: '16%', height: '17%', borderWidth: 1, borderColor: '#dce8c3' },
+  goalArea: { position: 'absolute', left: '32%', right: '32%', height: '7%', borderWidth: 1, borderColor: '#dce8c3' },
+  formation: { position: 'absolute', top: 14, alignSelf: 'center', color: '#f6e5a2', fontSize: 16, fontWeight: '800' },
+  positions: { flex: 1, paddingTop: 45, paddingBottom: 18, justifyContent: 'space-between' },
+  row: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', minHeight: 62 },
+  marker: { flexShrink: 1, width: 66, alignItems: 'center', gap: 2, paddingVertical: 3 },
+  activeMarker: { backgroundColor: '#ffffff33', borderRadius: 6 },
+  playerName: { color: '#fff', fontSize: 10, fontWeight: '700', maxWidth: '100%' },
+  playerEnergy: { color: '#edf3de', fontSize: 9 },
+  roster: { borderWidth: 1, borderColor: '#b5c9a2', backgroundColor: '#fff', borderRadius: 6, overflow: 'hidden' },
+  rosterRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#edf1e8', gap: 4 },
+  position: { width: 30, fontSize: 11, color: palette.ink },
+  rosterName: { flex: 1, fontSize: 12, color: palette.ink },
+  number: { width: 42, textAlign: 'right', fontSize: 11, color: palette.ink },
+});
