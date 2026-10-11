@@ -7,7 +7,7 @@ function bumpVersion(version, kind = 'patch') {
   if (!['major', 'minor', 'patch', 'revision'].includes(field) || kind === 'revision') throw new Error(`Invalid version update: ${kind}`);
   if (!Number.isSafeInteger(version[field] + 1)) throw new Error('Version exceeds supported range');
   const next = { ...version, [field]: version[field] + 1 };
-  if (kind !== 'hotfix') next.revision = 1;
+  if (kind !== 'hotfix') next.revision = 0;
   if (kind === 'major') next.minor = 0;
   if (kind === 'major' || kind === 'minor') next.patch = 0;
   return next;
