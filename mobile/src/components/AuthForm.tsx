@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, Keyboar
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionButton, Card, Field, GamePage, NotificationBubble, palette } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
+import { useClubStore } from '../stores/clubStore';
 import { useAuthStore } from '../stores/authStore';
 const appVersion = `${version.major}.${version.minor}.${version.patch}`;
 export function AuthForm({ register = false, onCreateAccount, onLogin, background }: {
@@ -16,7 +17,9 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
   const [confirm, setConfirm] = useState('');
   const [info, setInfo] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
-  const auth = useAuthStore();
+  const session = useAuthStore();
+  const clubReady = useClubStore(state => state.data !== null);
+  const auth = { ...session, loading: session.loading || (session.authenticated && !clubReady) };
   async function submit() {
     auth.clearError(); setValidation(null);
     if (!email.trim() || !password || (register && !name.trim())) {

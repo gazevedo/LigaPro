@@ -11,21 +11,21 @@ import { financeService } from '../services/financeService';
 import { developmentService } from '../services/developmentService';
 import { marketService } from '../services/marketService';
 
-export const useSettingsStore = domainStore(settingsService.list);
-export const useClubDetailsStore = domainStore(clubService.get);
-export const useHistoryStore = domainStore(historyService.get);
-export const useCatalogStore = domainStore(clubService.catalog);
-export const useCompetitionStore = domainStore(competitionService.get);
-export const useCompetitionMatchesStore = domainStore(competitionService.matches);
-export const useCupStore = domainStore(cupService.get);
-export const useLeagueStatisticsStore = domainStore(() => statisticsService.competition('league', 'goals'));
-export const useCupStatisticsStore = domainStore(() => statisticsService.competition('cup', 'goals'));
-export const useBankStore = domainStore(financeService.bank);
-export const useTicketingStore = domainStore(financeService.tickets);
-export const useSponsorsStore = domainStore(financeService.sponsors);
-export const useTrainingStore = domainStore(developmentService.training);
-export const useYouthStore = domainStore(developmentService.youth);
-export const useMarketPlayersStore = domainStore(marketService.search);
+export const useSettingsStore = domainStore(settingsService.list, 'useSettingsStore');
+export const useClubDetailsStore = domainStore(clubService.get, 'useClubDetailsStore');
+export const useHistoryStore = domainStore(historyService.get, 'useHistoryStore');
+export const useCatalogStore = domainStore(clubService.catalog, 'useCatalogStore');
+export const useCompetitionStore = domainStore(competitionService.get, 'useCompetitionStore');
+export const useCompetitionMatchesStore = domainStore(competitionService.matches, 'useCompetitionMatchesStore');
+export const useCupStore = domainStore(cupService.get, 'useCupStore');
+export const useLeagueStatisticsStore = domainStore(() => statisticsService.competition('league', 'goals'), 'useLeagueStatisticsStore');
+export const useCupStatisticsStore = domainStore(() => statisticsService.competition('cup', 'goals'), 'useCupStatisticsStore');
+export const useBankStore = domainStore(financeService.bank, 'useBankStore');
+export const useTicketingStore = domainStore(financeService.tickets, 'useTicketingStore');
+export const useSponsorsStore = domainStore(financeService.sponsors, 'useSponsorsStore');
+export const useTrainingStore = domainStore(developmentService.training, 'useTrainingStore');
+export const useYouthStore = domainStore(developmentService.youth, 'useYouthStore');
+export const useMarketPlayersStore = domainStore(marketService.search, 'useMarketPlayersStore');
 
 // Share the dashboard's upcoming matches between background loading and remounts.
 export const useUpcomingMatchesStore = domainStore(async () => {
@@ -35,4 +35,4 @@ export const useUpcomingMatchesStore = domainStore(async () => {
     const match = upcoming.find(item => item.id === event.reference_id);
     return match ? [{ ...match, date: event.date }] : [];
   });
-});
+}, 'upcoming-matches');

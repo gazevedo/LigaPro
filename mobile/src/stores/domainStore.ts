@@ -1,8 +1,15 @@
 import { create } from 'zustand';
 import { useAuthStore } from './authStore';
+import { localGameCache } from '../services/localGameCache';
 const resets = new Set<() => void>();
-export function resetDomainStores() { for (const reset of resets) reset(); }
-export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Promise<T>) {
+let activeClubId: string | undefined;
+export function setDomainClubId(clubId: string | undefined) { activeClubId = clubId; }
+export function resetDomainStores() {
+  for (const reset of resets) reset();
+  const userId = useAuthStore.getState().user?.id;
+  if (userId) void localGameCache.clearUser(userId);
+}
+export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Promise<T>, cacheName?: string) {
   let generation = 0;
   let ownerGeneration = 0;
   let currentKey = '';
@@ -10,18 +17,39 @@ export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Prom
   const pending = new Map<string, Promise<void>>();
   const latestRequest = new Map<string, number>();
   const keyFor = (args: A) => JSON.stringify(args);
+  const cacheOwner = () => {
+    const userId = useAuthStore.getState().user?.id;
+    return userId ? cacheName === 'club-status' ? userId : `${userId}:${activeClubId ?? 'none'}` : undefined;
+  };
   const store = create<{ data: T | null; loading: boolean; error: string | null; load: (...args: A) => Promise<void>; ensure: (...args: A) => Promise<void>; refresh: (...args: A) => Promise<void>; reset: () => void }>((set, get) => ({
     data: null, loading: false, error: null,
     load: (...args) => {
       const ticket = ++generation;
       const owner = ownerGeneration;
+      const diskOwner = cacheOwner();
       const key = keyFor(args);
       const previous = currentKey === key ? get().data : cached.get(key) ?? null;
       currentKey = key;
       latestRequest.set(key, ticket);
       set({ data: previous, loading: previous === null, error: null });
       const request = (async () => {
-        try { const data = await loader(...args); if (owner === ownerGeneration && latestRequest.get(key) === ticket) cached.set(key, data); if (ticket === generation) set({ data }); }
+        try {
+          if (previous === null && cacheName && diskOwner) {
+            const saved = await localGameCache.read<T>(diskOwner, cacheName, key);
+            if (owner !== ownerGeneration || diskOwner !== cacheOwner()) return;
+            if (saved !== null && latestRequest.get(key) === ticket) {
+              cached.set(key, saved);
+              if (ticket === generation) set({ data: saved, loading: false });
+            }
+          }
+          const data = await loader(...args);
+          if (owner === ownerGeneration && (!diskOwner || diskOwner === cacheOwner()) && latestRequest.get(key) === ticket) {
+            cached.set(key, data);
+            if (ticket === generation) set({ data });
+            if (cacheName && diskOwner && ticket !== generation) await localGameCache.write(diskOwner, cacheName, key, data,
+              () => owner === ownerGeneration && diskOwner === cacheOwner() && latestRequest.get(key) === ticket);
+          }
+        }
         catch (error) { if (ticket === generation) set({ error: error instanceof Error ? error.message : 'Falha ao carregar.' }); }
         finally { if (ticket === generation) set({ loading: false }); }
       })();
@@ -44,7 +72,18 @@ export function domainStore<T, A extends unknown[]>(loader: (...args: A) => Prom
     refresh: (...args) => pending.get(keyFor(args)) ?? get().load(...args),
     reset: () => { generation++; ownerGeneration++; currentKey = ''; cached.clear(); pending.clear(); latestRequest.clear(); set({ data: null, loading: false, error: null }); },
   }));
-  useAuthStore.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) store.getState().reset(); });
+  // Persist successful local mutations (for example, reading inbox messages) too.
+  store.subscribe((state, previous) => {
+    const diskOwner = cacheOwner();
+    if (!cacheName || !diskOwner || !state.data || state.data === previous.data) return;
+    const owner = ownerGeneration;
+    const query = currentKey || '[]';
+    void localGameCache.write(diskOwner, cacheName, query, state.data,
+      () => owner === ownerGeneration && diskOwner === cacheOwner());
+  });
+  useAuthStore.subscribe((state, previous) => {
+    if (state.user?.id !== previous.user?.id) { activeClubId = undefined; store.getState().reset(); }
+  });
   resets.add(store.getState().reset);
   return store;
 }

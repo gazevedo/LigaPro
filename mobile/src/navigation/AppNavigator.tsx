@@ -78,7 +78,7 @@ export function AppNavigator() {
   }, [auth.authenticated, navigationRef]);
   return <SafeAreaProvider>
     <SwipeBack canGoBack={() => navigationRef.isReady() && navigationRef.canGoBack()} goBack={() => navigationRef.goBack()}><NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => browserBack.current?.sync(navigationRef.getRootState())} onStateChange={state => browserBack.current?.sync(state)}>
-      {auth.authenticated ? <GameBackground>{(game.data && !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
+      {auth.authenticated && game.data ? <GameBackground>{(game.data && !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />

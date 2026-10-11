@@ -31,7 +31,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
 
   return <GamePage>
     <Card><View style={styles.hero}>
-      <ClubBadge badge={club?.badge} name={club?.name} />
+      {club && <ClubBadge badge={club.badge} name={club.name} />}
       <View style={styles.identity}>
         <Text style={styles.clubName}>{club?.name}</Text>
         <UpcomingMatches open={id => navigation.navigate('MatchLive', { id })} />

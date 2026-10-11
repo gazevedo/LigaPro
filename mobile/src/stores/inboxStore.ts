@@ -12,7 +12,7 @@ async function inboxPage(offset = 0) {
     if (ticket === readVersion) return page;
   }
 }
-export const useInboxStore = domainStore(() => inboxPage());
+export const useInboxStore = domainStore(() => inboxPage(), 'inbox');
 
 function owner() { return `${useAuthStore.getState().user?.id}:${useClubStore.getState().data?.club?.id}`; }
 

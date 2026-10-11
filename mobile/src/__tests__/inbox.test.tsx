@@ -6,6 +6,7 @@ import { readMessage, useInboxStore } from '../stores/inboxStore';
 import { useAuthStore } from '../stores/authStore';
 import { useClubStore } from '../stores/clubStore';
 
+jest.mock('../services/localGameCache', () => ({ localGameCache: { read: jest.fn(async () => null), write: jest.fn(async () => undefined), clearUser: jest.fn(async () => undefined) } }));
 jest.mock('../services/historyService', () => ({ historyService: { inbox: jest.fn(), markRead: jest.fn() } }));
 const message = { id: 'one', type: 'financial', title: 'Receita registrada', body: 'Seu clube recebeu uma premiação.', created_at: '2026-10-06T15:00:00Z', read: false };
 const inbox: Inbox = { items: [message, { ...message, id: 'two', title: 'Nova contratação' }], total: 2, unread_count: 2 };
@@ -69,6 +70,7 @@ test('a GET started before a read cannot restore an unread badge', async () => {
     .mockResolvedValueOnce({ ...inbox, unread_count: 1, items: inbox.items.map(item => item.id === 'one' ? { ...item, read: true } : item) });
   await act(async () => {
     const loading = useInboxStore.getState().load();
+    await waitFor(() => expect(historyService.inbox).toHaveBeenCalledTimes(1));
     await readMessage('one');
     finish(structuredClone(inbox));
     await loading;
