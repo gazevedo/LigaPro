@@ -3,6 +3,7 @@ import { ActivityIndicator, ImageBackground, Pressable, ScrollView, Text, TextIn
 export const palette = { ink: '#14243a', muted: '#64748b', primary: '#087f67', background: '#f4f7fc', border: '#cddbe8' };
 export const money = (amount: number) => (amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 export function NotificationBubble({ message, tone = 'error' }: { message?: string | null; tone?: 'error' | 'info' }) {
+  if (tone === 'error' && (message === 'O servidor demorou para responder. Verifique sua conexão e tente novamente.' || message === 'Não foi possível conectar ao servidor. Verifique sua conexão.')) return null;
   return message ? <Bubble key={message} message={message} tone={tone} /> : null;
 }
 function Bubble({ message, tone }: { message: string; tone: 'error' | 'info' }) {
