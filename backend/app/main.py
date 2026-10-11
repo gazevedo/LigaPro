@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from time import monotonic
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -22,6 +23,18 @@ from app.services.push_notifications import send_match_reminders
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+
+async def run_game_maintenance(manager, repository, config):
+    for name, operation in (
+        ("live", manager.start_due),
+        ("scheduled", lambda: asyncio.to_thread(process_due, repository)),
+        ("reminders", lambda: asyncio.to_thread(send_match_reminders, repository, config)),
+    ):
+        try:
+            await operation()
+        except Exception:
+            logger.exception("Game maintenance stage failed: %s", name)
 
 
 @asynccontextmanager
@@ -54,14 +67,32 @@ async def lifespan(app: FastAPI):
         app.state.match_rooms = MatchRoomManager(repository)
         await app.state.match_rooms.recover()
 
+        running = False
+        last_attempt = float("-inf")
+        request_task = None
+
+        async def tick():
+            nonlocal running, last_attempt
+            if running:
+                return
+            running = True
+            last_attempt = monotonic()
+            try:
+                await run_game_maintenance(app.state.match_rooms, repository, config)
+            finally:
+                running = False
+
+        def request_tick():
+            nonlocal request_task
+            if not running and monotonic() - last_attempt >= 30:
+                if request_task is None or request_task.done():
+                    request_task = asyncio.create_task(tick())
+
+        app.state.request_game_tick = request_tick
+
         async def maintenance():
             while True:
-                try:
-                    await app.state.match_rooms.start_due()
-                    await asyncio.to_thread(process_due, repository)
-                    await asyncio.to_thread(send_match_reminders, repository, config)
-                except Exception as exc:
-                    logger.error("Game maintenance failed (%s)", type(exc).__name__)
+                await tick()
                 await asyncio.sleep(30)
 
         task = asyncio.create_task(maintenance())
@@ -69,6 +100,10 @@ async def lifespan(app: FastAPI):
         try:
             yield
         finally:
+            app.state.request_game_tick = lambda: None
+            if request_task and not request_task.done():
+                request_task.cancel()
+                await asyncio.gather(request_task, return_exceptions=True)
             await app.state.match_rooms.close()
             task.cancel()
             try:
@@ -82,6 +117,15 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     config = get_settings()
     app = FastAPI(title="LigaPro API", version="0.1.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def refresh_due_games(request: Request, call_next):
+        if request.url.path in {"/api/calendar", "/api/matches/upcoming", "/api/game/status"}:
+            kick = getattr(app.state, "request_game_tick", None)
+            if kick:
+                kick()
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,

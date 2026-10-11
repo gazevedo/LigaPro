@@ -145,6 +145,49 @@ class CompetitionRulesTests(unittest.TestCase):
         )
         repo.transaction.assert_not_called()
 
+    def test_calendar_returns_actual_status_and_score_from_match_documents(self):
+        repo = Mock()
+        repo.owned.return_value = {"_id": "club"}
+        repo.find.return_value = {"league_schedule_revision": 2}
+        events = [{"_id": "event", "reference_id": "match", "date": "past", "status": "scheduled"}]
+        repo.many.side_effect = lambda collection, *args, **kwargs: (
+            events
+            if collection == "calendar_events"
+            else [{"_id": "match", "status": "completed", "home_goals": 2, "away_goals": 1}]
+            if collection == "matches"
+            else []
+        )
+        result = CalendarService(repo).get(
+            SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
+        )
+        self.assertEqual(result[0]["id"], "event")
+        self.assertEqual(result[0]["status"], "completed")
+        self.assertEqual(result[0]["home_goals"], 2)
+        self.assertEqual(repo.many.call_count, 4)
+
+    def test_one_failed_match_does_not_block_other_due_matches(self):
+        repo = Mock()
+        now = datetime(2026, 10, 11, tzinfo=UTC)
+        repo.many.side_effect = [
+            [{"_id": "broken", "date": now}],
+            [],
+            [],
+            [{"_id": "next", "date": now}],
+            [],
+            [],
+            [],
+            [],
+            [],
+        ]
+        service = CompetitionService(repo)
+        with (
+            patch("app.services.live_match.busy_clubs", return_value=set()),
+            patch.object(service, "play", side_effect=[RuntimeError("broken"), {}]) as play,
+        ):
+            service.play_due({"_id": "season"}, now)
+        self.assertEqual(play.call_count, 2)
+        self.assertIn("broken", repo.many.call_args_list[3].args[1]["_id"]["$nin"])
+
     def test_bot_name_combinations_are_varied_and_reproducible(self):
         names = {club_name(Random(seed)) for seed in range(30)}
         self.assertGreater(len(names), 20)

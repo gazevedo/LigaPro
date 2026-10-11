@@ -1,5 +1,6 @@
 """Persistent league slots preserve sporting history when a human replaces a bot."""
 
+import logging
 from datetime import timedelta
 from random import Random
 
@@ -25,6 +26,8 @@ from app.services.player_morale import PlayerMoraleService
 from app.services.player_ratings import PlayerRatingService
 from app.services.player_statistics import PlayerStatisticsService, match_player_summaries
 from app.services.tactics import TacticsService
+
+logger = logging.getLogger(__name__)
 
 
 def division_name(tier):
@@ -792,12 +795,14 @@ class CompetitionService:
 
     def play_due(self, season, now):
         self.repo.transaction(lambda repo: (self.lock(repo), CupService.ensure(repo, season)))
+        attempted = set()
         while True:
             from app.services.live_match import busy_clubs
 
             busy = busy_clubs(self.repo)
             query = {
                 "season_id": season["_id"],
+                "_id": {"$nin": list(attempted)},
                 "status": "scheduled",
                 "date": {"$lte": now},
                 "home_club_id": {"$nin": list(busy)},
@@ -832,14 +837,18 @@ class CompetitionService:
             if not options:
                 break
             _, kind, identity = min(options, key=lambda row: (row[0], row[1]))
-            if kind == "cup":
-                CupService(self.repo).play(identity, now)
-            elif kind == "friendly":
-                from app.services.season_calendar import FriendlyService
+            attempted.add(identity)
+            try:
+                if kind == "cup":
+                    CupService(self.repo).play(identity, now)
+                elif kind == "friendly":
+                    from app.services.season_calendar import FriendlyService
 
-                FriendlyService(self.repo).play(identity, now)
-            else:
-                self.play(identity, now)
+                    FriendlyService(self.repo).play(identity, now)
+                else:
+                    self.play(identity, now)
+            except Exception:
+                logger.exception("Scheduled match failed: %s %s", kind, identity)
 
     def process_due(self, now=None):
         self.ensure_lock(self.repo)

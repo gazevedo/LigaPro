@@ -1,3 +1,5 @@
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 import { calendarMonthFilters } from '../services/prefetchService';
 import { useScreenRefresh } from '../components/useScreenRefresh';
 import { useState } from 'react';
@@ -5,7 +7,7 @@ import { Pressable, Text, View } from 'react-native';
 import { useCalendarStore } from '../stores/calendarStore';
 import { ActionButton, Card, GamePage, palette } from '../components/GameUI';
 const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-export function CalendarScreen() {
+export function CalendarScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Calendar'>) {
   const store = useCalendarStore();
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selected, setSelected] = useState(() => new Date().getDate());
@@ -24,7 +26,7 @@ export function CalendarScreen() {
         return <View key={index} style={{ width: '14.28%', height: 48 }}>{day !== null && <Pressable accessibilityRole="button" accessibilityLabel={`Dia ${day}${hasEvents ? ', com eventos' : ''}`} accessibilityState={{ selected: day === selected }} onPress={() => setSelected(day)} style={{ flex: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: day === selected ? '#c9ecdd' : dayKey(date(day)) === today ? '#fff2be' : '#fff' }}><Text style={{ color: palette.ink, fontWeight: '700' }}>{day}</Text>{hasEvents && <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: palette.primary, marginTop: 4 }} />}</Pressable>}</View>;
       })}</View>
     </Card><Text style={{ fontSize: 20, fontWeight: '800', color: palette.ink }}>{date(selected).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}</Text>
-    {selectedEvents.map(event => <Card key={event.id}><Text style={{ fontWeight: '700', color: palette.ink }}>{event.title}</Text><Text style={{ color: palette.muted }}>{new Date(event.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text></Card>)}
+    {selectedEvents.map(event => <Card key={event.id}><Text style={{ fontWeight: '700', color: palette.ink }}>{event.title}</Text><Text style={{ color: palette.muted }}>{new Date(event.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</Text>{event.status && <Text style={{ color: event.status === 'live' ? palette.primary : palette.muted }}>{({ scheduled: 'Agendada', live: 'Em andamento', completed: 'Concluída', pending: 'Aguardando confirmação', cancelled: 'Cancelada' } as Record<string, string>)[event.status] ?? event.status}{event.status === 'completed' && event.home_goals !== undefined && event.away_goals !== undefined ? ` · ${event.home_goals} × ${event.away_goals}` : ''}</Text>}{event.reference_id && event.status === 'live' && <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: event.reference_id! })} />}{event.reference_id && event.status === 'completed' && <ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: event.reference_id! })} />}</Card>)}
     {!selectedEvents.length && <Card><Text style={{ color: palette.muted }}>Nenhum evento neste dia.</Text></Card>}
   </GamePage>;
 }

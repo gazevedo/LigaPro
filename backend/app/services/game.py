@@ -529,7 +529,31 @@ class CalendarService:
             raise HTTPException(422, "Período inválido.")
         if dates:
             query["date"] = dates
-        return public(self.repo.many("calendar_events", query, limit=500, sort=[("date", 1)]))
+        events = self.repo.many("calendar_events", query, limit=500, sort=[("date", 1)])
+        references = [event["reference_id"] for event in events if event.get("reference_id")]
+        matches = {}
+        if references:
+            for collection in ("matches", "competition_matches", "friendly_matches"):
+                for match in self.repo.many(
+                    collection,
+                    {"_id": {"$in": references}},
+                    limit=None,
+                    projection={"status": 1, "home_goals": 1, "away_goals": 1},
+                ):
+                    matches[match["_id"]] = match
+        return public(
+            [
+                {
+                    **event,
+                    **{
+                        key: value
+                        for key, value in matches.get(event.get("reference_id"), {}).items()
+                        if key != "_id"
+                    },
+                }
+                for event in events
+            ]
+        )
 
 
 class MarketService:
