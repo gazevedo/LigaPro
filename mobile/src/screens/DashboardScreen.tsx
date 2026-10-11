@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import version from '../../version.json';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ClubBadge } from '../components/ClubBadge';
@@ -7,6 +8,8 @@ import { UpcomingMatches } from '../components/UpcomingMatches';
 import { RootStackParamList } from '../navigation/types';
 import { useClubStore } from '../stores/clubStore';
 import { Card, GamePage, palette } from '../components/GameUI';
+
+const appVersion = `${version.major}.${version.minor}.${version.patch}`;
 
 type Shortcut = { icon: DashboardIconName; title: string; open: () => void; disabled?: boolean };
 
@@ -48,10 +51,12 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.tileTitle}>{shortcut.title}</Text>
       </Pressable>)}
     </View>
+    <Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text>
   </GamePage>;
 }
 
 const styles = StyleSheet.create({
+  version: { textAlign: 'center', fontSize: 12, color: palette.muted, paddingTop: 8 },
   hero: { flexDirection: 'row', gap: 20, alignItems: 'center' },
   identity: { flex: 1, gap: 8 },
   clubName: { fontSize: 30, fontWeight: '800', color: palette.ink },
