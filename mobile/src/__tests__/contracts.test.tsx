@@ -57,13 +57,15 @@ test('rejects invalid duration and displays financial rejection', async () => {
   await fireEvent.press(screen.getByText('Renovar contrato'));
   await screen.findByText('Saldo insuficiente para a nova folha mensal.');
 });
-test('finance displays payroll, individual cost and salary history', async () => {
+test('finance separates payroll and contracts from the balance without history', async () => {
   jest.mocked(financeService.get).mockResolvedValue({ balance: 10000, transactions: [], monthly_payroll: 5000, total_contract_cost: 120000, salary_costs: [{ player_id: 'p1', name: 'Pedro', salary: 5000, expires_at: contract.expires_at, status: 'expiring' }], salary_history: [{ id: 'payment1', amount: -5000, category: 'player_salary', created_at: '2026-01-01T12:00:00Z' }] });
   await render(<FinanceScreen />);
+  await fireEvent.press(screen.getByRole('tab', { name: 'Folha e contratos' }));
   await screen.findByText(/Pedro · salário mensal/);
   expect(screen.getByText(/Folha mensal:/)).toBeTruthy();
   expect(screen.getByText(/Custo restante dos contratos:/)).toBeTruthy();
-  expect(screen.getByText('Histórico salarial')).toBeTruthy();
+  expect(screen.queryByText('Histórico salarial')).toBeNull();
+  expect(screen.queryByText('Movimentações')).toBeNull();
 });
 test('market filters free players', async () => {
   const input = { navigation: { navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Market'>;

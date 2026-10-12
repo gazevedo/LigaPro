@@ -170,6 +170,10 @@ class ClubService:
                 "stadiums",
                 {
                     "_id": club_id,
+                    "name": (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get(
+                        "stadium_name"
+                    )
+                    or f"Estádio {data.name}",
                     "capacity": rules["initial_capacity"],
                     "ticket_price": rules["ticket_price"],
                     "facilities": {key: 1 for key in FACILITIES},
@@ -538,9 +542,52 @@ class CalendarService:
                     collection,
                     {"_id": {"$in": references}},
                     limit=None,
-                    projection={"status": 1, "home_goals": 1, "away_goals": 1},
+                    projection={
+                        "status": 1,
+                        "home_goals": 1,
+                        "away_goals": 1,
+                        "home_club_id": 1,
+                        "away_club_id": 1,
+                    },
                 ):
                     matches[match["_id"]] = match
+        club_ids = list(
+            {
+                match[key]
+                for match in matches.values()
+                for key in ("home_club_id", "away_club_id")
+                if match.get(key)
+            }
+        )
+        clubs = (
+            {
+                club["_id"]: club
+                for club in self.repo.many(
+                    "clubs", {"_id": {"$in": club_ids}}, limit=None, projection={"name": 1}
+                )
+            }
+            if club_ids
+            else {}
+        )
+        stadiums = (
+            {
+                stadium["_id"]: stadium
+                for stadium in self.repo.many(
+                    "stadiums", {"_id": {"$in": club_ids}}, limit=None, projection={"name": 1}
+                )
+            }
+            if club_ids
+            else {}
+        )
+        for match in matches.values():
+            home, away = match.get("home_club_id"), match.get("away_club_id")
+            if home in clubs:
+                match["home_name"] = clubs[home]["name"]
+                match["stadium_name"] = (
+                    stadiums.get(home, {}).get("name") or f"Estádio {clubs[home]['name']}"
+                )
+            if away in clubs:
+                match["away_name"] = clubs[away]["name"]
         return public(
             [
                 {

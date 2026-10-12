@@ -51,7 +51,7 @@ test('calendar selects event day and loads adjacent month without filters', asyn
   jest.mocked(calendarService.get).mockResolvedValue([{ id: 'event', title: 'Aurora × Estrela', type: 'league_match', date: eventDate.toISOString() }, { id: 'window', title: 'Abertura da janela', type: 'transfer_window_open', date: eventDate.toISOString() }, { id: 'tickets', title: 'Bilheteria', type: 'financial', date: eventDate.toISOString() }]);
   await render(<CalendarScreen {...{ navigation: { navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Calendar'>} />);
   await fireEvent.press(await screen.findByLabelText('Dia 15, com eventos'));
-  expect(screen.getByText('Aurora × Estrela')).toBeTruthy();
+  expect(screen.getByText(/Aurora × Estrela/)).toBeTruthy();
   expect(screen.queryByText('Abertura da janela')).toBeNull();
   expect(screen.queryByText('Bilheteria')).toBeNull();
   expect(screen.queryByText('Aplicar filtros')).toBeNull();

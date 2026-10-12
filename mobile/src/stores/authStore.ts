@@ -7,7 +7,7 @@ import { getGoogleIdToken } from '../services/googleService';
 interface AuthState {
   user: User | null; authenticated: boolean; loading: boolean; initialized: boolean; error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, stadiumName?: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>; logout: () => Promise<void>;
   refreshSession: () => Promise<void>; restoreSession: () => Promise<void>;
   clearError: () => void; clearSession: () => Promise<void>;
@@ -33,7 +33,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
   return {
     user: null, authenticated: false, loading: false, initialized: false, error: null,
     login: (email, password) => authenticate(() => authService.login(email, password)),
-    register: (name, email, password) => authenticate(() => authService.register(name, email, password)),
+    register: (name, email, password, stadiumName) => authenticate(() => stadiumName ? authService.register(name, email, password, stadiumName) : authService.register(name, email, password)),
     loginWithGoogle: () => authenticate(async () => authService.google(await getGoogleIdToken())),
     clearError: () => set({ error: null }),
     clearSession: async () => {

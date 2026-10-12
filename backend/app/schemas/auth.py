@@ -21,6 +21,18 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(LoginRequest):
+    stadium_name: str | None = Field(default=None, min_length=3, max_length=60)
+
+    @field_validator("stadium_name")
+    @classmethod
+    def normalize_stadium(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Stadium name must have at least three characters")
+        return value
+
     name: str = Field(min_length=1, max_length=100)
     password: Password
 

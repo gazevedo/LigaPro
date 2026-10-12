@@ -177,6 +177,26 @@ class MonthlyFinanceService:
             "cash_balance": finance["balance"],
             "monthly_fixed_revenue": fixed,
             "monthly_payroll": payroll,
+            "income_details": [
+                {
+                    "category": row["_id"],
+                    "amount": row["income"]
+                    - (
+                        initial["amount"]
+                        if initial and initial.get("category") == row["_id"]
+                        else 0
+                    ),
+                }
+                for row in rows
+                if row["income"]
+                - (initial["amount"] if initial and initial.get("category") == row["_id"] else 0)
+                > 0
+            ],
+            "expense_details": [
+                {"category": row["_id"], "amount": row["expenses"]}
+                for row in rows
+                if row["expenses"] > 0
+            ],
             "monthly_income": income,
             "monthly_period_end": end,
             "monthly_expenses": expenses,

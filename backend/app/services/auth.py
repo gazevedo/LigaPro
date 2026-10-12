@@ -44,6 +44,7 @@ class AuthService:
         now = datetime.now(UTC)
         document = {
             "name": body.name,
+            "stadium_name": body.stadium_name.strip() if body.stadium_name else None,
             "email": str(body.email),
             "password_hash": hash_password(body.password),
             "auth_provider": "local",

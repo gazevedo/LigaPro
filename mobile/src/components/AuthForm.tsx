@@ -11,6 +11,7 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
   register?: boolean; onCreateAccount?: () => void; onLogin?: () => void; background?: ImageSourcePropType;
 }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [stadiumName, setStadiumName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,7 +33,9 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
       setValidation('As senhas não conferem.'); return;
     }
     if (register) {
-      await auth.register(name.trim(), email.trim().toLowerCase(), password);
+      if (stadiumName.trim() && stadiumName.trim().length < 3) { setValidation('O nome do estádio deve ter entre 3 e 60 caracteres.'); return; }
+      if (stadiumName.trim()) await auth.register(name.trim(), email.trim().toLowerCase(), password, stadiumName.trim());
+      else await auth.register(name.trim(), email.trim().toLowerCase(), password);
       if (useAuthStore.getState().authenticated) useNotificationStore.getState().show('Conta criada! Agora escolha a identidade do seu clube.');
     } else await auth.login(email.trim().toLowerCase(), password);
   }
@@ -61,7 +64,7 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
     <Text style={{ fontSize: 36, fontWeight: '800', color: palette.ink }}>{register ? 'Sua história começa aqui.' : 'Seu próximo título começa aqui.'}</Text>
     <Text style={{ color: palette.muted, fontSize: 16 }}>{register ? 'Crie sua conta e entre direto no jogo para montar seu clube.' : 'Entre para comandar seu clube, desenvolver seu elenco e conquistar o campeonato.'}</Text>
     <NotificationBubble message={info} tone="info" /><Card>
-    {register && <Field label="Nome" value={name} onChange={setName} maxLength={100} editable={!auth.loading} />}
+    {register && <><Field label="Nome" value={name} onChange={setName} maxLength={100} editable={!auth.loading} /><Field label="Nome do estádio" value={stadiumName} onChange={setStadiumName} maxLength={60} placeholder="Como seu estádio será conhecido?" editable={!auth.loading} /></>}
     <Field label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={!auth.loading} />
     <Field label="Senha" value={password} onChange={setPassword} secureTextEntry autoCapitalize="none" maxLength={128} editable={!auth.loading} />
     {register && <Field label="Confirmar senha" value={confirm} onChange={setConfirm} secureTextEntry autoCapitalize="none" maxLength={128} editable={!auth.loading} />}
