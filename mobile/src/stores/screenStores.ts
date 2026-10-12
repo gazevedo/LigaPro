@@ -11,6 +11,8 @@ import { financeService } from '../services/financeService';
 import { developmentService } from '../services/developmentService';
 import { marketService } from '../services/marketService';
 
+export const useOtherClubSquadStore = domainStore(clubService.squad, 'other-club-squad');
+export const useClubRankingStore = domainStore(clubService.ranking, 'club-ranking');
 export const useSettingsStore = domainStore(settingsService.list, 'useSettingsStore');
 export const useClubDetailsStore = domainStore(clubService.get, 'useClubDetailsStore');
 export const useHistoryStore = domainStore(historyService.get, 'useHistoryStore');

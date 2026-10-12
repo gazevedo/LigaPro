@@ -17,6 +17,8 @@ import { BankScreen } from '../screens/BankScreen';
 import { FinanceScreen } from '../screens/FinanceScreen';
 import { StadiumScreen } from '../screens/StadiumScreen';
 import { SquadScreen } from '../screens/SquadScreen';
+import { OtherClubScreen } from '../screens/OtherClubScreen';
+import { ClubRankingScreen } from '../screens/ClubRankingScreen';
 import { ClubScreen } from '../screens/ClubScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { useEffect, useRef } from 'react';
@@ -82,6 +84,8 @@ export function AppNavigator() {
       {auth.authenticated && game.data ? <GameBackground>{(game.data && !game.data.club ? <CreateClubScreen /> : <Stack.Navigator screenOptions={{ headerTitleAlign: 'left', headerBackButtonDisplayMode: 'minimal', headerStyle: { backgroundColor: '#fff' }, headerTintColor: palette.ink, headerShadowVisible: false, contentStyle: { backgroundColor: 'transparent' } }}>
         <Stack.Screen name="Dashboard" component={DashboardScreen} options={({ navigation }) => ({ title: 'LigaPro', headerTitleAlign: 'left', headerTitle: () => <Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={{ width: 120, height: 44 }} />, headerRight: () => <HeaderActions focused={navigation.isFocused} openInbox={() => navigation.navigate('Inbox')} /> })} />
         <Stack.Screen name="Inbox" component={InboxScreen} options={{ title: 'Correio' }} />
+        <Stack.Screen name="OtherClub" component={OtherClubScreen} options={{ title: 'Clube e plantel' }} />
+        <Stack.Screen name="ClubRanking" component={ClubRankingScreen} options={{ title: 'Ranking geral' }} />
         <Stack.Screen name="Club" component={ClubScreen} options={{ title: 'Clube' }} />
         <Stack.Screen name="Competitions" component={CompetitionsScreen} options={{ title: 'Campeonatos' }} />
         <Stack.Screen name="MatchLive" component={MatchLiveScreen} options={{ title: 'Partida ao vivo' }} />

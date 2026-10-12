@@ -76,6 +76,19 @@ def club(identity: str, repo: Repo):
     return ClubService(repo).club(identity)
 
 
+@router.get("/clubs/{identity}/squad")
+def club_squad(identity: str, repo: Repo):
+    from app.models.player import player_public
+
+    club = repo.document("clubs", identity)
+    return [
+        player_public(player)
+        for player in repo.many(
+            "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
+        )
+    ]
+
+
 @router.get("/squad")
 def squad(user: User, repo: Repo):
     return SquadService(repo).get(user)
@@ -309,6 +322,7 @@ def club_ranking(repo: Repo):
             "clubs",
             {"active": {"$ne": False}, "ranking_position": {"$gt": 0}},
             sort=[("ranking_position", 1)],
+            limit=None,
             projection={"name": 1, "ranking_points": 1, "ranking_position": 1, "reputation": 1},
         )
     )

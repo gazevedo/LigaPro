@@ -17,13 +17,15 @@ jest.mock('../services/statisticsService', () => ({ statisticsService: { competi
 jest.mock('../services/calendarService', () => ({ calendarService: { get: jest.fn() } }));
 beforeEach(() => { jest.clearAllMocks(); useCalendarStore.getState().reset(); });
 test('championship opens league table, games and rankings without a cup selector', async () => {
-  jest.mocked(competitionService.get).mockResolvedValue({ season: { number: 1, starts_at: '', ends_at: '' }, division: { name: 'A' }, standings: [{ id: 'row', club_id: 'club', club_name: 'Aurora', position: 1, points: 3, games: 1, wins: 1, draws: 0, losses: 0, goals_for: 2, goals_against: 0, goal_difference: 2 }] });
+  jest.mocked(competitionService.get).mockResolvedValue({ season: { number: 1, starts_at: '', ends_at: '' }, division: { name: 'A' }, standings: [{ id: 'row', club_id: 'rival', club_name: 'Aurora', position: 1, points: 3, games: 1, wins: 1, draws: 0, losses: 0, goals_for: 2, goals_against: 0, goal_difference: 2 }] });
   jest.mocked(competitionService.matches).mockResolvedValue([{ id: 'match', date: '2026-10-15T18:00:00Z', round: 1, status: 'completed', home_name: 'Aurora', away_name: 'Estrela', home_goals: 2, away_goals: 0 }]);
   jest.mocked(cupService.get).mockResolvedValue({ competition: { id: 'cup', name: 'Copa Nacional', status: 'active' }, entry: { status: 'active', phase: 'Semifinal' }, matches: [] });
   jest.mocked(statisticsService.competition).mockResolvedValue({ season: null, ranking: 'goals', rows: [] });
   const navigate = jest.fn();
   await render(<CompetitionsScreen {...({ navigation: { navigate } } as unknown as NativeStackScreenProps<RootStackParamList, 'Competitions'>)} />);
   await screen.findByText('1. Aurora');
+  await fireEvent.press(screen.getByRole('button', { name: 'Abrir clube Aurora' }));
+  expect(navigate).toHaveBeenCalledWith('OtherClub', { id: 'rival' });
   expect(screen.getByRole('tab', { name: 'Tabela', selected: true })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Partidas' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Liga' })).toBeNull();

@@ -3,7 +3,7 @@ import { ScreenTabs } from '../components/ScreenTabs';
 import { useAuthStore } from '../stores/authStore';
 import { ClubBadge } from '../components/ClubBadge';
 import { useEffect, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useClubDetailsStore } from '../stores/screenStores';
@@ -15,6 +15,7 @@ import { resetDomainStores } from '../stores/domainStore';
 import { useNotificationStore } from '../stores/notificationStore';
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const { data: club, ensure, loading, error } = useClubDetailsStore();
+  const [info, setInfo] = useState<{ label: string; key: number } | null>(null);
   const [tab, setTab] = useState('Informações');
   const [confirmResignation, setConfirmResignation] = useState(false);
   const action = useAction();
@@ -48,12 +49,14 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
     <View style={styles.metrics}>
       {[
         { label: 'Ranking', value: `${club.ranking_position ?? 0}º`, detail: `${club.ranking_points ?? club.ranking} pontos`, color: '#e3edfc' },
-        { label: 'Reputação', value: `${club.reputation ?? 10}/100`, detail: 'Prestígio do clube', color: '#daf4e7' },
+        { label: 'Reputação', value: `${club.reputation ?? 10}/100`, detail: 'Prestígio do clube', description: 'A reputação representa o prestígio histórico do clube, de 0 a 100. Cresce com títulos, posição entre os dez primeiros da Série A e uma torcida de pelo menos 10 mil torcedores. É atualizada ao fim da temporada; títulos da copa também aumentam a reputação.', color: '#daf4e7' },
         { label: 'Torcida', value: (club.supporters ?? 1000).toLocaleString('pt-BR'), detail: 'Torcedores', color: '#fff2c1' },
-        { label: 'Confiança da torcida', value: `${club.fan_confidence ?? club.fan_satisfaction ?? 50}%`, detail: 'Influencia público e patrocínios', color: '#e8e0fc' },
-      ].map(metric => <View key={metric.label} style={[styles.metric, { backgroundColor: metric.color }]}>
+        { label: 'Confiança da torcida', value: `${club.fan_confidence ?? club.fan_satisfaction ?? 50}%`, detail: 'Influencia público e patrocínios', description: 'A confiança mostra a satisfação da torcida, de 0% a 100%. Vitórias aumentam a confiança; derrotas a reduzem. Empates podem reduzi-la em clubes de alta reputação, e ingressos caros também podem diminuir a satisfação. Quanto maior a confiança, maior a procura por ingressos e melhores as condições de patrocínio.', color: '#e8e0fc' },
+      ].map(metric => <Pressable key={metric.label} accessible={metric.label === 'Ranking'} accessibilityRole={metric.label === 'Ranking' ? 'button' : undefined} accessibilityLabel={metric.label === 'Ranking' ? 'Abrir ranking geral' : undefined} onPress={metric.label === 'Ranking' ? () => navigation.navigate('ClubRanking') : undefined} style={[styles.metric, { backgroundColor: metric.color }]}>
+        {metric.description && <Pressable accessibilityRole="button" accessibilityLabel={`Informações sobre ${metric.label.toLowerCase()}`} hitSlop={8} onPress={() => setInfo(current => ({ label: metric.label, key: (current?.key ?? 0) + 1 }))} style={styles.infoIcon}><Text style={{ color: palette.ink, fontWeight: '700' }}>i</Text></Pressable>}
         <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text><Text style={styles.caption}>{metric.detail}</Text>
-      </View>)}
+        {metric.description && info?.label === metric.label && <NotificationBubble key={info.key} tone="info" message={metric.description} />}
+      </Pressable>)}
     </View>
     {own === club.id && <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
     {own === club.id && <>
@@ -90,7 +93,8 @@ const styles = StyleSheet.create({
   caption: { color: palette.muted, lineHeight: 20 },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metric: { flexGrow: 1, flexBasis: '45%', padding: 18, gap: 8, borderRadius: 20, borderWidth: 2, borderColor: palette.border },
-  label: { color: palette.ink, fontWeight: '700' },
+  infoIcon: { position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
+  label: { paddingRight: 18, color: palette.ink, fontWeight: '700' },
   value: { color: palette.ink, fontSize: 24, fontWeight: '800' },
 });
 

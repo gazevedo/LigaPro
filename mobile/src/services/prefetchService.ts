@@ -20,6 +20,7 @@ export async function prefetchGameData(clubId: string, isCurrent: () => boolean,
   }
   preparedClub = clubId;
   const jobs = [
+    () => screens.useClubRankingStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useUpcomingMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => useInboxStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useClubDetailsStore.getState()[fresh ? 'refresh' : 'ensure'](clubId),

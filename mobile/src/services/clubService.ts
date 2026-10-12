@@ -1,6 +1,9 @@
 import { apiRequest } from './apiClient';
-import { Club, Catalog } from '../types/game';
+import { Club, Catalog, Player } from '../types/game';
+export interface RankedClub { id: string; name: string; ranking_position: number; ranking_points: number; reputation?: number }
 export const clubService = {
+  squad: (id: string) => apiRequest<Player[]>(`/clubs/${encodeURIComponent(id)}/squad`),
+  ranking: () => apiRequest<RankedClub[]>('/clubs/ranking/current'),
   status: () => apiRequest<{ club: Club | null }>('/game/status'),
   resign: (id: string) => apiRequest<{ club: null }>(`/clubs/${encodeURIComponent(id)}/resign`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
   catalog: () => apiRequest<Catalog>('/game/catalog'),

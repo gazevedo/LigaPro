@@ -244,3 +244,21 @@ test('director keeps club ownership when supporter confidence is zero', async ()
   expect(useClubStore.getState().data?.club?.id).toBe(club.id);
   expect(clubService.resign).not.toHaveBeenCalled();
 });
+
+
+test('club ranking opens general ranking and information icons show dismissible bubbles', async () => {
+  const navigate = jest.fn();
+  const input = { route: { params: { id: club.id } }, navigation: { navigate, setOptions: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
+  await render(<ClubScreen {...input} />);
+  await screen.findByText('Clube teste');
+  await fireEvent.press(screen.getByRole('button', { name: 'Abrir ranking geral' }));
+  expect(navigate).toHaveBeenCalledWith('ClubRanking');
+  await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre reputação' }));
+  expect(screen.getByText(/A reputação representa/)).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Fechar notificação' }));
+  expect(screen.queryByText(/A reputação representa/)).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre reputação' }));
+  expect(screen.getByText(/A reputação representa/)).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre confiança da torcida' }));
+  expect(screen.getByText(/A confiança mostra/)).toBeTruthy();
+});
