@@ -40,12 +40,13 @@ class GameConfig:
         (41, 0.35),
         (42, 0.50),
     )
-    MATCH_INTERVAL_MINUTES: int = 10
+    MATCHES_PER_DAY: int = 24
+    MATCH_INTERVAL_MINUTES: float = 60
     ROUND_OFFSETS_DAYS: tuple = ()
 
     def __post_init__(self):
         integer_fields = (
-            "MATCH_INTERVAL_MINUTES",
+            "MATCHES_PER_DAY",
             "TEAMS_PER_DIVISION",
             "PRESEASON_DAYS",
             "MIDSEASON_TRANSFER_WINDOW_DAYS",
@@ -63,8 +64,9 @@ class GameConfig:
         )
         if any(type(getattr(self, key)) is not int for key in integer_fields):
             raise ValueError("Integer game rules must be integers")
-        if self.MATCH_INTERVAL_MINUTES < 1:
-            raise ValueError("Match interval must be positive")
+        if not 1 <= self.MATCHES_PER_DAY <= 1440:
+            raise ValueError("Matches per day must be between 1 and 1440")
+        object.__setattr__(self, "MATCH_INTERVAL_MINUTES", 1440 / self.MATCHES_PER_DAY)
         if self.YELLOW_CARD_SUSPENSION_THRESHOLD < 1 or self.CARD_SUSPENSION_MATCHES < 1:
             raise ValueError("Card discipline rules must be positive")
         if self.YOUTH_PROMOTION_AGE < 1 or self.PLAYER_DECLINE_AGE < 1:
@@ -127,9 +129,20 @@ class GameConfig:
     def round_offsets(self):
         if self.ROUND_OFFSETS_DAYS:
             return self.ROUND_OFFSETS_DAYS
-        return tuple(
-            self.PRESEASON_DAYS + i * self.MATCH_INTERVAL_MINUTES / 1440 for i in range(38)
-        )
+        offsets = []
+        day = float(self.PRESEASON_DAYS)
+        for _ in range(38):
+            day = self.playing_day(day)
+            offsets.append(day)
+            day += 1 / self.MATCHES_PER_DAY
+        return tuple(offsets)
+
+    def playing_day(self, day):
+        """Move a league date out of preseason and transfer windows."""
+        day = max(day, self.PRESEASON_DAYS)
+        if self.midseason_start <= day < self.midseason_start + self.MIDSEASON_TRANSFER_WINDOW_DAYS:
+            return self.midseason_start + self.MIDSEASON_TRANSFER_WINDOW_DAYS
+        return day
 
     @classmethod
     def from_rules(cls, rules):

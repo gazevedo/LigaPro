@@ -126,9 +126,7 @@ class CompetitionService:
 
     @staticmethod
     def create_season(repo, starts_at, number=1):
-        config = GameConfig.from_rules(
-            {**repo.rules(), "MATCH_INTERVAL_MINUTES": 10, "ROUND_OFFSETS_DAYS": ()}
-        )
+        config = GameConfig.from_rules({**repo.rules(), "ROUND_OFFSETS_DAYS": ()})
         season = {
             "_id": ObjectId(),
             "number": number,
@@ -137,7 +135,8 @@ class CompetitionService:
             "ends_at": starts_at + timedelta(days=config.SEASON_DURATION_DAYS),
             "config": config.snapshot(),
             "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
-            "league_schedule_revision": 2,
+            "league_games_per_day": config.MATCHES_PER_DAY,
+            "league_schedule_revision": 3,
         }
         repo.insert("seasons", season)
         return season
@@ -248,15 +247,30 @@ class CompetitionService:
         return slot
 
     @classmethod
-    def schedule(cls, repo, season, division, slots):
+    def schedule(cls, repo, season, division, slots, existing=None):
         config = cls.season_config(season)
         by_id = {slot["_id"]: slot for slot in slots}
+        existing = existing or []
+        occupied = {(match.get("home_slot_id"), match.get("away_slot_id")) for match in existing}
+        first_round = sorted(
+            [match for match in existing if match.get("round") == 1],
+            key=lambda match: str(match["_id"]),
+        )
+        order = list(by_id)
+        if len(first_round) == 10:
+            inferred = [m.get("home_slot_id") for m in first_round] + [
+                m.get("away_slot_id") for m in reversed(first_round)
+            ]
+            if len(set(inferred)) == 20 and set(inferred) == set(by_id):
+                order = inferred
         fixtures, events = [], []
         for number, (pairs, offset) in enumerate(
-            zip(round_robin(list(by_id)), config.round_offsets()), 1
+            zip(round_robin(order), config.round_offsets()), 1
         ):
             date = season["starts_at"] + timedelta(days=offset)
             for home, away in pairs:
+                if (home, away) in occupied:
+                    continue
                 identity = ObjectId()
                 fixture = {
                     "_id": identity,
@@ -284,8 +298,9 @@ class CompetitionService:
                             "season_id": season["_id"],
                         }
                     )
-        repo.insert_many("matches", fixtures)
-        repo.insert_many("calendar_events", events)
+        if fixtures:
+            repo.insert_many("matches", fixtures)
+            repo.insert_many("calendar_events", events)
         cls.refresh_positions(repo, season["_id"], division["_id"])
 
     @staticmethod
@@ -471,23 +486,49 @@ class CompetitionService:
             },
         )
 
+    @staticmethod
+    def needs_schedule_update(repo, season):
+        return bool(season) and (
+            season.get("league_schedule_revision") != 3
+            or season.get("league_games_per_day") != repo.rules().get("MATCHES_PER_DAY", 24)
+        )
+
     @classmethod
     def update_league_interval(cls, repo):
-        cls.lock(repo)
         season = cls.current(repo)
-        if not season or season.get("league_schedule_revision") == 2:
+        if not cls.needs_schedule_update(repo, season):
             return
+        cls.lock(repo)
+        config = GameConfig.from_rules({**repo.rules(), "ROUND_OFFSETS_DAYS": ()})
+        # Restore missing fixtures, keeping every completed/live result and identity.
+        divisions = repo.many("divisions", {"active": {"$ne": False}}, limit=None)
+        for division in divisions:
+            slots = repo.many(
+                "season_clubs",
+                {"season_id": season["_id"], "division_id": division["_id"]},
+                limit=None,
+            )
+            existing = repo.many(
+                "matches", {"season_id": season["_id"], "division_id": division["_id"]}, limit=None
+            )
+            if len(slots) == 20 and len(existing) < 380:
+                cls.schedule(
+                    repo, {**season, "config": config.snapshot()}, division, slots, existing
+                )
         matches = repo.many(
             "matches",
             {"season_id": season["_id"], "division_id": {"$exists": True}, "status": "scheduled"},
             limit=None,
         )
         rounds = sorted({match["round"] for match in matches})
-        start = utcnow()
-        dates = {
-            number: start + timedelta(minutes=10 * (index + 1))
-            for index, number in enumerate(rounds)
-        }
+        now = utcnow()
+        starts_at = season["starts_at"]
+        day = (now - starts_at).total_seconds() / 86400 + 1 / config.MATCHES_PER_DAY
+        dates = {}
+        for number in rounds:
+            day = config.playing_day(day)
+            dates[number] = starts_at + timedelta(days=day)
+            day += 1 / config.MATCHES_PER_DAY
         for match in matches:
             date = dates[match["round"]]
             repo.update(
@@ -501,9 +542,11 @@ class CompetitionService:
             {"_id": season["_id"]},
             {
                 "$set": {
-                    "league_interval_minutes": 10,
-                    "league_schedule_revision": 2,
-                    "config.MATCH_INTERVAL_MINUTES": 10,
+                    "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
+                    "league_games_per_day": config.MATCHES_PER_DAY,
+                    "league_schedule_revision": 3,
+                    "config.MATCHES_PER_DAY": config.MATCHES_PER_DAY,
+                    "config.MATCH_INTERVAL_MINUTES": config.MATCH_INTERVAL_MINUTES,
                     "config.ROUND_OFFSETS_DAYS": [],
                 }
             },
@@ -854,7 +897,7 @@ class CompetitionService:
         self.ensure_lock(self.repo)
         now = now or utcnow()
         while season := self.current(self.repo):
-            if season.get("league_schedule_revision") != 2:
+            if self.needs_schedule_update(self.repo, season):
                 self.repo.transaction(self.update_league_interval)
                 season = self.current(self.repo)
             self.play_due(season, now)

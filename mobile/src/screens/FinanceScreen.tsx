@@ -14,18 +14,21 @@ export function FinanceScreen() {
   const data = store.data;
   const breakdown = (label: string, rows: { category: string; amount: number }[] | undefined, total: number) => <View style={{ gap: 8 }}>
     <Text style={{ fontWeight: '800', color: palette.ink }}>{label}: {money(total)}</Text>
-    {rows?.map(row => <View key={row.category} style={{ flexDirection: 'row', gap: 8, justifyContent: 'space-between' }}><Text style={{ flex: 1, color: palette.muted }}>{categories[row.category] ?? row.category.replace(/_/g, ' ')}</Text><Text>{money(row.amount)}</Text></View>)}
+    {rows?.slice().sort((a, b) => (categories[a.category] ?? a.category).localeCompare(categories[b.category] ?? b.category, 'pt-BR')).map(row => <View key={row.category} style={{ flexDirection: 'row', gap: 8, justifyContent: 'space-between' }}><Text style={{ flex: 1, color: palette.muted }}>{categories[row.category] ?? row.category.replace(/_/g, ' ')}</Text><Text>{money(row.amount)}</Text></View>)}
     {rows?.length === 0 && <Text style={{ color: palette.muted }}>Nenhuma {label === 'Entradas' ? 'entrada' : 'saída'} neste mês.</Text>}
   </View>;
   return <View style={{ flex: 1 }}><ScreenTabs scrollable values={['Resumo', 'Folha e contratos', 'Banco', 'Bilheteria', 'Patrocinadores']} value={tab} onChange={setTab} />
     {tab === 'Resumo' ? <GamePage loading={store.loading} error={store.error}><Card>
       <Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Balanço do mês</Text>
-      <Text style={{ fontSize: 24, fontWeight: '800', color: palette.primary }}>Saldo: {money(data?.balance ?? 0)}</Text>
-      {breakdown('Entradas', data?.income_details, data?.monthly_income ?? 0)}
-      {breakdown('Saídas', data?.expense_details, data?.monthly_expenses ?? 0)}
-      <Text style={{ fontWeight: '800' }}>Resultado mensal: {money(data?.monthly_result ?? 0)}</Text>
-      <Text>Receita fixa mensal: {money(data?.monthly_fixed_revenue ?? 0)}</Text>
+      <Text style={{ fontSize: 24, fontWeight: '800', color: (data?.balance ?? 0) < 0 ? '#dc2626' : '#1d4ed8' }}>Saldo: {money(data?.balance ?? 0)}</Text>
+      <View testID="finance-income" style={{ backgroundColor: 'rgba(37, 99, 235, 0.5)', padding: 16, borderRadius: 14 }}>{breakdown('Entradas', data?.income_details, data?.monthly_income ?? 0)}</View>
+      <View testID="finance-expenses" style={{ backgroundColor: 'rgba(249, 115, 22, 0.5)', padding: 16, borderRadius: 14 }}>{breakdown('Saídas', data?.expense_details, data?.monthly_expenses ?? 0)}</View>
+      <View testID="finance-totals" style={{ backgroundColor: 'rgba(34, 197, 94, 0.5)', padding: 16, borderRadius: 14, gap: 8 }}>
+      <Text style={{ fontWeight: '800', color: palette.ink }}>Totais</Text>
       <Text>Premiação acumulada: {money(data?.accumulated_prizes ?? 0)}</Text>
+      <Text>Receita fixa mensal: {money(data?.monthly_fixed_revenue ?? 0)}</Text>
+      <Text style={{ fontWeight: '800' }}>Resultado mensal: {money(data?.monthly_result ?? 0)}</Text>
+      </View>
     </Card></GamePage> : tab === 'Folha e contratos' ? <GamePage loading={store.loading} error={store.error}><Card>
       <Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Folha de pagamento e contratos</Text>
       <Text>Saúde da folha: {data?.payroll_health ?? 'Em avaliação'}</Text>

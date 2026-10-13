@@ -52,7 +52,7 @@ export function DashboardScreen({ navigation }: NativeStackScreenProps<RootStack
         <Text style={styles.tileTitle}>{shortcut.title}</Text>
       </Pressable>)}
     </View>
-    <MatchNotifications />
+    <MatchNotifications controls={false} />
     <Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text>
   </GamePage>;
 }

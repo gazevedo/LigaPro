@@ -15,7 +15,7 @@ import { resetDomainStores } from '../stores/domainStore';
 import { useNotificationStore } from '../stores/notificationStore';
 export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Club'>) {
   const { data: club, ensure, loading, error } = useClubDetailsStore();
-  const [info, setInfo] = useState<{ label: string; key: number } | null>(null);
+  const [info, setInfo] = useState<{ label: string; description: string; key: number } | null>(null);
   const [tab, setTab] = useState('Informações');
   const [confirmResignation, setConfirmResignation] = useState(false);
   const action = useAction();
@@ -51,11 +51,10 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         { label: 'Ranking', value: `${club.ranking_position ?? 0}º`, detail: `${club.ranking_points ?? club.ranking} pontos`, color: '#e3edfc' },
         { label: 'Reputação', value: `${club.reputation ?? 10}/100`, detail: 'Prestígio do clube', description: 'A reputação representa o prestígio histórico do clube, de 0 a 100. Cresce com títulos, posição entre os dez primeiros da Série A e uma torcida de pelo menos 10 mil torcedores. É atualizada ao fim da temporada; títulos da copa também aumentam a reputação.', color: '#daf4e7' },
         { label: 'Torcida', value: (club.supporters ?? 1000).toLocaleString('pt-BR'), detail: 'Torcedores', color: '#fff2c1' },
-        { label: 'Confiança da torcida', value: `${club.fan_confidence ?? club.fan_satisfaction ?? 50}%`, detail: 'Influencia público e patrocínios', description: 'A confiança mostra a satisfação da torcida, de 0% a 100%. Vitórias aumentam a confiança; derrotas a reduzem. Empates podem reduzi-la em clubes de alta reputação, e ingressos caros também podem diminuir a satisfação. Quanto maior a confiança, maior a procura por ingressos e melhores as condições de patrocínio.', color: '#e8e0fc' },
+        { label: 'Confiança da torcida', value: `${club.fan_confidence ?? club.fan_satisfaction ?? 50}%`, detail: '', description: 'A confiança mostra a satisfação da torcida, de 0% a 100%. Vitórias aumentam a confiança; derrotas a reduzem. Empates podem reduzi-la em clubes de alta reputação, e ingressos caros também podem diminuir a satisfação. Quanto maior a confiança, maior a procura por ingressos e melhores as condições de patrocínio.', color: '#e8e0fc' },
       ].map(metric => <Pressable key={metric.label} accessible={metric.label === 'Ranking'} accessibilityRole={metric.label === 'Ranking' ? 'button' : undefined} accessibilityLabel={metric.label === 'Ranking' ? 'Abrir ranking geral' : undefined} onPress={metric.label === 'Ranking' ? () => navigation.navigate('ClubRanking') : undefined} style={[styles.metric, { backgroundColor: metric.color }]}>
-        {metric.description && <Pressable accessibilityRole="button" accessibilityLabel={`Informações sobre ${metric.label.toLowerCase()}`} hitSlop={8} onPress={() => setInfo(current => ({ label: metric.label, key: (current?.key ?? 0) + 1 }))} style={styles.infoIcon}><Text style={{ color: palette.ink, fontWeight: '700' }}>i</Text></Pressable>}
-        <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text><Text style={styles.caption}>{metric.detail}</Text>
-        {metric.description && info?.label === metric.label && <NotificationBubble key={info.key} tone="info" message={metric.description} />}
+        {metric.description && <Pressable accessibilityRole="button" accessibilityLabel={`Informações sobre ${metric.label.toLowerCase()}`} hitSlop={8} onPress={() => setInfo(current => ({ label: metric.label, description: metric.description!, key: (current?.key ?? 0) + 1 }))} style={styles.infoIcon}><Text style={{ color: palette.ink, fontWeight: '700' }}>i</Text></Pressable>}
+        <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text>{!!metric.detail && <Text style={styles.caption}>{metric.detail}</Text>}
       </Pressable>)}
     </View>
     {own === club.id && <ClubHistory openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
@@ -71,6 +70,14 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         return <Text key={index} style={styles.label}>🏆 {typeof name === 'string' ? name : `Título ${index + 1}`}</Text>;
       })}
     </Card>}
+    <Modal visible={info !== null} transparent animationType="fade" onRequestClose={() => setInfo(null)}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Fechar informações" onPress={() => setInfo(null)} style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#14243a88' }}>
+        <Pressable onPress={event => event.stopPropagation()} style={{ width: '100%', maxWidth: 450, alignSelf: 'center', padding: 24, gap: 18, borderRadius: 22, backgroundColor: '#fff' }}>
+          <Text style={{ color: palette.ink, fontSize: 22, fontWeight: '800' }}>{info?.label}</Text>
+          <NotificationBubble key={info?.key} tone="info" message={info?.description} onClose={() => setInfo(null)} />
+        </Pressable>
+      </Pressable>
+    </Modal>
     <Modal visible={confirmResignation} transparent animationType="fade" onRequestClose={() => { if (!action.busy) setConfirmResignation(false); }}>
       <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#14243a88' }}>
         <View style={{ width: '100%', maxWidth: 450, alignSelf: 'center', padding: 24, gap: 18, borderRadius: 22, backgroundColor: '#fff' }}>

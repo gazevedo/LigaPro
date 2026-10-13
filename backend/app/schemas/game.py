@@ -37,6 +37,10 @@ class LineupInput(Input):
     reserves: list[str] = Field(max_length=5)
 
 
+class ShirtNumberInput(Input):
+    number: int = Field(ge=1, le=99, strict=True)
+
+
 class MoneyInput(Input):
     amount: int = Field(gt=0, le=1_000_000_000, strict=True)
 

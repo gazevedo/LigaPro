@@ -23,6 +23,7 @@ FACILITIES = {
     "boxes": "Camarotes",
 }
 DEFAULT_RULES = {
+    "MATCHES_PER_DAY": 24,
     "formations": FORMATIONS,
     "YELLOW_CARD_SUSPENSION_THRESHOLD": 3,
     "CARD_SUSPENSION_MATCHES": 1,

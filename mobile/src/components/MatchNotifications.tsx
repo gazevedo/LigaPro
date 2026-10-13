@@ -1,1 +1,1 @@
-export function MatchNotifications() { return null; }
+export function MatchNotifications(_props: { controls?: boolean }) { return null; }

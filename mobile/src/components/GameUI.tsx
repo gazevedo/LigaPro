@@ -2,14 +2,14 @@ import { createContext, ReactNode, useContext, useCallback, useRef, useState } f
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, Text, TextInput, TextInputProps, View } from 'react-native';
 export const palette = { ink: '#14243a', muted: '#64748b', primary: '#087f67', background: '#f4f7fc', border: '#cddbe8' };
 export const money = (amount: number) => (amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-export function NotificationBubble({ message, tone = 'error' }: { message?: string | null; tone?: 'error' | 'info' }) {
+export function NotificationBubble({ message, tone = 'error', onClose }: { message?: string | null; tone?: 'error' | 'info'; onClose?: () => void }) {
   if (tone === 'error' && (message === 'O servidor demorou para responder. Verifique sua conexão e tente novamente.' || message === 'Não foi possível conectar ao servidor. Verifique sua conexão.')) return null;
-  return message ? <Bubble key={message} message={message} tone={tone} /> : null;
+  return message ? <Bubble key={message} message={message} tone={tone} onClose={onClose} /> : null;
 }
-function Bubble({ message, tone }: { message: string; tone: 'error' | 'info' }) {
+function Bubble({ message, tone, onClose }: { message: string; tone: 'error' | 'info'; onClose?: () => void }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
-  return <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ backgroundColor: tone === 'error' ? '#fff1f2' : '#e8f7f1', borderColor: tone === 'error' ? '#fecdd3' : '#99dbc5', borderWidth: 1, borderRadius: 18, padding: 16, flexDirection: 'row', gap: 12, boxShadow: '0 6px 18px #14243a12' }}><Text style={{ flex: 1, color: palette.ink }}>{message}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar notificação" onPress={() => setDismissed(true)} hitSlop={8}><Text style={{ color: palette.muted }}>✕</Text></Pressable></View>;
+  return <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ backgroundColor: tone === 'error' ? '#fff1f2' : '#e8f7f1', borderColor: tone === 'error' ? '#fecdd3' : '#99dbc5', borderWidth: 1, borderRadius: 18, padding: 16, flexDirection: 'row', gap: 12, boxShadow: '0 6px 18px #14243a12' }}><Text style={{ flex: 1, color: palette.ink }}>{message}</Text><Pressable accessibilityRole="button" accessibilityLabel="Fechar notificação" onPress={() => { setDismissed(true); onClose?.(); }} hitSlop={8}><Text style={{ color: palette.muted }}>✕</Text></Pressable></View>;
 }
 export function ActionButton({ title, onPress, disabled = false, secondary = false, accessibilityLabel }: { accessibilityLabel?: string; title: string; onPress: () => void; disabled?: boolean; secondary?: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => ({ paddingVertical: 14, paddingHorizontal: 20, borderRadius: 14, alignItems: 'center', borderWidth: 2, borderColor: secondary ? palette.border : '#086550', backgroundColor: secondary ? '#e3edfc' : palette.primary, opacity: disabled ? 0.45 : pressed ? 0.75 : 1 })}><Text style={{ fontWeight: '700', color: secondary ? palette.ink : '#fff' }}>{title}</Text></Pressable>;
@@ -30,8 +30,8 @@ export function GamePage({ children, loading, error }: { children: ReactNode; lo
 export function Field({ label, value, onChange, numeric = false, ...props }: { label: string; value: string; onChange: (value: string) => void; numeric?: boolean } & Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'>) {
   return <View style={{ gap: 8 }}><Text style={{ fontWeight: '600', color: palette.ink }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} keyboardType={numeric ? 'numeric' : 'default'} placeholderTextColor={palette.muted} {...props} style={{ borderWidth: 1, borderColor: palette.border, backgroundColor: '#fff', color: palette.ink, padding: 14, borderRadius: 12, fontSize: 16 }} /></View>;
 }
-export function Choices({ values, value, onChange, disabled = false }: { values: string[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{values.map(item => <ActionButton key={item} disabled={disabled} secondary={value !== item} title={`${value === item ? '✓ ' : ''}${item}`} onPress={() => onChange(item)} />)}</View>;
+export function Choices({ values, value, onChange, disabled = false, labels }: { values: string[]; value: string; onChange: (value: string) => void; disabled?: boolean; labels?: Record<string, string> }) {
+  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{values.map(item => <ActionButton key={item} disabled={disabled} secondary={value !== item} title={`${value === item ? '✓ ' : ''}${labels?.[item] ?? item}`} onPress={() => onChange(item)} />)}</View>;
 }
 export function useAction() {
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);

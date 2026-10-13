@@ -259,6 +259,8 @@ test('club ranking opens general ranking and information icons show dismissible 
   expect(screen.queryByText(/A reputação representa/)).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre reputação' }));
   expect(screen.getByText(/A reputação representa/)).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Fechar notificação' }));
+  expect(screen.queryByText('Influencia público e patrocínios')).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre confiança da torcida' }));
   expect(screen.getByText(/A confiança mostra/)).toBeTruthy();
 });

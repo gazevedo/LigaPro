@@ -207,6 +207,8 @@ class SquadService:
         players = self.repo.many(
             "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
         )
+        if any(p.get("shirt_number") is None for p in players):
+            players = self.repo.transaction(lambda repo: self.ensure_shirt_numbers(repo, user))
         lineup = self.repo.find("lineups", {"_id": club["_id"]})
         lineup = {**lineup, "reserves": lineup.get("reserves", [])[:5]}
         identities = [player["_id"] for player in players]
@@ -249,6 +251,52 @@ class SquadService:
                 "formations": self.repo.rules()["formations"],
             }
         )
+
+    @staticmethod
+    def ensure_shirt_numbers(repo, user):
+        club = repo.owned(user.id)
+        # All number assignments write the club first, serializing concurrent transactions.
+        repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+        players = repo.many(
+            "players",
+            {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+            limit=None,
+            sort=[("_id", 1)],
+        )
+        used = {p.get("shirt_number") for p in players}
+        for player in players:
+            if player.get("shirt_number") is None:
+                number = next((n for n in range(1, 100) if n not in used), None)
+                if number is None:
+                    raise HTTPException(409, "Não há números de camisa disponíveis de 1 a 99.")
+                repo.update("players", {"_id": player["_id"]}, {"$set": {"shirt_number": number}})
+                player["shirt_number"] = number
+                used.add(number)
+        return players
+
+    def shirt_number(self, user, identity, number):
+        def operation(repo):
+            club = repo.owned(user.id)
+            repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
+            player = repo.document("players", identity)
+            if player.get("current_club_id") != club["_id"] or player.get("status") == "retired":
+                raise HTTPException(403, "O jogador não pertence ao seu plantel.")
+            if repo.find(
+                "players",
+                {
+                    "current_club_id": club["_id"],
+                    "status": {"$ne": "retired"},
+                    "shirt_number": number,
+                    "_id": {"$ne": player["_id"]},
+                },
+            ):
+                raise HTTPException(409, "Este número de camisa já está em uso no plantel.")
+            updated = repo.update(
+                "players", {"_id": player["_id"]}, {"$set": {"shirt_number": number}}
+            )
+            return player_public(updated)
+
+        return self.repo.transaction(operation)
 
     def save(self, user, data):
         def operation(repo):
@@ -519,7 +567,7 @@ class CalendarService:
         from app.services.competition import CompetitionService
 
         season = CompetitionService.current(self.repo)
-        if season and season.get("league_schedule_revision") != 2:
+        if CompetitionService.needs_schedule_update(self.repo, season):
             self.repo.transaction(CompetitionService.update_league_interval)
         query = {"club_id": self.repo.owned(user.id)["_id"]}
         if filters.type:

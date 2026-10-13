@@ -71,8 +71,9 @@ test('market filters free players', async () => {
   const input = { navigation: { navigate: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Market'>;
   await render(<MarketScreen {...input} />);
   await waitFor(() => expect(marketService.search).toHaveBeenCalled());
-  await fireEvent.press(screen.getByText('Jogadores livres'));
-  await waitFor(() => expect(marketService.search).toHaveBeenLastCalledWith({ status: 'free_agent' }));
+  await fireEvent.press(screen.getByRole('combobox', { name: 'Mercado' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Jogadores livres' }));
+  await waitFor(() => expect(marketService.search).toHaveBeenLastCalledWith({ sort: 'value_asc', status: 'free_agent' }));
 });
 
 test('player profile displays morale band and only the potential hint', async () => {

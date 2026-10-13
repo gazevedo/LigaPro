@@ -533,3 +533,61 @@ def test_existing_club_bootstrap_preserves_administrative_data(client):
     assert repo.find("club_finances", {"_id": cid})["balance"] == original_balance
     assert len(TrainingService(repo).get(user, youth=True)) == 3
     assert db.matches.count_documents({}) == 380
+
+
+def test_incomplete_league_is_repaired_and_daily_frequency_reconfigures_pending_games(
+    authenticated_client,
+):
+    from datetime import timedelta
+
+    from app.models.game import utcnow
+
+    client = authenticated_client
+    response = client.post(
+        "/api/clubs", json={"name": "Clube Agenda", "country_id": "BR", "badge_id": "blue"}
+    )
+    assert response.status_code == 201
+    database = app.state.database
+    season = database.seasons.find_one({"status": "active"})
+    query = {"season_id": season["_id"], "division_id": {"$exists": True}}
+    originals = list(database.matches.find({**query, "round": {"$lte": 7}}))
+    database.matches.update_many(
+        {**query, "round": {"$lte": 7}},
+        {"$set": {"status": "completed", "home_goals": 2, "away_goals": 1}},
+    )
+    missing = list(database.matches.find({**query, "round": {"$gt": 7}}, {"_id": 1}))
+    database.matches.delete_many({**query, "round": {"$gt": 7}})
+    database.calendar_events.delete_many({"reference_id": {"$in": [m["_id"] for m in missing]}})
+    database.seasons.update_one(
+        {"_id": season["_id"]},
+        {"$set": {"league_schedule_revision": 2, "starts_at": utcnow() - timedelta(days=3)}},
+    )
+    completed = list(database.matches.find({**query, "status": "completed"}))
+    assert client.get("/api/calendar").status_code == 200
+    assert database.matches.count_documents(query) == 380
+    assert list(database.matches.find({**query, "status": "completed"})) == completed
+    pending = list(database.matches.find({**query, "status": "scheduled"}))
+    assert len(pending) == 310
+    dates = sorted({match["date"] for match in pending})
+    assert all((b - a).total_seconds() == 3600 for a, b in zip(dates, dates[1:]))
+    assert (
+        len(
+            {
+                (match["home_slot_id"], match["away_slot_id"])
+                for match in database.matches.find(query)
+            }
+        )
+        == 380
+    )
+    assert client.get("/api/calendar").status_code == 200
+    assert list(database.matches.find({**query, "status": "scheduled"})) == pending
+    database.app_settings.update_one(
+        {"key": "game_rules"}, {"$set": {"value.MATCHES_PER_DAY": 12}}, upsert=True
+    )
+    assert client.get("/api/calendar").status_code == 200
+    adjusted = sorted(
+        {match["date"] for match in database.matches.find({**query, "status": "scheduled"})}
+    )
+    assert all((b - a).total_seconds() == 7200 for a, b in zip(adjusted, adjusted[1:]))
+    assert list(database.matches.find({**query, "status": "completed"})) == completed
+    assert len(originals) == 70

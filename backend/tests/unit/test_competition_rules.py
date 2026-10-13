@@ -30,7 +30,7 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertEqual(len(offsets), 38)
         self.assertEqual(offsets[0], 2)
         for first, second in zip(offsets, offsets[1:]):
-            self.assertAlmostEqual((second - first) * 1440, 10)
+            self.assertAlmostEqual((second - first) * 1440, 60)
         custom = (2,) * 19 + (17,) * 19
         self.assertEqual(GameConfig(ROUND_OFFSETS_DAYS=custom).round_offsets(), custom)
         with self.assertRaises(ValueError):
@@ -38,7 +38,7 @@ class CompetitionRulesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             GameConfig(ROUND_OFFSETS_DAYS=(float("nan"),) * 38)
 
-    def test_generated_fixtures_and_calendar_have_ten_minute_intervals(self):
+    def test_generated_fixtures_and_calendar_have_hourly_intervals(self):
         config = GameConfig()
         season = {
             "_id": "season",
@@ -48,6 +48,7 @@ class CompetitionRulesTests(unittest.TestCase):
         division = {"_id": "division", "name": "A"}
         slots = [{"_id": i, "club_id": i} for i in range(20)]
         repo = Mock()
+        repo.rules.return_value = {}
         with patch.object(CompetitionService, "refresh_positions"):
             CompetitionService.schedule(repo, season, division, slots)
         fixtures = repo.insert_many.call_args_list[0].args[1]
@@ -57,9 +58,9 @@ class CompetitionRulesTests(unittest.TestCase):
             for side in ("home_club_id", "away_club_id"):
                 counts[(match[side], match["date"].date())] += 1
         self.assertEqual(len(fixtures), 380)
-        self.assertTrue(all(count == 38 for count in counts.values()))
+        self.assertTrue(all(count <= 24 for count in counts.values()))
         dates = sorted({match["date"] for match in fixtures})
-        self.assertTrue(all((b - a).total_seconds() == 600 for a, b in zip(dates, dates[1:])))
+        self.assertTrue(all((b - a).total_seconds() == 3600 for a, b in zip(dates, dates[1:])))
         match_dates = {match["_id"]: match["date"] for match in fixtures}
         self.assertEqual(len(events), 760)
         self.assertTrue(
@@ -68,13 +69,13 @@ class CompetitionRulesTests(unittest.TestCase):
 
     def test_existing_league_is_rescheduled_once_without_touching_completed_matches(self):
         repo = Mock()
-        season = {"_id": "season"}
+        repo.rules.return_value = {}
+        season = {"_id": "season", "starts_at": datetime(2026, 10, 1, tzinfo=UTC)}
         repo.find.return_value = season
-        repo.many.return_value = [
-            {"_id": "a", "round": 3},
-            {"_id": "b", "round": 3},
-            {"_id": "c", "round": 4},
-        ]
+        pending = [{"_id": "a", "round": 3}, {"_id": "b", "round": 3}, {"_id": "c", "round": 4}]
+        repo.many.side_effect = lambda collection, query, **kwargs: (
+            pending if collection == "matches" else []
+        )
         now = datetime(2026, 10, 11, tzinfo=UTC)
         with patch("app.services.competition.utcnow", return_value=now):
             CompetitionService.update_league_interval(repo)
@@ -87,37 +88,40 @@ class CompetitionRulesTests(unittest.TestCase):
             if call.args[0] == "matches"
         ]
         self.assertEqual(dates[0], dates[1])
-        self.assertEqual((dates[0] - now).total_seconds(), 600)
-        self.assertEqual((dates[2] - dates[0]).total_seconds(), 600)
+        self.assertEqual((dates[0] - now).total_seconds(), 3600)
+        self.assertEqual((dates[2] - dates[0]).total_seconds(), 3600)
         saved = repo.update.call_args.args[2]["$set"]
-        self.assertEqual(saved["config.MATCH_INTERVAL_MINUTES"], 10)
+        self.assertEqual(saved["config.MATCH_INTERVAL_MINUTES"], 60)
         self.assertEqual(saved["config.ROUND_OFFSETS_DAYS"], [])
         repo.reset_mock()
         repo.find.return_value = {
             **season,
             "league_interval_minutes": 10,
-            "league_schedule_revision": 2,
+            "league_schedule_revision": 3,
+            "league_games_per_day": 24,
         }
         CompetitionService.update_league_interval(repo)
         repo.many.assert_not_called()
 
     def test_old_saved_offsets_cannot_restore_two_matches_per_day(self):
         repo = Mock()
+        repo.rules.return_value = {}
         repo.rules.return_value = {
             "MATCH_INTERVAL_MINUTES": 720,
             "ROUND_OFFSETS_DAYS": [2 + i / 2 for i in range(20)] + [17 + i / 2 for i in range(18)],
         }
         season = CompetitionService.create_season(repo, datetime(2026, 10, 11, tzinfo=UTC))
         offsets = GameConfig(**season["config"]).round_offsets()
-        self.assertEqual(season["league_schedule_revision"], 2)
+        self.assertEqual(season["league_schedule_revision"], 3)
         for first, second in zip(offsets, offsets[1:]):
-            self.assertAlmostEqual((second - first) * 1440, 10)
+            self.assertAlmostEqual((second - first) * 1440, 60)
 
     def test_periodic_processing_applies_pending_calendar_migration(self):
         repo = Mock()
+        repo.rules.return_value = {}
         now = datetime(2026, 10, 11, tzinfo=UTC)
         old = {"_id": "season", "ends_at": datetime(2026, 11, 1, tzinfo=UTC)}
-        updated = {**old, "league_schedule_revision": 2}
+        updated = {**old, "league_schedule_revision": 3, "league_games_per_day": 24}
         with (
             patch.object(CompetitionService, "current", side_effect=[old, updated]),
             patch.object(CompetitionService, "play_due") as play,
@@ -128,6 +132,7 @@ class CompetitionRulesTests(unittest.TestCase):
 
     def test_calendar_read_repairs_pending_schedule_before_reading_events(self):
         repo = Mock()
+        repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
         repo.find.return_value = {"_id": "season"}
         repo.many.return_value = []
@@ -139,7 +144,11 @@ class CompetitionRulesTests(unittest.TestCase):
             "calendar_events", {"club_id": "club"}, limit=500, sort=[("date", 1)]
         )
         repo.reset_mock()
-        repo.find.return_value = {"_id": "season", "league_schedule_revision": 2}
+        repo.find.return_value = {
+            "_id": "season",
+            "league_schedule_revision": 3,
+            "league_games_per_day": 24,
+        }
         CalendarService(repo).get(
             SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
         )
@@ -147,8 +156,9 @@ class CompetitionRulesTests(unittest.TestCase):
 
     def test_calendar_returns_actual_status_and_score_from_match_documents(self):
         repo = Mock()
+        repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
-        repo.find.return_value = {"league_schedule_revision": 2}
+        repo.find.return_value = {"league_schedule_revision": 3, "league_games_per_day": 24}
         events = [{"_id": "event", "reference_id": "match", "date": "past", "status": "scheduled"}]
         repo.many.side_effect = lambda collection, *args, **kwargs: (
             events
@@ -167,6 +177,7 @@ class CompetitionRulesTests(unittest.TestCase):
 
     def test_one_failed_match_does_not_block_other_due_matches(self):
         repo = Mock()
+        repo.rules.return_value = {}
         now = datetime(2026, 10, 11, tzinfo=UTC)
         repo.many.side_effect = [
             [{"_id": "broken", "date": now}],
@@ -188,6 +199,77 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertEqual(play.call_count, 2)
         self.assertIn("broken", repo.many.call_args_list[3].args[1]["_id"]["$nin"])
 
+    def test_daily_frequency_is_configurable_and_skips_transfer_window(self):
+        config = GameConfig(MATCHES_PER_DAY=2)
+        offsets = config.round_offsets()
+        self.assertEqual(config.MATCH_INTERVAL_MINUTES, 720)
+        self.assertEqual(len(offsets), 38)
+        self.assertTrue(all(not 15 <= day < 17 for day in offsets))
+        self.assertTrue(all(day < 30 for day in offsets))
+        for value in (0, 1441, True, 2.5):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                GameConfig(MATCHES_PER_DAY=value)
+        repo = Mock()
+        repo.rules.return_value = {"MATCHES_PER_DAY": 12}
+        season = {"league_schedule_revision": 3, "league_games_per_day": 24}
+        self.assertTrue(CompetitionService.needs_schedule_update(repo, season))
+        season["league_games_per_day"] = 12
+        self.assertFalse(CompetitionService.needs_schedule_update(repo, season))
+
+    def test_missing_fixtures_after_round_seven_are_restored_without_replaying_results(self):
+        from copy import deepcopy
+
+        config = GameConfig()
+        season = {
+            "_id": "season",
+            "starts_at": datetime(2026, 10, 1, tzinfo=UTC),
+            "config": config.snapshot(),
+        }
+        division = {"_id": "division", "name": "A"}
+        slots = [{"_id": i, "club_id": i} for i in range(20)]
+        generated = Mock()
+        with patch.object(CompetitionService, "refresh_positions"):
+            CompetitionService.schedule(generated, season, division, slots)
+        matches = generated.insert_many.call_args_list[0].args[1][:70]
+        for match in matches:
+            match.update(status="completed", home_goals=2, away_goals=1)
+        previous = deepcopy(matches)
+        repo = Mock()
+        repo.find.return_value = season
+        repo.rules.return_value = {}
+
+        def many(collection, query, **kwargs):
+            if collection == "divisions":
+                return [division]
+            if collection == "season_clubs":
+                return slots
+            return (
+                [m for m in matches if m["status"] == "scheduled"]
+                if query.get("status")
+                else matches
+            )
+
+        repo.many.side_effect = many
+        repo.insert_many.side_effect = lambda collection, rows: (
+            matches.extend(rows) if collection == "matches" else None
+        )
+        now = datetime(2026, 10, 4, tzinfo=UTC)
+        with (
+            patch("app.services.competition.utcnow", return_value=now),
+            patch.object(CompetitionService, "refresh_positions"),
+        ):
+            CompetitionService.update_league_interval(repo)
+        self.assertEqual(len(matches), 380)
+        self.assertEqual(matches[:70], previous)
+        self.assertEqual(len({(m["home_slot_id"], m["away_slot_id"]) for m in matches}), 380)
+        changes = [call.args for call in repo.update.call_args_list if call.args[0] == "matches"]
+        self.assertEqual(len(changes), 310)
+        self.assertTrue(all(query["status"] == "scheduled" for _, query, _ in changes))
+        dates = sorted({update["$set"]["date"] for _, _, update in changes})
+        self.assertEqual((dates[0] - now).total_seconds(), 3600)
+        self.assertEqual(len(dates), 31)
+        self.assertTrue(all((b - a).total_seconds() == 3600 for a, b in zip(dates, dates[1:])))
+
     def test_bot_name_combinations_are_varied_and_reproducible(self):
         names = {club_name(Random(seed)) for seed in range(30)}
         self.assertGreater(len(names), 20)
@@ -196,6 +278,7 @@ class CompetitionRulesTests(unittest.TestCase):
 
     def test_table_card_totals_follow_slots_including_replaced_bots(self):
         repo = Mock()
+        repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
         repo.find.side_effect = [
             {"_id": "season"},

@@ -4,20 +4,22 @@ Jogo de gerenciamento de futebol inspirado no Brasfoot, com clubes próprios, ca
 
 Este README concentra a documentação mantida do projeto. Os arquivos em `prompts/` são requisitos originais e podem descrever etapas anteriores; as regras atuais estão abaixo. JSONs de calibração e relatórios gerados permanecem como evidências, sem duplicar instruções de uso.
 
-O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Clube mostra o nome do técnico e a bandeira junto ao escudo, com abas Informações e Sala de troféus, histórico, records e logout; Campeonatos possui abas Tabela, Partidas e Artilheiros, com classificação completa e cartões. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O calendário é uma agenda mensal e o cabeçalho oferece o correio. Para voltar, deslize da borda esquerda para a direita; no Android, o comando Voltar retorna à tela anterior e permanece no jogo quando chega ao dashboard.
+O dashboard reúne Campeonatos, Clube, Táticas, Plantel, Estádio, Financeiro, Calendário, Mercado, Treinamento e Categorias de Base. Clube mostra o nome do técnico e a bandeira junto ao escudo, com abas Informações e Sala de troféus, histórico, records e logout; Campeonatos possui abas Tabela, Partidas e Artilheiros, com classificação completa e cartões. Escalação e formação são configuradas em Táticas. O Plantel mostra contratos, salários, lesões e desempenho. O número da camisa aparece à esquerda da posição e pode ser editado em popup, de 1 a 99; números repetidos ficam vermelhos e novas repetições são rejeitadas. O calendário é uma agenda mensal e o cabeçalho oferece o correio e a engrenagem de Configurações, onde são ativados ou desativados os avisos de partidas. Para voltar, deslize da borda esquerda para a direita; no Android, o comando Voltar retorna à tela anterior e permanece no jogo quando chega ao dashboard.
 
 ## Índice
 
 - [Como executar](#como-executar)
-- [Configuração e autenticação](#configuração-e-autenticação)
+- [Configuração e autenticação](#configuracao-e-autenticacao)
 - [Regras e funcionalidades](#regras-e-funcionalidades)
 - [Motor de partidas](#motor-de-partidas)
 - [Partidas ao vivo](#partidas-ao-vivo)
 - [API](#api)
-- [Persistência e operação](#persistência-e-operação)
-- [Testes e calibração](#testes-e-calibração)
-- [Limitações e pendências](#limitações-e-pendências)
-- [Desenvolvimento e dependências](#desenvolvimento-e-dependências)
+- [Persistência e operação](#persistencia-e-operacao)
+- [Testes e calibração](#testes-e-calibracao)
+- [Limitações e pendências](#limitacoes-e-pendencias)
+- [Desenvolvimento e dependências](#desenvolvimento-e-dependencias)
+
+<a id="como-executar"></a>
 
 ## Como executar
 
@@ -152,6 +154,8 @@ docker compose --env-file backend/.env down
 | Tela carrega dados antigos após configuração | Reinicie o Expo; não reutilize tokens de sessão revogada ou expirada. |
 | Google indisponível | IDs OAuth e development build nativo configurados. |
 
+<a id="configuracao-e-autenticacao"></a>
+
 ## Configuração e autenticação
 
 ### Variáveis do backend
@@ -195,6 +199,8 @@ curl http://localhost:8000/api/game/status -H 'Authorization: Bearer SEU_ACCESS_
 
 Não existe client secret no aplicativo. Cadastro/login por e-mail funcionam independentemente dessa configuração.
 
+<a id="regras-e-funcionalidades"></a>
+
 ## Regras e funcionalidades
 
 ### Clube, direção e confiança da torcida
@@ -222,7 +228,7 @@ O dashboard mostra a data e a hora da próxima partida. **Assistir** aparece som
 - Um clube novo entra sempre na última série ativa, substituindo um bot elegível e herdando somente sua posição esportiva. Vagas em séries superiores não permitem pular etapas. Sem bot disponível na última série, cria-se uma série inferior com o novo clube e 19 bots. Resultados anteriores e auditoria são preservados.
 - No fechamento da temporada, após acessos e rebaixamentos, a última série sem nenhum técnico humano é extinta. Seus clubes são inativados, os contratos dos jogadores profissionais são encerrados e eles ficam livres no mercado; jogadores aposentados permanecem aposentados. Empréstimos de clubes sobreviventes retornam ao proprietário. Clubes, partidas e históricos não são excluídos. A verificação continua nas séries inferiores restantes até encontrar uma com técnico. Se nenhuma restar, o próximo clube inicia novamente a Série A com bots novos.
 - Nomes de novos jogadores profissionais e da base combinam aleatoriamente dois ou três componentes. A biblioteca brasileira fica em `backend/app/config/player_names/BR.json`, com listas `first_names`, `second_names` e `third_names`. Para outro país, adicione um arquivo com seu código de duas letras e as mesmas listas; países sem biblioteca usam a brasileira. Nomes existentes permanecem iguais.
-- Temporada padrão: 30 dias reais. Preparação/janela inicial nos dias 0–2, janela intermediária nos dias 15–17; rodadas da liga a cada 10 minutos após a preparação inicial, sem jogos da liga durante as janelas. Os jogos pendentes das temporadas antigas são reagendados uma única vez na inicialização ou no processamento periódico do servidor, começando dez minutos depois, sem alterar resultados.
+- Temporada padrão: 30 dias reais. Preparação/janela inicial nos dias 0–2, janela intermediária nos dias 15–17; rodadas da liga de hora em hora após a preparação inicial, sem jogos da liga durante as janelas. Os jogos pendentes das temporadas antigas são reagendados uma única vez na inicialização ou no processamento periódico do servidor, começando uma hora depois, sem alterar resultados. Partidas ausentes são recuperadas para completar as 38 rodadas; resultados concluídos são preservados. A frequência é configurada em `app_settings.game_rules.value.MATCHES_PER_DAY`: padrão 24 jogos por clube/dia, com intervalo de `1440 / MATCHES_PER_DAY` minutos. Alterar esse valor reagenda somente partidas pendentes e respeita as janelas de transferências.
 - Quatro acessos e quatro rebaixamentos por fronteira de divisões. Fechamento registra classificação, campeão, prêmios, envelhecimento, carreira e próximo calendário.
 - Copa Nacional paralela, com até 128 participantes das cinco primeiras divisões por padrão. Sorteio determinístico e folgas quando necessário. Jogo único; empate leva a 30 minutos de prorrogação e, persistindo, disputa de pênaltis com morte súbita. Pênaltis da disputa não contam como gols ou minutos individuais da partida.
 - Clubes novos herdam a participação ativa do bot substituído na copa. Campeão, avanço, troféus e premiações são persistidos.
@@ -293,6 +299,8 @@ Estatísticas individuais por clube/temporada/carreira registram partidas, titul
 
 Histórico registra temporadas, classificações, campeões, acessos/rebaixamentos, finanças, transferências e carreiras. Recordes incluem transferências, valor de mercado, gols, goleadas, público e sequência de vitórias. Pós-jogo reúne timeline, estatísticas, notas, bilheteria e consequências de energia/moral/condição/lesões/suspensões, com navegação para jogador, classificação e calendário.
 
+<a id="motor-de-partidas"></a>
+
 ## Motor de partidas
 
 O motor puro em `backend/app/services/match_engine.py` não acessa o banco. Expõe `MatchEngine`, `MatchTeam`, `MatchPlayer`, `simulate`, `progressive` e `simulate_knockout`; `MatchPlayer.from_document` adapta os documentos. Suporta modo `classic` e modo `skills`, que exige as sete habilidades.
@@ -312,6 +320,8 @@ Seed, configuração, escalações iniciais, atributos e comandos permitem repro
 Táticas persistem formação, estilo (`balanced`, `all_out_attack`, `counter_attack`), marcação (`light`, `heavy`, `very_heavy`) e foco (`normal`, `center`, `wings`). Formações suportadas: 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 4-5-1 e 3-4-3. O plano pré-jogo continua sendo aplicado offline; mudanças só afetam blocos futuros. Até cinco reservas escalados e três substituições por clube, sem reentrada, e até 30 comandos táticos aceitos por técnico. Comandos inviáveis geram rejeição, sem paralisar o jogo.
 
 Bots usam quatro presets (equilibrado, agressivo, contra-ataque e defensivo com marcação pesada), revisam estratégia em 45/65/80 minutos e substituem em 60/75. Reservas preservam energia até entrar. Menos de onze ativos ou clube inativo gera indisponibilidade/W.O.; o resultado normal é 3–0, ou 0–0 se ambos indisponíveis. Não são inventados jogadores para completar o time.
+
+<a id="partidas-ao-vivo"></a>
 
 ## Partidas ao vivo
 
@@ -338,6 +348,8 @@ Exemplo de comando tático pelo WebSocket:
 No REST, `POST /api/matches/{id}/commands/tactics` recebe `{"command_id":"tatico-001","payload":{"marking":"heavy"}}`. Substituição usa `out_player_id` e `in_player_id` no payload. Comandos de velocidade/pausa/retomada/salto usam os tipos de mensagem do controlador em `backend/app/controllers/live.py`. Mobile inclui narração, estatísticas, elenco/banco, controles, overlays de lances relevantes e transição ao pós-jogo.
 
 **Operação: um único processo FastAPI.** Não configure múltiplos workers/réplicas: ownership/locks distribuídos e pub/sub ainda não foram implementados.
+
+<a id="api"></a>
 
 ## API
 
@@ -369,6 +381,8 @@ A tabela utiliza `{id}` como identificador textual. Prefixo `/api`, exceto o Web
 
 Datas de filtros são ISO 8601. Consultas comuns têm limites de resultados; calendário limita a 500, e listas administrativas/plantéis usam suas próprias consultas. A resposta pública usa `id` textual no lugar de `_id` e datas UTC. HTTP 401 indica sessão inválida, 403 acesso negado, 409 conflito de regra/estado, 422 dados inválidos e 503 indisponibilidade do banco; erros internos não expõem stack traces.
 
+<a id="persistencia-e-operacao"></a>
+
 ## Persistência e operação
 
 | Local | Responsabilidade |
@@ -392,6 +406,8 @@ Manutenção embutida roda a cada 30 segundos, com relógio UTC: reclama salas a
 Regras administrativas estão em `app_settings.game_rules`, combinadas com defaults do código. **A API pública de settings não permite editar `game_rules`**; alterações exigem administração do servidor. A configuração da temporada é congelada, portanto não suponha que mudar uma regra altere partidas já agendadas daquela temporada. A tela Settings consulta as configurações; edição das demais chaves usa API autenticada.
 
 Para deploy, configure HTTPS/WSS, origens CORS exatas, secrets, MongoDB com autenticação/TLS/restrição de rede, volume persistente e backup restaurável. O Compose atual é uma configuração de desenvolvimento, mesmo com `ENVIRONMENT=production` na API: o MongoDB local não tem autenticação. Proxy reverso precisa encaminhar upgrade de WebSocket e permitir heartbeats. Preserve o processo único até haver coordenação distribuída; migrations/bootstraps não substituem backup.
+
+<a id="testes-e-calibracao"></a>
 
 ## Testes e calibração
 
@@ -428,11 +444,24 @@ Com dependências Python instaladas, execute da raiz; os runners usam o motor/re
 
 ```bash
 PYTHONPATH=backend python backend/scripts/calibrate_match_engine.py --matches 10000 --workers 4
+PYTHONPATH=backend python backend/scripts/calibrate_serie_a.py --workers 4 --output docs/calibration-serie-a.json
 PYTHONPATH=backend python backend/scripts/calibrate_player_management.py --output docs/player-management-calibration.json
 PYTHONPATH=backend python backend/scripts/simulation_season_runner.py --scales 10 100 1000 --seeds 35 135 235 335 --workers 4 --output reports/global-balance
 ```
 
 O runner do motor aceita `--seed`, `--categories` e `--output`; `--matches` é quantidade par por cenário, padrão 10.000. O relatório inclui configuração, hash do motor, fases, posse, ataques, chances, finalizações, gols, faltas, cartões, setores e aceitação. Alterar categorias/seeds/quantidade gera uma nova medição, não reproduz necessariamente todos os relatórios históricos. Pode gerar Markdown ao lado do JSON; esses arquivos são saídas automáticas, não documentos de regras mantidos separadamente.
+
+### Calibração da Série A e troca de estratégia
+
+O runner `calibrate_serie_a.py` simula uma Série A controlada com 20 clubes fictícios, força 70, formação 4-4-2, 38 rodadas e 380 partidas. Compara nove combinações de estilo (`balanced`, `all_out_attack`, `counter_attack`) e marcação (`light`, `heavy`, `very_heavy`). Cada clube começa com cada combinação uma vez por seed, reduzindo a influência da posição no calendário. O padrão usa dez seeds independentes e nove rotações: 90 temporadas fixas e 90 comparações com troca, totalizando 68.400 partidas.
+
+Em cada comparação, apenas um clube troca para a próxima combinação após três partidas consecutivas sem vitória (derrotas ou empates), reiniciando a contagem após vencer ou trocar. A mudança vale para a rodada seguinte. Calendário, elencos e seeds das partidas são iguais aos do cenário fixo. `--bad-streak` altera o gatilho; `--seeds` e `--workers` controlam a amostra e a execução.
+
+O [resumo da calibração](docs/calibration-serie-a.md) apresenta médias por estratégia e as classificações do primeiro par. O [relatório completo da Série A](docs/calibration-serie-a.json) registra classificação final de **todos os clubes**, pontos, vitórias, empates, derrotas, gols, estratégia inicial/final, resultados por estratégia utilizada e rodada de cada mudança. Também compara pontos do clube que muda contra seu próprio cenário fixo. A análise de padrões usa médias por seed e intervalos aproximados de 95%; o critério exploratório exige ao menos dez seeds e vantagem acima de 0,06 ponto por jogo contra todas as alternativas no limite inferior do intervalo. Ter a maior média, isoladamente, não caracteriza dominância.
+
+Na execução registrada de 68.400 partidas, contra-ataque com marcação muito pesada teve a maior média (1,4675 ponto/jogo), sem atingir o critério de dominância contra todas as alternativas. A marcação muito pesada liderou nos três estilos, com vantagem média de 0,1426 ponto/jogo contra a leve (intervalo aproximado de 95%: 0,1090–0,1762). A política de troca teve diferença média de −0,233 ponto por temporada (intervalo: −2,490 a +2,023), sem melhora consistente.
+
+Os clubes são sintéticos e os elencos reiniciam a cada partida: a calibração isola táticas, sem evolução de condição física, lesões ou suspensões entre rodadas, mercado ou banco de dados. Os intervalos são exploratórios, sem correção para comparações múltiplas; a política de troca cíclica não representa todas as formas possíveis de adaptação.
 
 ### Evidências históricas de calibração
 
@@ -470,6 +499,8 @@ O modelo em memória simplifica negociações/aceitação, contabiliza fluxo de 
 
 A medição registrada não emitiu alertas nas bandas configuradas e não motivou mudança subjetiva de parâmetros. Relatórios declaram metodologia, limitações e unidade monetária em centavos. Reexecutar 1.000 temporadas é custoso; use `--scales 10` para exploração, sem tratá-la como validação equivalente.
 
+<a id="limitacoes-e-pendencias"></a>
+
 ## Limitações e pendências
 
 - Sessões ao vivo dependem de processo único. Para múltiplos workers/réplicas faltam ownership/locks distribuídos e pub/sub.
@@ -480,6 +511,8 @@ A medição registrada não emitiu alertas nas bandas configuradas e não motivo
 - A auditoria npm tem alertas transitivos da toolchain. Não foi aplicado `audit fix --force`, que pode quebrar compatibilidade Expo/React Native.
 - Coleta conjunta dos testes backend/CI precisa considerar nomes de módulos repetidos, como explicado acima. CI remoto, deploy e builds físicos requerem validação própria.
 - Produção exige autenticação do MongoDB, backup/restauração, HTTPS/WSS, secrets e configuração de rede. O Compose local não cobre essa implantação.
+
+<a id="desenvolvimento-e-dependencias"></a>
 
 ## Desenvolvimento e dependências
 

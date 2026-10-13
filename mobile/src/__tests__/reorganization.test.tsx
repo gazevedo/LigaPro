@@ -58,10 +58,11 @@ test('calendar selects event day and loads adjacent month without filters', asyn
   await fireEvent.press(screen.getByLabelText('Próximo mês'));
   await waitFor(() => expect(calendarService.get).toHaveBeenLastCalledWith({ start: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(), end: new Date(now.getFullYear(), now.getMonth() + 2, 1).toISOString() }));
 });
-test('header only opens inbox', async () => {
-  const openInbox = jest.fn();
-  await render(<HeaderActions focused={() => true} openInbox={openInbox} />);
-  expect(screen.queryByLabelText('Configurações')).toBeNull();
+test('header opens inbox and settings', async () => {
+  const openInbox = jest.fn(), openSettings = jest.fn();
+  await render(<HeaderActions focused={() => true} openInbox={openInbox} openSettings={openSettings} />);
+  await fireEvent.press(screen.getByRole('button', { name: 'Configurações' }));
+  expect(openSettings).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByText('Correio'));
   expect(openInbox).toHaveBeenCalledTimes(1);
 });

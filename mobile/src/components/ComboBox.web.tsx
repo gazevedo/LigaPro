@@ -6,7 +6,7 @@ import { palette } from './GameUI';
 export function ComboBox({ label, value, options, onChange, disabled = false, inline = false }: ComboBoxProps) {
   const id = useId();
   return <View style={{ gap: 8, flexDirection: inline ? 'row' : 'column', alignItems: inline ? 'center' : undefined }}>
-    <Text nativeID={`${id}-label`} style={{ color: palette.ink, fontWeight: '600', flex: inline ? 1 : undefined, minWidth: 0 }}>{label}</Text>
+    <Text nativeID={`${id}-label`} style={{ color: palette.ink, fontWeight: '600', flex: inline ? 1 : undefined, minWidth: 0 }}>{inline ? `${label}:` : label}</Text>
     {createElement('select', {
       id, value, disabled, 'aria-labelledby': `${id}-label`,
       onChange: (event: React.ChangeEvent<HTMLSelectElement>) => onChange(event.target.value),

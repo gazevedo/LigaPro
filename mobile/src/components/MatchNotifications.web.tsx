@@ -4,7 +4,7 @@ import { apiRequest } from '../services/apiClient';
 import { ActionButton, NotificationBubble, palette } from './GameUI';
 
 const supported = () => typeof window !== 'undefined' && window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-export function MatchNotifications() {
+export function MatchNotifications({ controls = true }: { controls?: boolean }) {
   const [enabled, setEnabled] = useState(false), [message, setMessage] = useState<string | null>(null);
   const requested = useRef(false), queue = useRef(Promise.resolve()), revision = useRef(0);
   useEffect(() => {
@@ -45,7 +45,7 @@ export function MatchNotifications() {
       }
     }).catch(reason => { if (ticket === revision.current) { requested.current = !target; setEnabled(!target); setMessage(reason instanceof Error ? reason.message : 'Não foi possível configurar os avisos.'); } });
   }
-  if (!supported()) return null;
+  if (!supported() || !controls) return null;
   return <View style={{ gap: 8 }}>
     <ActionButton secondary title={enabled ? 'Desativar avisos de partidas' : 'Ativar avisos de partidas'} onPress={() => { void toggle(); }} />
     <Text style={{ color: palette.muted, fontSize: 12, textAlign: 'center' }}>Receba uma notificação 5 minutos antes de cada partida do seu clube.</Text>

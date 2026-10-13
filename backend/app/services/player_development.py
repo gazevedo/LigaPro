@@ -94,7 +94,9 @@ class PlayerGeneratorService:
                     if position == "DEF"
                     else position
                 )
-                players.append(self.player(club_id, country_id, role))
+                players.append(
+                    {**self.player(club_id, country_id, role), "shirt_number": len(players) + 1}
+                )
         return players
 
     def youth(self, club_id, country_id, count=None):

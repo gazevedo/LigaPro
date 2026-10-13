@@ -20,6 +20,7 @@ from app.schemas.game import (
     OfferInput,
     PlayerContractInput,
     ResignClubInput,
+    ShirtNumberInput,
     TacticsInput,
     TicketInput,
     TrainingInput,
@@ -97,6 +98,11 @@ def squad(user: User, repo: Repo):
 @router.put("/squad/lineup")
 def lineup(data: LineupInput, user: User, repo: Repo):
     return SquadService(repo).save(user, data)
+
+
+@router.put("/squad/players/{identity}/shirt-number")
+def shirt_number(identity: str, data: ShirtNumberInput, user: User, repo: Repo):
+    return SquadService(repo).shirt_number(user, identity, data.number)
 
 
 @router.get("/stadium")
