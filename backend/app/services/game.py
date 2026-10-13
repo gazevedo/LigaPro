@@ -6,9 +6,20 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from app.config.game import GameConfig, legacy_position
+from app.config.stadium import (
+    DEFAULT_FACILITIES,
+    FACILITY_DEFINITIONS,
+    FACILITY_LEVEL_NAMES,
+    SECTOR_NAMES,
+    STADIUM_LEVELS,
+    arena_level,
+    effects,
+    facilities,
+    sectors,
+)
 from app.config.team_performance import MoraleConfig
 from app.models.game import FACILITIES, public, utcnow
-from app.models.player import player_public
+from app.models.player import choose_shirt_number, player_public
 from app.services.bank_loans import PRODUCTS, BankLoanService
 from app.services.chemistry import ChemistryService
 from app.services.club_prestige import ClubRankingService
@@ -176,7 +187,7 @@ class ClubService:
                     or f"Estádio {data.name}",
                     "capacity": rules["initial_capacity"],
                     "ticket_price": rules["ticket_price"],
-                    "facilities": {key: 1 for key in FACILITIES},
+                    "facilities": dict(DEFAULT_FACILITIES),
                 },
             )
             repo.insert("club_finances", {"_id": club_id, "balance": 0})
@@ -207,7 +218,7 @@ class SquadService:
         players = self.repo.many(
             "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
         )
-        if any(p.get("shirt_number") is None for p in players):
+        if self.needs_shirt_numbers(players):
             players = self.repo.transaction(lambda repo: self.ensure_shirt_numbers(repo, user))
         lineup = self.repo.find("lineups", {"_id": club["_id"]})
         lineup = {**lineup, "reserves": lineup.get("reserves", [])[:5]}
@@ -253,9 +264,25 @@ class SquadService:
         )
 
     @staticmethod
-    def ensure_shirt_numbers(repo, user):
-        club = repo.owned(user.id)
-        # All number assignments write the club first, serializing concurrent transactions.
+    def needs_shirt_numbers(players):
+        counts = Counter(p.get("shirt_number") for p in players)
+        return any(
+            not p.get("shirt_number_custom")
+            and (
+                p.get("shirt_number_revision") != 2
+                or p.get("shirt_number") is None
+                or counts[p.get("shirt_number")] > 1
+            )
+            for p in players
+        )
+
+    @classmethod
+    def ensure_shirt_numbers(cls, repo, user):
+        return cls.ensure_shirt_numbers_for_club(repo, repo.owned(user.id))
+
+    @staticmethod
+    def ensure_shirt_numbers_for_club(repo, club):
+        # Number assignment and manual edits share this write lock.
         repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"roster_revision": 1}})
         players = repo.many(
             "players",
@@ -263,15 +290,33 @@ class SquadService:
             limit=None,
             sort=[("_id", 1)],
         )
-        used = {p.get("shirt_number") for p in players}
+        counts = Counter(p.get("shirt_number") for p in players)
+        preserved = [
+            p
+            for p in players
+            if p.get("shirt_number") is not None
+            and (
+                p.get("shirt_number_custom")
+                or p.get("shirt_number_revision") == 2
+                and counts[p["shirt_number"]] == 1
+            )
+        ]
+        used = {p["shirt_number"] for p in preserved}
         for player in players:
-            if player.get("shirt_number") is None:
-                number = next((n for n in range(1, 100) if n not in used), None)
-                if number is None:
-                    raise HTTPException(409, "Não há números de camisa disponíveis de 1 a 99.")
-                repo.update("players", {"_id": player["_id"]}, {"$set": {"shirt_number": number}})
-                player["shirt_number"] = number
-                used.add(number)
+            if player in preserved:
+                continue
+            try:
+                number = choose_shirt_number(player.get("position"), used)
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
+            values = {
+                "shirt_number": number,
+                "shirt_number_revision": 2,
+                "shirt_number_custom": False,
+            }
+            repo.update("players", {"_id": player["_id"]}, {"$set": values})
+            player.update(values)
+            used.add(number)
         return players
 
     def shirt_number(self, user, identity, number):
@@ -292,7 +337,15 @@ class SquadService:
             ):
                 raise HTTPException(409, "Este número de camisa já está em uso no plantel.")
             updated = repo.update(
-                "players", {"_id": player["_id"]}, {"$set": {"shirt_number": number}}
+                "players",
+                {"_id": player["_id"]},
+                {
+                    "$set": {
+                        "shirt_number": number,
+                        "shirt_number_revision": 2,
+                        "shirt_number_custom": True,
+                    }
+                },
             )
             return player_public(updated)
 
@@ -377,20 +430,52 @@ class StadiumService:
         self.repo = repository
 
     def get(self, user):
-        stadium = self.repo.find("stadiums", {"_id": self.repo.owned(user.id)["_id"]})
+        club = self.repo.owned(user.id)
+        stadium = self.repo.find("stadiums", {"_id": club["_id"]})
+        f = facilities(stadium)
+        level = arena_level(stadium)
+        base_cost = self.repo.rules()["upgrade_base_cost"]
+        costs = {
+            key: max(1, current) * definition[2] * base_cost
+            for key, definition in FACILITY_DEFINITIONS.items()
+            for current in (f[key],)
+        }
         return public(
             {
                 **stadium,
+                "facilities": f,
                 "names": FACILITIES,
-                "upgrade_costs": {
-                    key: level * self.repo.rules()["upgrade_base_cost"]
-                    for key, level in stadium["facilities"].items()
+                "upgrade_costs": costs,
+                "arena_level": level,
+                "arena_name": STADIUM_LEVELS[level - 1][1],
+                "levels": [
+                    {
+                        "level": n,
+                        "name": name,
+                        "capacity": capacity,
+                        "cost": cost,
+                        "description": description,
+                    }
+                    for n, name, capacity, cost, description in STADIUM_LEVELS
+                ],
+                "facility_level_names": FACILITY_LEVEL_NAMES,
+                "facility_catalog": {
+                    key: {
+                        "name": definition[0],
+                        "minimum_arena_level": definition[1],
+                        "maximum_level": max(5, f[key]),
+                        "icon": definition[3],
+                        "benefit": definition[4],
+                        "level_name": FACILITY_LEVEL_NAMES[min(5, max(0, f[key]))],
+                    }
+                    for key, definition in FACILITY_DEFINITIONS.items()
                 },
+                "effects": effects(stadium),
+                "sectors": sectors(stadium),
             }
         )
 
     def upgrade(self, user, facility):
-
         self.repo.transaction(
             lambda repo: self.upgrade_for_club(repo, repo.owned(user.id), facility)
         )
@@ -398,17 +483,62 @@ class StadiumService:
 
     @staticmethod
     def upgrade_for_club(repo, club, facility):
-        if facility not in FACILITIES:
+        if facility not in FACILITY_DEFINITIONS:
             raise HTTPException(404, "Construção não encontrada.")
-        stadium = repo.find("stadiums", {"_id": club["_id"]})
-        level = stadium["facilities"].get(facility, 1)
-        cost = level * repo.rules()["upgrade_base_cost"]
+        stadium = repo.update(
+            "stadiums", {"_id": club["_id"]}, {"$inc": {"construction_revision": 1}}
+        )
+        definition = FACILITY_DEFINITIONS[facility]
+        level = facilities(stadium)[facility]
+        if arena_level(stadium) < definition[1]:
+            raise HTTPException(409, f"Esta melhoria exige estádio de nível {definition[1]}.")
+        if level >= 5:
+            raise HTTPException(409, "Esta instalação já atingiu o nível máximo.")
+        cost = max(1, level) * definition[2] * repo.rules()["upgrade_base_cost"]
         repo.money(club["_id"], -cost, "stadium")
         update = {"$set": {f"facilities.{facility}": level + 1}}
-        if facility == "stands":
+        if facility in {"stands", "upper_stands"}:
             update["$inc"] = {"capacity": 1000}
         repo.update("stadiums", {"_id": club["_id"]}, update)
         repo.event(club["_id"], "stadium", FACILITIES[facility])
+
+    def evolve(self, user):
+        def operation(repo):
+            club = repo.owned(user.id)
+            stadium = repo.update(
+                "stadiums", {"_id": club["_id"]}, {"$inc": {"construction_revision": 1}}
+            )
+            current = arena_level(stadium)
+            if current == len(STADIUM_LEVELS):
+                raise HTTPException(409, "O estádio já atingiu o nível máximo.")
+            level, name, capacity, cost, _ = STADIUM_LEVELS[current]
+            repo.money(club["_id"], -cost, "stadium")
+            changes = {"capacity": capacity}
+            if level >= 3:
+                changes["facilities.upper_stands"] = max(1, facilities(stadium)["upper_stands"])
+            repo.update("stadiums", {"_id": club["_id"]}, {"$set": changes})
+            repo.event(club["_id"], "stadium", f"Evolução para {name}")
+
+        self.repo.transaction(operation)
+        return self.get(user)
+
+    def price_sector(self, user, sector, price):
+        if sector not in SECTOR_NAMES:
+            raise HTTPException(404, "Setor não encontrado.")
+
+        def operation(repo):
+            club = repo.owned(user.id)
+            stadium = repo.update(
+                "stadiums", {"_id": club["_id"]}, {"$inc": {"pricing_revision": 1}}
+            )
+            if not next(s for s in sectors(stadium) if s["id"] == sector)["available"]:
+                raise HTTPException(409, "Este setor ainda não foi construído.")
+            repo.update(
+                "stadiums", {"_id": club["_id"]}, {"$set": {f"sector_prices.{sector}": price}}
+            )
+
+        self.repo.transaction(operation)
+        return self.get(user)
 
 
 class FinanceService:
@@ -517,13 +647,15 @@ class FinanceService:
     def tickets(self, user):
         club = self.repo.owned(user.id)
         stadium = self.repo.find("stadiums", {"_id": club["_id"]})
+        sector_rows = FanBaseService.sector_ticketing(club, stadium)
         return public(
             {
                 "price": stadium["ticket_price"],
                 "capacity": stadium["capacity"],
                 "history": self.repo.many("ticket_history", {"club_id": club["_id"]}),
                 "income": self.repo.ticket_income(club["_id"]),
-                "estimated_attendance": FanBaseService.attendance(club, stadium),
+                "estimated_attendance": sum(row["attendance"] for row in sector_rows),
+                "sectors": sector_rows,
                 "attendance_share": FanBaseService.ATTENDANCE_SHARE,
                 "supporters": club.get("supporters", 1000),
                 "fan_satisfaction": club.get("fan_satisfaction", 50),
@@ -533,8 +665,18 @@ class FinanceService:
         )
 
     def ticket_price(self, user, price):
-        club = self.repo.owned(user.id)
-        self.repo.update("stadiums", {"_id": club["_id"]}, {"$set": {"ticket_price": price}})
+        def operation(repo):
+            club = repo.owned(user.id)
+            repo.update(
+                "stadiums",
+                {"_id": club["_id"]},
+                {
+                    "$set": {"ticket_price": price, "sector_prices": {}},
+                    "$inc": {"pricing_revision": 1},
+                },
+            )
+
+        self.repo.transaction(operation)
         return self.tickets(user)
 
     def sponsors(self, user):
@@ -569,7 +711,12 @@ class CalendarService:
         season = CompetitionService.current(self.repo)
         if CompetitionService.needs_schedule_update(self.repo, season):
             self.repo.transaction(CompetitionService.update_league_interval)
-        query = {"club_id": self.repo.owned(user.id)["_id"]}
+        club_id = self.repo.owned(user.id)["_id"]
+        match_types = ("match", "league_match", "cup_match", "friendly")
+        query = {
+            "club_id": club_id,
+            "$nor": [{"type": {"$in": match_types}}, {"kind": {"$in": match_types}}],
+        }
         if filters.type:
             query["$or"] = [{"type": filters.type}, {"kind": filters.type}]
         dates = {}
@@ -582,23 +729,61 @@ class CalendarService:
         if dates:
             query["date"] = dates
         events = self.repo.many("calendar_events", query, limit=500, sort=[("date", 1)])
-        references = [event["reference_id"] for event in events if event.get("reference_id")]
-        matches = {}
-        if references:
-            for collection in ("matches", "competition_matches", "friendly_matches"):
-                for match in self.repo.many(
-                    collection,
-                    {"_id": {"$in": references}},
-                    limit=None,
-                    projection={
-                        "status": 1,
-                        "home_goals": 1,
-                        "away_goals": 1,
-                        "home_club_id": 1,
-                        "away_club_id": 1,
-                    },
-                ):
-                    matches[match["_id"]] = match
+        # Match documents are the same source used by Campeonatos. Copies in
+        # calendar_events may be missing, duplicated or have an outdated date.
+        matches, kinds = {}, {}
+        slots = []
+        if filters.type in (None, "match", "league_match"):
+            slots = [
+                slot["_id"]
+                for slot in self.repo.many(
+                    "season_clubs", {"club_id": club_id}, limit=None, projection={"_id": 1}
+                )
+            ]
+        for collection, kind in (
+            ("matches", "league_match"),
+            ("competition_matches", "cup_match"),
+            ("friendly_matches", "friendly"),
+        ):
+            if filters.type not in (None, "match", kind):
+                continue
+            participants = [{"home_club_id": club_id}, {"away_club_id": club_id}]
+            if collection == "matches" and slots:
+                participants += [{"home_slot_id": {"$in": slots}}, {"away_slot_id": {"$in": slots}}]
+            fixture_query = {"$or": participants}
+            if dates:
+                fixture_query["date"] = dates
+            for match in self.repo.many(
+                collection,
+                fixture_query,
+                limit=500,
+                sort=[("date", 1)],
+                projection={
+                    "date": 1,
+                    "round": 1,
+                    "phase": 1,
+                    "division_id": 1,
+                    "season_id": 1,
+                    "status": 1,
+                    "home_goals": 1,
+                    "away_goals": 1,
+                    "home_club_id": 1,
+                    "away_club_id": 1,
+                },
+            ):
+                matches[match["_id"]] = match
+                kinds[match["_id"]] = kind
+        division_ids = list({m["division_id"] for m in matches.values() if m.get("division_id")})
+        divisions = (
+            {
+                d["_id"]: d["name"]
+                for d in self.repo.many(
+                    "divisions", {"_id": {"$in": division_ids}}, limit=None, projection={"name": 1}
+                )
+            }
+            if division_ids
+            else {}
+        )
         club_ids = list(
             {
                 match[key]
@@ -636,19 +821,27 @@ class CalendarService:
                 )
             if away in clubs:
                 match["away_name"] = clubs[away]["name"]
-        return public(
-            [
+        for identity, match in matches.items():
+            kind = kinds[identity]
+            round_label = f"rodada {match.get('round', '?')}"
+            if kind == "league_match":
+                title = f"Série {divisions.get(match.get('division_id'), '?')} · {round_label}"
+            elif kind == "cup_match":
+                title = f"Copa Nacional · {match.get('phase') or round_label}"
+            else:
+                title = "Amistoso"
+            events.append(
                 {
-                    **event,
-                    **{
-                        key: value
-                        for key, value in matches.get(event.get("reference_id"), {}).items()
-                        if key != "_id"
-                    },
+                    **match,
+                    "_id": f"{kind}:{identity}:{club_id}",
+                    "club_id": club_id,
+                    "type": "friendly" if kind == "friendly" else "match",
+                    "kind": kind,
+                    "title": title,
+                    "reference_id": identity,
                 }
-                for event in events
-            ]
-        )
+            )
+        return public(sorted(events, key=lambda event: (event["date"], str(event["_id"])))[:500])
 
 
 class MarketService:

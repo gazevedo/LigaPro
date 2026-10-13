@@ -110,6 +110,16 @@ def stadium(user: User, repo: Repo):
     return StadiumService(repo).get(user)
 
 
+@router.post("/stadium/evolve")
+def evolve_stadium(user: User, repo: Repo):
+    return StadiumService(repo).evolve(user)
+
+
+@router.put("/stadium/sectors/{sector}/price")
+def sector_price(sector: str, data: TicketInput, user: User, repo: Repo):
+    return StadiumService(repo).price_sector(user, sector, data.price)
+
+
 @router.post("/stadium/{facility}/upgrade")
 def upgrade(facility: str, user: User, repo: Repo):
     return StadiumService(repo).upgrade(user, facility)

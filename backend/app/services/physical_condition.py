@@ -5,22 +5,29 @@ from pymongo import UpdateOne
 
 from app.config.game import GameConfig
 from app.config.physical import PhysicalConfig
+from app.config.stadium import effects
 
 
 class PhysicalConditionService:
     def __init__(self, config=None):
         self.config = config or PhysicalConfig()
 
-    def recover(self, player, now, medical_level=1):
+    def recover(self, player, now, medical_level=1, recovery_bonus=0, energy_bonus=0):
         previous = player.get("condition_updated_at", player.get("created_at", now))
         days = max(0, (now - previous).total_seconds() / 86400)
         age = max(0.65, 1 - max(0, player["age"] - 27) * 0.015)
         current = player.get("physical_condition", 100)
-        rate = (self.config.recovery_per_day + self.config.medical_bonus * medical_level) * age
+        rate = (
+            self.config.recovery_per_day
+            + self.config.medical_bonus * medical_level
+            + recovery_bonus
+        ) * age
         rest = 1.1 if not player.get("last_played_at") or player["last_played_at"] < previous else 1
         return {
             "physical_condition": min(100, round(current + days * rate * rest, 2)),
-            "energy": min(100, round(player.get("energy", 100) + days * 45 * age, 2)),
+            "energy": min(
+                100, round(player.get("energy", 100) + days * (45 + energy_bonus) * age, 2)
+            ),
             "condition_updated_at": max(previous, now),
         }
 
@@ -36,11 +43,26 @@ class PhysicalConditionService:
     def prepare(self, repo, club_id, now):
         stadium = repo.find("stadiums", {"_id": club_id}) or {}
         medical = stadium.get("facilities", {}).get("medical", 1)
+        bonuses = effects(stadium)
         updates = []
         for player in repo.many(
             "players", {"current_club_id": club_id, "status": {"$ne": "retired"}}, limit=None
         ):
-            changes = self.recover(player, now, medical)
+            changes = self.recover(
+                player, now, medical, bonuses["recovery_bonus"], bonuses["energy_bonus"]
+            )
+            days = max(
+                0,
+                (
+                    now - player.get("condition_updated_at", player.get("created_at", now))
+                ).total_seconds()
+                / 86400,
+            )
+            if bonuses["morale_recovery_per_day"]:
+                changes["morale"] = min(
+                    100,
+                    round(player.get("morale", 50) + days * bonuses["morale_recovery_per_day"], 2),
+                )
             if player.get("suspension_matches_remaining", 0) > 0:
                 changes["status"] = (
                     "injured"

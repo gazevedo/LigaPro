@@ -38,6 +38,25 @@ TRAITS = {
 }
 
 
+# Traditional numbers are disjoint across positions for the initial 25-player squad.
+SHIRT_NUMBERS = {
+    "GK": (1, 12, 23),
+    "FB": (2, 3, 13, 14),
+    "CB": (4, 5, 15, 16),
+    "MID": (6, 8, 10, 17, 18, 20, 21, 22),
+    "ATT": (7, 9, 11, 19, 24, 25),
+}
+
+
+def choose_shirt_number(position, used=()):
+    position = {"GOL": "GK", "DEF": "CB", "MED": "MID", "ATA": "ATT"}.get(position, position)
+    candidates = (*SHIRT_NUMBERS.get(position, ()), *range(26, 100), *range(1, 26))
+    number = next((number for number in candidates if number not in used), None)
+    if number is None:
+        raise ValueError("Não há números de camisa disponíveis de 1 a 99.")
+    return number
+
+
 def normalize_player(player):
     position = {"GOL": "GK", "DEF": "CB", "MED": "MID", "ATA": "ATT"}.get(
         player["position"], player["position"]
@@ -74,7 +93,12 @@ def normalize_player(player):
 def player_public(player, youth=False):
     return public(
         {
-            **{key: value for key, value in player.items() if key not in FORBIDDEN},
+            **{
+                key: value
+                for key, value in player.items()
+                if key not in FORBIDDEN
+                and key not in {"shirt_number_revision", "shirt_number_custom"}
+            },
             **normalize_player(player),
             **(
                 {

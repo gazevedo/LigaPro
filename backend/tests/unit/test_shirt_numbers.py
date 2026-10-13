@@ -6,6 +6,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app.models.player import SHIRT_NUMBERS
 from app.schemas.game import ShirtNumberInput
 from app.services.game import SquadService
 from app.services.player_development import PlayerGeneratorService
@@ -57,19 +58,44 @@ class ShirtNumberTests(unittest.TestCase):
             SquadService(self.repo).shirt_number(self.user, str(self.player["_id"]), 9)
         self.assertEqual(raised.exception.status_code, 403)
 
-    def test_legacy_missing_numbers_are_assigned_without_rewriting_existing_duplicates(self):
+    def test_custom_numbers_are_preserved_while_automatic_numbers_use_position(self):
         players = [
-            {"_id": ObjectId(), "shirt_number": 1},
-            {"_id": ObjectId(), "shirt_number": 1},
-            {"_id": ObjectId()},
-            {"_id": ObjectId()},
+            {"_id": ObjectId(), "shirt_number": 1, "shirt_number_custom": True},
+            {"_id": ObjectId(), "shirt_number": 1, "shirt_number_custom": True},
+            {"_id": ObjectId(), "position": "MID"},
+            {"_id": ObjectId(), "position": "MID"},
         ]
         self.repo.many.return_value = players
         result = SquadService.ensure_shirt_numbers(self.repo, self.user)
-        self.assertEqual([p["shirt_number"] for p in result], [1, 1, 2, 3])
+        self.assertEqual([p["shirt_number"] for p in result], [1, 1, 6, 8])
         self.assertEqual(
             sum(call.args[0] == "players" for call in self.repo.update.call_args_list), 2
         )
+
+    def test_every_generated_player_has_a_position_number_and_squad_is_unique(self):
+        generator = PlayerGeneratorService(seed=123)
+        for position in SHIRT_NUMBERS:
+            player = generator.player("club", "BR", position)
+            self.assertEqual(player["shirt_number"], SHIRT_NUMBERS[position][0])
+        players = generator.squad("club", "BR")
+        for player in players:
+            self.assertIn(player["shirt_number"], SHIRT_NUMBERS[player["position"]])
+        youth = generator.youth("club", "BR")
+        self.assertEqual(len({player["shirt_number"] for player in youth}), len(youth))
+        for player in youth:
+            self.assertIn(player["shirt_number"], SHIRT_NUMBERS[player["position"]])
+
+    def test_existing_automatic_numbers_are_reassigned_by_position_once(self):
+        players = [
+            {"_id": ObjectId(), "position": "GK", "shirt_number": 2},
+            {"_id": ObjectId(), "position": "GK", "shirt_number": 3},
+            {"_id": ObjectId(), "position": "ATT", "shirt_number": 4},
+        ]
+        self.repo.many.return_value = players
+        self.assertTrue(SquadService.needs_shirt_numbers(players))
+        updated = SquadService.ensure_shirt_numbers(self.repo, self.user)
+        self.assertEqual([p["shirt_number"] for p in updated], [1, 12, 7])
+        self.assertFalse(SquadService.needs_shirt_numbers(updated))
 
     def test_numbers_are_strict_integers_from_1_to_99(self):
         for value in (0, 100, -1, True, 1.5, "10"):

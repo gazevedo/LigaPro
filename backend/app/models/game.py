@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from bson import ObjectId
 
+from app.config.stadium import FACILITY_NAMES
+
 FORMATIONS = {
     "4-4-2": {"DEF": 4, "MED": 4, "ATA": 2},
     "4-3-3": {"DEF": 4, "MED": 3, "ATA": 3},
@@ -11,17 +13,7 @@ FORMATIONS = {
     "4-5-1": {"DEF": 4, "MED": 5, "ATA": 1},
     "3-4-3": {"DEF": 3, "MED": 4, "ATA": 3},
 }
-FACILITIES = {
-    "stands": "Arquibancadas",
-    "pitch": "Gramado",
-    "lights": "Iluminação",
-    "lockers": "Vestiários",
-    "medical": "Centro Médico",
-    "training": "Centro de Treinamento",
-    "parking": "Estacionamento",
-    "shops": "Lojas",
-    "boxes": "Camarotes",
-}
+FACILITIES = FACILITY_NAMES
 DEFAULT_RULES = {
     "MATCHES_PER_DAY": 24,
     "formations": FORMATIONS,

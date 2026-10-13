@@ -2,6 +2,7 @@
 
 from bson import ObjectId
 
+from app.config.stadium import effects, sectors
 from app.models.game import utcnow
 
 
@@ -46,12 +47,47 @@ class FanBaseService:
                     * price_factor
                     * prestige
                     * importance
+                    * (1 + effects(stadium)["attendance_bonus"])
                     * max(0.85, 1 - min(4, club.get("division_tier", 0)) * 0.03)
                     * (1 + max(0, 10 - (position or 10)) * 0.01)
                     * (1 + min(0.12, (opponent or {}).get("reputation", 0) / 800))
                 ),
             ),
         )
+
+    @classmethod
+    def sector_ticketing(cls, club, stadium, importance=1.0, opponent=None, position=None):
+        rows = []
+        for sector in sectors(stadium):
+            desired = (
+                cls.attendance(
+                    club,
+                    stadium,
+                    importance,
+                    price=sector["price"],
+                    opponent=opponent,
+                    position=position,
+                )
+                * sector["capacity"]
+                / max(1, stadium["capacity"])
+            )
+            rows.append(
+                {
+                    **sector,
+                    "attendance": min(sector["capacity"], int(desired)),
+                    "remainder": desired - int(desired),
+                }
+            )
+        target = round(sum(row["attendance"] + row["remainder"] for row in rows))
+        extra = target - sum(row["attendance"] for row in rows)
+        for row in sorted(rows, key=lambda row: -row["remainder"]):
+            if extra and row["attendance"] < row["capacity"]:
+                row["attendance"] += 1
+                extra -= 1
+        for row in rows:
+            row["income"] = row["attendance"] * row["price"]
+            row.pop("remainder")
+        return rows
 
     @classmethod
     def change(cls, repo, club_id, reason, reference, *, satisfaction=0, growth=0, now=None):
@@ -112,11 +148,21 @@ class FanBaseService:
                 )
                 or {}
             )
-            attendance = cls.attendance(
+            rows = cls.sector_ticketing(
                 club, stadium, importance, opponent=rival, position=standing.get("position")
             )
-            income = attendance * stadium["ticket_price"]
+            attendance = sum(row["attendance"] for row in rows)
+            income = sum(row["income"] for row in rows)
             repo.money(club["_id"], income, "ticketing", match["_id"], effective_at=match["date"])
+            services_income = attendance * effects(stadium)["services_income_per_attendee"]
+            if services_income:
+                repo.money(
+                    club["_id"],
+                    services_income,
+                    "other_income",
+                    match["_id"],
+                    effective_at=match["date"],
+                )
             repo.insert(
                 "ticket_history",
                 {
@@ -126,6 +172,8 @@ class FanBaseService:
                     "attendance": attendance,
                     "price": stadium["ticket_price"],
                     "income": income,
+                    "services_income": services_income,
+                    "sectors": rows,
                     "created_at": match["date"],
                 },
             )

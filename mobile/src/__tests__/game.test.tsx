@@ -1,3 +1,4 @@
+import { NotificationHost } from '../components/NotificationHost';
 import { ApiError, ApiTimeoutError } from '../services/apiClient';
 import { act, render, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -62,9 +63,9 @@ test('public club hides administration for a different owner', async () => {
 test('stadium reports insufficient balance without optimistic upgrade', async () => {
   jest.mocked(stadiumService.get).mockResolvedValue({ capacity: 10000, ticket_price: 2000, facilities: { stands: 1 }, names: { stands: 'Arquibancadas' }, upgrade_costs: { stands: 100000 } });
   jest.mocked(stadiumService.upgrade).mockRejectedValue(new Error('Saldo insuficiente.'));
-  await render(<StadiumScreen />); const button = await screen.findByRole('button', { name: /Melhorar Arquibancadas/ });
+  await render(<><StadiumScreen /><NotificationHost /></>); await fireEvent.press(screen.getByRole('tab', { name: 'Instalações' })); const button = await screen.findByRole('button', { name: /Melhorar Arquibancadas/ });
   await fireEvent.press(button); await screen.findByText('Saldo insuficiente.');
-  expect(screen.getByText('Arquibancadas · nível 1')).toBeTruthy();
+  expect(screen.getByText('Nível 1 ·')).toBeTruthy();
 });
 test('accepts incoming offer and reloads negotiations', async () => {
   await render(<TransferOffersScreen />); await screen.findByText('Aceitar proposta');
@@ -174,12 +175,13 @@ test('a successful response after session expiry does not enter the game', async
 test('stadium upgrade refreshes capacity and facilities automatically', async () => {
   const before = { capacity: 10000, ticket_price: 2000, facilities: { stands: 1 }, names: { stands: 'Arquibancadas' }, upgrade_costs: { stands: 100000 } };
   jest.mocked(stadiumService.get).mockResolvedValueOnce(before).mockResolvedValueOnce({ ...before, capacity: 15000, facilities: { stands: 2 } });
-  jest.mocked(stadiumService.upgrade).mockResolvedValue({ ...before, capacity: 15000 });
+  jest.mocked(stadiumService.upgrade).mockResolvedValue({ ...before, capacity: 15000, facilities: { stands: 2 } });
   await render(<StadiumScreen />);
+  await fireEvent.press(screen.getByRole('tab', { name: 'Instalações' }));
   await fireEvent.press(await screen.findByRole('button', { name: /Melhorar Arquibancadas/ }));
-  await screen.findByText('Arquibancadas · nível 2');
+  await screen.findByText('Nível 2 ·');
   expect(screen.queryByText('Atualizar estádio')).toBeNull();
-  expect(stadiumService.get).toHaveBeenCalledTimes(2);
+  expect(stadiumService.get).toHaveBeenCalledTimes(1);
 });
 
 test('resignation asks for confirmation and cancelling preserves the club', async () => {

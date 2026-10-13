@@ -277,6 +277,23 @@ Existe um patrocínio principal por clube. Propostas respondem a reputação, di
 
 Torcida e satisfação evoluem por resultados, campanhas, títulos, acessos e rebaixamentos. Público considera preço, satisfação, reputação, divisão, classificação, adversário, importância e capacidade. A propensão inicial de comparecimento é 10% da torcida, não 100% de ocupação automática. A bilheteria apresenta previsão de público. Estruturas médica e de treino afetam recuperação/desenvolvimento; bots só ampliam estádio com demanda recorrente, reserva de caixa e retorno estimado suficiente.
 
+O calendário consulta as partidas oficiais da liga, copa e amistosos, usando as mesmas datas e resultados de Campeonatos; eventos copiados antigos não duplicam os jogos. Camisas são atribuídas por posição na criação; o backend atualiza automaticamente os jogadores existentes, preservando edições manuais identificadas e impedindo repetições no clube.
+
+**Evolução do estádio** — capacidades de referência compatíveis com estádios locais e grandes arenas. Custos usam a escala econômica do jogo, não orçamentos reais de construção.
+
+| Nível | Modelo | Capacidade | Novas opções |
+| --- | --- | --- | --- |
+| 1 | Estádio local | 10.000 | Inferiores, CT, médico e serviços essenciais |
+| 2 | Estádio municipal | 20.000 | Academia, salas de treinamento e VIP |
+| 3 | Estádio regional | 30.000 | Superiores, spa e museu |
+| 4 | Arena nacional | 45.000 | Skyboxes |
+| 5 | Grande arena | 60.000 | Ampliação de hospitalidade e serviços |
+| 6 | Arena internacional | 80.000 | Estrutura para grandes públicos |
+
+Cada uma das 19 instalações evolui de **Essencial → Estruturado → Profissional → Avançado → Referência**, além do estado não construído. CT, salas e campo de treinamento melhoram o desenvolvimento; médico, academia, spa e vestiários melhoram recuperação física, energia ou moral. Infraestrutura, iluminação e campo melhoram conforto; estacionamento, lanchonetes e museu geram receita adicional. Museu e sala de troféus aumentam atratividade. Arquibancadas ampliam capacidade, enquanto camarotes, VIP e skyboxes oferecem lugares premium. Benefícios possuem limites para evitar crescimento ilimitado; a tela mostra o efeito atual e os pré-requisitos.
+
+O mapa permite selecionar dez setores: inferiores e superiores Norte/Leste/Sul/Oeste, premium/camarotes e skyboxes. Cada setor disponível tem capacidade e preço próprios; público e bilheteria consideram esses preços sem exceder a capacidade total. Setores em cinza são planejados. A definição de um ingresso geral em Financeiro aplica esse valor a todos os setores. As imagens e o atlas de instalações ficam em `mobile/assets/stadium`; regras e limites em `backend/app/config/stadium.py`.
+
 Ranking utiliza divisão, classificação, resultados recentes e títulos, cujo peso diminui com o tempo. Reputação cresce lentamente com história esportiva e torcida. Ambos possuem histórico.
 
 ### Crédito e investimentos
@@ -372,7 +389,7 @@ A tabela utiliza `{id}` como identificador textual. Prefixo `/api`, exceto o Web
 | Calendário | `GET /api/calendar`, `/api/calendar/friendlies`; `POST /api/calendar/friendlies`, `/api/calendar/friendlies/{id}/accept`. |
 | Finanças | `GET /api/finance`, `/api/finance/bank`; `POST /api/finance/bank/{kind}`, `/api/finance/contracts/{id}/settle`; `kind`: `investment` ou `bank_loan`. |
 | Crédito | `POST /api/finance/loans/{product}`, `/api/finance/loans/{id}/settle`; produtos: `short_term`, `medium_term`, `long_term`. |
-| Estádio/público | `GET /api/stadium`, `/api/finance/tickets`; `POST /api/stadium/{facility}/upgrade`; `PUT /api/finance/tickets`. |
+| Estádio/público | `GET /api/stadium`, `/api/finance/tickets`; `POST /api/stadium/{facility}/upgrade`, `/api/stadium/evolve`; `PUT /api/stadium/sectors/{sector}/price`, `/api/finance/tickets`. |
 | Patrocínio | `GET /api/finance/sponsors`; `POST /api/finance/sponsors/{id}/accept`. |
 | Estatísticas/feed/histórico | `GET /api/statistics`, `/api/players/{id}/statistics`, `/api/news?scope=club`, `/api/news?scope=universe`, `/api/news/inbox?offset=0&limit=30`, `/api/history`; `POST /api/news/read` recebe `news_id` para marcar a mensagem como lida. |
 | Ao vivo | `GET /api/matches/upcoming`, `/api/matches/{id}/live-state`, `/api/matches/{id}/events?after=0`; `POST /api/matches/{id}/commands/{kind}`, `/api/matches/{id}/pause`, `/api/matches/{id}/resume`, `/api/matches/{id}/speed`; `kind`: `substitution`, `formation`, `tactics`, `combined_change`. |

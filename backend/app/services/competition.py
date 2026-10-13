@@ -576,6 +576,43 @@ class CompetitionService:
             self.repo.transaction(enroll_existing)
 
         self.repo.transaction(self.update_league_interval)
+        from app.services.game import SquadService
+
+        # Upgrade existing rosters once; preserve numbers on subsequent startups.
+        for club in self.repo.many("clubs", {}, limit=None, projection={"_id": 1}):
+            if self.repo.find(
+                "players",
+                {
+                    "current_club_id": club["_id"],
+                    "status": {"$ne": "retired"},
+                    "shirt_number_revision": {"$ne": 2},
+                    "shirt_number_custom": {"$ne": True},
+                },
+                projection={"_id": 1},
+            ):
+                self.repo.transaction(
+                    lambda repo, club=club: SquadService.ensure_shirt_numbers_for_club(repo, club)
+                )
+        from app.models.player import SHIRT_NUMBERS, choose_shirt_number
+
+        for position in (*SHIRT_NUMBERS, "GOL", "DEF", "MED", "ATA"):
+            self.repo.update_many(
+                "players",
+                {
+                    "current_club_id": None,
+                    "status": {"$ne": "retired"},
+                    "position": position,
+                    "shirt_number_revision": {"$ne": 2},
+                    "shirt_number_custom": {"$ne": True},
+                },
+                {
+                    "$set": {
+                        "shirt_number": choose_shirt_number(position),
+                        "shirt_number_revision": 2,
+                        "shirt_number_custom": False,
+                    }
+                },
+            )
 
     def table(self, user):
         club = self.repo.owned(user.id)
@@ -619,6 +656,8 @@ class CompetitionService:
     def matches(self, user):
         club = self.repo.owned(user.id)
         season = self.current(self.repo)
+        if self.needs_schedule_update(self.repo, season):
+            self.repo.transaction(self.update_league_interval)
         slot = self.repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
         rows = self.repo.many(
             "matches",

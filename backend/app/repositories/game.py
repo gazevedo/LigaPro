@@ -206,6 +206,13 @@ class GameRepository:
             [("season_id", 1), ("division_id", 1), ("position", 1)]
         )
         self.database.matches.create_index([("season_id", 1), ("status", 1), ("date", 1)])
+        # Calendar queries use participant identity and the official fixture date.
+        self.database.season_clubs.create_index([("club_id", 1), ("season_id", 1)])
+        for collection in ("matches", "competition_matches", "friendly_matches"):
+            for side in ("home", "away"):
+                self.database[collection].create_index([(f"{side}_club_id", 1), ("date", 1)])
+                if collection == "matches":
+                    self.database.matches.create_index([(f"{side}_slot_id", 1), ("date", 1)])
         self.database.player_contracts.create_index(
             "player_id",
             unique=True,

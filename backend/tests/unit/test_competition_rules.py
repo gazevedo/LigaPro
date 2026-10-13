@@ -140,9 +140,8 @@ class CompetitionRulesTests(unittest.TestCase):
             SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
         )
         repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
-        repo.many.assert_called_once_with(
-            "calendar_events", {"club_id": "club"}, limit=500, sort=[("date", 1)]
-        )
+        self.assertEqual(repo.many.call_args_list[0].args[0], "calendar_events")
+        self.assertEqual(repo.many.call_args_list[0].args[1]["club_id"], "club")
         repo.reset_mock()
         repo.find.return_value = {
             "_id": "season",
@@ -159,21 +158,29 @@ class CompetitionRulesTests(unittest.TestCase):
         repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
         repo.find.return_value = {"league_schedule_revision": 3, "league_games_per_day": 24}
-        events = [{"_id": "event", "reference_id": "match", "date": "past", "status": "scheduled"}]
+        events = []
         repo.many.side_effect = lambda collection, *args, **kwargs: (
             events
             if collection == "calendar_events"
-            else [{"_id": "match", "status": "completed", "home_goals": 2, "away_goals": 1}]
+            else [
+                {
+                    "_id": "match",
+                    "date": "past",
+                    "status": "completed",
+                    "home_goals": 2,
+                    "away_goals": 1,
+                }
+            ]
             if collection == "matches"
             else []
         )
         result = CalendarService(repo).get(
             SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
         )
-        self.assertEqual(result[0]["id"], "event")
+        self.assertEqual(result[0]["reference_id"], "match")
         self.assertEqual(result[0]["status"], "completed")
         self.assertEqual(result[0]["home_goals"], 2)
-        self.assertEqual(repo.many.call_count, 4)
+        self.assertEqual(repo.many.call_count, 5)
 
     def test_one_failed_match_does_not_block_other_due_matches(self):
         repo = Mock()

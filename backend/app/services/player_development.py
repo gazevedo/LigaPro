@@ -5,9 +5,17 @@ from fastapi import HTTPException
 
 from app.config.game import GameConfig
 from app.config.names import player_name
+from app.config.stadium import effects
 from app.config.team_performance import ChemistryConfig, MoraleConfig
 from app.models.game import utcnow
-from app.models.player import FORBIDDEN, SKILLS, market_value, normalize_player, player_public
+from app.models.player import (
+    FORBIDDEN,
+    SKILLS,
+    choose_shirt_number,
+    market_value,
+    normalize_player,
+    player_public,
+)
 from app.services.chemistry import ChemistryService
 from app.services.market_value import MarketValueService
 from app.services.player_contracts import ContractService
@@ -19,7 +27,7 @@ class PlayerGeneratorService:
         self.config = config or GameConfig()
         self.rng = Random(seed)
 
-    def player(self, club_id, country_id, position=None, youth=False):
+    def player(self, club_id, country_id, position=None, youth=False, used_numbers=None):
         strength = min(
             self.config.MAX_PLAYER_LEVEL,
             self.rng.randint(25, 45) if youth else self.rng.randint(40, 60),
@@ -74,6 +82,13 @@ class PlayerGeneratorService:
             document.pop(key, None)
         if youth:
             document.update(club_id=club_id, estimated_potential_capacity=potential)
+        document.update(
+            shirt_number=choose_shirt_number(document["position"], used_numbers or ()),
+            shirt_number_revision=2,
+            shirt_number_custom=False,
+        )
+        if used_numbers is not None:
+            used_numbers.add(document["shirt_number"])
         return document
 
     def potential(self, strength, youth=False):
@@ -84,7 +99,7 @@ class PlayerGeneratorService:
         return self.rng.randint(low, high)
 
     def squad(self, club_id, country_id):
-        players = []
+        players, used_numbers = [], set()
         for position, count in self.config.INITIAL_POSITION_COUNTS:
             for index in range(count):
                 role = (
@@ -94,14 +109,13 @@ class PlayerGeneratorService:
                     if position == "DEF"
                     else position
                 )
-                players.append(
-                    {**self.player(club_id, country_id, role), "shirt_number": len(players) + 1}
-                )
+                players.append(self.player(club_id, country_id, role, used_numbers=used_numbers))
         return players
 
     def youth(self, club_id, country_id, count=None):
+        used_numbers = set()
         return [
-            self.player(club_id, country_id, youth=True)
+            self.player(club_id, country_id, youth=True, used_numbers=used_numbers)
             for _ in range(self.config.YOUTH_PLAYERS_PER_SEASON if count is None else count)
         ]
 
@@ -189,7 +203,12 @@ class TrainingService:
         progress = repo.find("player_training", {"_id": player["_id"]}) or {"progress": 0}
         stadium = repo.find("stadiums", {"_id": club["_id"]}) or {}
         training_level = stadium.get("facilities", {}).get("training", 1)
-        level = progress["progress"] + 1 + min(2, max(0, training_level - 1))
+        level = (
+            progress["progress"]
+            + 1
+            + min(2, max(0, training_level - 1))
+            + effects(stadium)["training_extra"]
+        )
         changes = {}
         if level >= 100:
             level -= 100
@@ -325,6 +344,20 @@ class TrainingService:
             "joined_at": utcnow(),
             "model_version": 22,
         }
+        used_numbers = {
+            p.get("shirt_number")
+            for p in repo.many(
+                "players",
+                {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                limit=None,
+                projection={"shirt_number": 1},
+            )
+        }
+        professional.update(
+            shirt_number=choose_shirt_number(professional["position"], used_numbers),
+            shirt_number_revision=2,
+            shirt_number_custom=False,
+        )
         for key in FORBIDDEN:
             professional.pop(key, None)
         ChemistryService().recruit(repo, club["_id"])
