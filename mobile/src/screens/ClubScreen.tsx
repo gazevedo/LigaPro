@@ -52,8 +52,7 @@ export function ClubScreen({ route, navigation }: NativeStackScreenProps<RootSta
         { label: 'Reputação', value: `${club.reputation ?? 10}/100`, detail: 'Prestígio do clube', description: 'A reputação representa o prestígio histórico do clube, de 0 a 100. Cresce com títulos, posição entre os dez primeiros da Série A e uma torcida de pelo menos 10 mil torcedores. É atualizada ao fim da temporada; títulos da copa também aumentam a reputação.', color: '#daf4e7' },
         { label: 'Torcida', value: (club.supporters ?? 1000).toLocaleString('pt-BR'), detail: 'Torcedores', color: '#fff2c1' },
         { label: 'Confiança da torcida', value: `${club.fan_confidence ?? club.fan_satisfaction ?? 50}%`, detail: '', description: 'A confiança mostra a satisfação da torcida, de 0% a 100%. Vitórias aumentam a confiança; derrotas a reduzem. Empates podem reduzi-la em clubes de alta reputação, e ingressos caros também podem diminuir a satisfação. Quanto maior a confiança, maior a procura por ingressos e melhores as condições de patrocínio.', color: '#e8e0fc' },
-      ].map(metric => <Pressable key={metric.label} accessible={metric.label === 'Ranking'} accessibilityRole={metric.label === 'Ranking' ? 'button' : undefined} accessibilityLabel={metric.label === 'Ranking' ? 'Abrir ranking geral' : undefined} onPress={metric.label === 'Ranking' ? () => navigation.navigate('ClubRanking') : undefined} style={[styles.metric, { backgroundColor: metric.color }]}>
-        {metric.description && <Pressable accessibilityRole="button" accessibilityLabel={`Informações sobre ${metric.label.toLowerCase()}`} hitSlop={8} onPress={() => setInfo(current => ({ label: metric.label, description: metric.description!, key: (current?.key ?? 0) + 1 }))} style={styles.infoIcon}><Text style={{ color: palette.ink, fontWeight: '700' }}>i</Text></Pressable>}
+      ].map(metric => <Pressable key={metric.label} accessible={metric.label === 'Ranking' || !!metric.description} accessibilityRole={metric.label === 'Ranking' || metric.description ? 'button' : undefined} accessibilityLabel={metric.label === 'Ranking' ? 'Abrir ranking geral' : metric.description ? `Informações sobre ${metric.label.toLowerCase()}` : undefined} onPress={metric.label === 'Ranking' ? () => navigation.navigate('ClubRanking') : metric.description ? () => setInfo(current => ({ label: metric.label, description: metric.description!, key: (current?.key ?? 0) + 1 })) : undefined} style={[styles.metric, { backgroundColor: metric.color }]}>
         <Text style={styles.label}>{metric.label}</Text><Text style={styles.value}>{metric.value}</Text>{!!metric.detail && <Text style={styles.caption}>{metric.detail}</Text>}
       </Pressable>)}
     </View>
@@ -100,8 +99,7 @@ const styles = StyleSheet.create({
   caption: { color: palette.muted, lineHeight: 20 },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   metric: { flexGrow: 1, flexBasis: '45%', padding: 18, gap: 8, borderRadius: 20, borderWidth: 2, borderColor: palette.border },
-  infoIcon: { position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: palette.muted, alignItems: 'center', justifyContent: 'center' },
-  label: { paddingRight: 18, color: palette.ink, fontWeight: '700' },
+  label: { color: palette.ink, fontWeight: '700' },
   value: { color: palette.ink, fontSize: 24, fontWeight: '800' },
 });
 

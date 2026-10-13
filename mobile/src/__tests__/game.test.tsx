@@ -246,7 +246,7 @@ test('director keeps club ownership when supporter confidence is zero', async ()
 });
 
 
-test('club ranking opens general ranking and information icons show dismissible bubbles', async () => {
+test('club ranking opens general ranking and reputation and confidence cards open dismissible popups', async () => {
   const navigate = jest.fn();
   const input = { route: { params: { id: club.id } }, navigation: { navigate, setOptions: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'Club'>;
   await render(<ClubScreen {...input} />);
