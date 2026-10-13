@@ -12,7 +12,7 @@ module.exports = () => ({ ...expo,
   plugins: ['expo-secure-store',
     ['expo-splash-screen', {
       image: './assets/brand/logo-ligapro.png',
-      backgroundColor: '#dceef8',
+      backgroundColor: '#ffffff',
       imageWidth: 220,
       resizeMode: 'contain',
     }],
