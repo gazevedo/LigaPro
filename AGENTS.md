@@ -168,7 +168,10 @@ Trabalhe sempre na branch `main`. Não crie novas branches.
 
 Ao concluir qualquer alteração:
 
-- incremente sempre a versão em `mobile/version.json`, usando `mobile/scripts/bump-version.cjs` (patch por padrão);
+- incremente sempre a versão em `mobile/version.json`, usando `mobile/scripts/bump-version.cjs` com o tipo adequado à entrega;
+- siga o versionamento semântico `MAJOR.MINOR.PATCH`: `patch` para correções de erros, hotfixes e ajustes de documentação/regras sem alteração funcional; `minor` para novas funcionalidades compatíveis; `major` para mudanças que quebram compatibilidade;
+- avalie o conjunto das alterações da entrega e escolha o maior nível aplicável; não incremente automaticamente apenas o hotfix/patch;
+- execute `node mobile/scripts/bump-version.cjs patch`, `minor` ou `major` conforme essa avaliação; ao incrementar `minor`, zere `patch`; ao incrementar `major`, zere `minor` e `patch` (o script já aplica essa regra);
 - inclua o incremento de versão no mesmo commit da alteração;
 - execute as validações relacionadas antes do commit;
 - faça sempre commit e push para `origin/main`;
