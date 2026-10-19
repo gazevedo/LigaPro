@@ -163,3 +163,13 @@ def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
             client.get("/api/game/status")
             assert maintenance.await_count == 2
     manager.close.assert_awaited_once()
+
+
+def test_serverless_request_does_not_wait_indefinitely_for_another_initialization():
+    main = module()
+    app = application(main)
+    app.state.database_lock = Mock()
+    app.state.database_lock.acquire.return_value = False
+    response = TestClient(app).get("/api/health")
+    assert response.status_code == 503
+    assert "inicializando" in response.json()["detail"]

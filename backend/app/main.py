@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from os import getenv
 from threading import Lock
 from time import monotonic
 
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pymongo import timeout
 from pymongo.errors import PyMongoError
 from starlette.background import BackgroundTasks
 
@@ -39,24 +41,27 @@ async def run_game_maintenance(manager, repository, config):
             logger.exception("Game maintenance stage failed: %s", name)
 
 
-def initialize_database(database):
-    database.command("ping")
-    database["app_settings"].create_index("key", unique=True)
-    database["users"].create_index("email", unique=True)
-    database["users"].create_index(
-        "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
-    )
-    database["users"].create_index(
-        "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
-    )
-    database["user_sessions"].create_index("refresh_token_hash", unique=True)
-    database["user_sessions"].create_index("user_id")
-    database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
-    database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
-    database.push_subscriptions.create_index("user_id")
-    database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
-    repository = GameRepository(database)
-    repository.initialize()
+def initialize_database(database, *, prepare_universe=True):
+    with timeout(8):
+        database.command("ping")
+        database["app_settings"].create_index("key", unique=True)
+        database["users"].create_index("email", unique=True)
+        database["users"].create_index(
+            "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
+        )
+        database["users"].create_index(
+            "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
+        )
+        database["user_sessions"].create_index("refresh_token_hash", unique=True)
+        database["user_sessions"].create_index("user_id")
+        database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
+        database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
+        database.push_subscriptions.create_index("user_id")
+        database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
+        repository = GameRepository(database)
+        repository.initialize()
+    if not prepare_universe:
+        return
     CompetitionService(repository).initialize_universe()
     CompetitionService(repository).bootstrap()
     ContractService(repository).bootstrap()
@@ -70,7 +75,9 @@ async def lifespan(app: FastAPI):
     client = create_client(config)
     app.state.database = client[config.mongodb_database_name]
     try:
-        await asyncio.to_thread(initialize_database, app.state.database)
+        await asyncio.to_thread(
+            initialize_database, app.state.database, prepare_universe=getenv("VERCEL") != "1"
+        )
         app.state.database_ready = True
         repository = GameRepository(app.state.database)
 

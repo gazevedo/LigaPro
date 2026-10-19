@@ -249,12 +249,12 @@ def test_failed_serverless_initialization_can_retry_on_next_request(client):
     cold = create_app()
     attempts = 0
 
-    def initialize(database):
+    def initialize(database, **kwargs):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             raise RuntimeError("interrupted initialization")
-        initialize_database(database)
+        initialize_database(database, **kwargs)
 
     try:
         with patch("app.main.initialize_database", side_effect=initialize):
@@ -306,3 +306,67 @@ def test_health_does_not_report_ready_when_preparation_fails(client):
         response = TestClient(app, raise_server_exceptions=False).get("/api/health")
     assert response.status_code == 500
     assert response.json().get("status") != "ok"
+
+
+def test_preparation_commits_short_steps_and_resumes_without_duplicates(client):
+    database = app.state.database
+    service = CompetitionService(GameRepository(database))
+    assert service.initialize_universe(max_steps=1) is None
+    first_bot = database.clubs.find_one({})["_id"]
+    assert database.clubs.count_documents({}) == 1
+    assert database.players.count_documents({}) == 25
+    assert database.game_state.find_one({"_id": "initial_universe"})["status"] == "preparing"
+    assert CompetitionService(GameRepository(database)).initialize_universe() is True
+    assert database.clubs.count_documents({}) == 20
+    assert database.clubs.find_one({"_id": first_bot})
+    assert database.game_state.find_one({"_id": "initial_universe"})["status"] == "ready"
+
+
+def test_health_returns_progress_then_finishes_on_following_request(client):
+    with patch("app.services.health.monotonic", side_effect=[0, 0, 5]):
+        response = client.get("/api/health")
+    assert response.status_code == 202
+    assert response.headers["Retry-After"] == "1"
+    assert response.json()["status"] == "initializing"
+    assert response.json()["league"]["clubs"] == 1
+    assert client.get("/api/health").json()["league"]["clubs"] == 20
+
+
+def test_a_timed_out_step_keeps_previous_committed_progress(client):
+    from pymongo.errors import NetworkTimeout
+
+    database = app.state.database
+    CompetitionService(GameRepository(database)).initialize_universe(max_steps=1)
+    with patch.object(
+        CompetitionService, "initialize_universe", side_effect=NetworkTimeout("deadline")
+    ):
+        response = client.get("/api/health")
+    assert response.status_code == 202
+    assert response.json()["league"]["clubs"] == 1
+    assert client.get("/api/health").json()["league"]["clubs"] == 20
+
+
+def test_club_cannot_join_a_partially_prepared_league(client):
+    database = app.state.database
+    CompetitionService(GameRepository(database)).initialize_universe(max_steps=1)
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Manager",
+            "email": "manager@example.com",
+            "password": "password123",
+        },
+    )
+    headers = {"Authorization": "Bearer " + registration.json()["access_token"]}
+    response = client.post(
+        "/api/clubs",
+        headers=headers,
+        json={
+            "name": "Clube",
+            "country_id": "BR",
+            "badge_id": "blue",
+        },
+    )
+    assert response.status_code == 503
+    assert database.clubs.count_documents({}) == 1
+    assert database.clubs.count_documents({"is_bot": False}) == 0

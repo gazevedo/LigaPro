@@ -123,6 +123,11 @@ class ClubService:
     def create(self, user, data):
         def operation(repo):
             CompetitionService.lock(repo)
+            initialization = repo.find("game_state", {"_id": "initial_universe"})
+            if initialization and initialization.get("status") == "preparing":
+                raise HTTPException(
+                    503, "A liga está sendo preparada. Aguarde a conclusão para criar o clube."
+                )
             if repo.find("clubs", {"owner_user_id": ObjectId(user.id)}):
                 raise HTTPException(409, "Você já possui um clube.")
             country = repo.find("countries", {"_id": data.country_id})

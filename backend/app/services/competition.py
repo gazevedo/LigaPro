@@ -642,15 +642,25 @@ class CompetitionService:
             )
         )
 
-    def initialize_universe(self):
+    def initialize_universe(self, max_steps=None):
         marker = "initial_universe"
-        if self.repo.find("game_state", {"_id": marker}) and self.initial_universe_ready(self.repo):
+        completed = self.repo.find("game_state", {"_id": marker})
+        if (
+            completed
+            and completed.get("status") != "preparing"
+            and self.initial_universe_ready(self.repo)
+        ):
             return False
         self.ensure_lock(self.repo)
 
         def prepare(repo):
             self.lock(repo)
-            if repo.find("game_state", {"_id": marker}) and self.initial_universe_ready(repo):
+            completed = repo.find("game_state", {"_id": marker})
+            if (
+                completed
+                and completed.get("status") != "preparing"
+                and self.initial_universe_ready(repo)
+            ):
                 return False
             season = self.current(repo)
             if not season:
@@ -663,12 +673,52 @@ class CompetitionService:
             )
             if not divisions:
                 divisions = [self.division_for_tier(repo, 0)]
+
+            def checkpoint():
+                repo.database.game_state.update_one(
+                    {"_id": marker},
+                    {
+                        "$set": {
+                            "status": "preparing",
+                            "updated_at": utcnow(),
+                            "season_id": season["_id"],
+                        },
+                        "$unset": {"completed_at": ""},
+                    },
+                    upsert=True,
+                    session=repo.session,
+                )
+                return None
+
             config = self.season_config(season)
             for division in divisions:
                 query = {"season_id": season["_id"], "division_id": division["_id"]}
                 slots = repo.many("season_clubs", query, limit=None)
+                clubs = {
+                    club["_id"]: club
+                    for club in repo.many(
+                        "clubs",
+                        {
+                            "_id": {"$in": [slot["club_id"] for slot in slots]},
+                            "active": {"$ne": False},
+                        },
+                        limit=None,
+                    )
+                }
+                standings = {
+                    row["_id"]
+                    for row in repo.many("standings", query, limit=None, projection={"_id": 1})
+                }
+                if (
+                    len(slots) == 20
+                    and len(clubs) == 20
+                    and len(standings) == 20
+                    and repo.database.matches.count_documents(query, session=repo.session) == 380
+                ):
+                    continue
                 for slot in slots:
-                    club = repo.find("clubs", {"_id": slot["club_id"], "active": {"$ne": False}})
+                    repaired = False
+                    club = clubs.get(slot["club_id"])
                     if not club:
                         club = self.create_bot(repo, division["tier"], len(slots), config)
                         old_club_id = slot["club_id"]
@@ -717,7 +767,8 @@ class CompetitionService:
                         )
                         slot.update(club_id=club["_id"], is_bot=True, bot_takeover=False)
                         self.generate_youth(repo, club, season, config)
-                    if not repo.find("standings", {"_id": slot["_id"]}):
+                        repaired = True
+                    if slot["_id"] not in standings:
                         repo.insert(
                             "standings",
                             {
@@ -734,27 +785,53 @@ class CompetitionService:
                                 "position": 0,
                             },
                         )
-                while len(slots) < 20:
+                        repaired = True
+                    if repaired:
+                        return checkpoint()
+                if len(slots) < 20:
                     bot = self.create_bot(repo, division["tier"], len(slots), config)
                     slots.append(self.add_slot(repo, season, division, bot))
                     self.generate_youth(repo, bot, season, config)
+                    return checkpoint()
                 self.schedule(
                     repo, season, division, slots, repo.many("matches", query, limit=None)
                 )
-            self.ensure_open_division(repo, season)
+            last_division = divisions[-1]
+            if not repo.find(
+                "standings",
+                {
+                    "season_id": season["_id"],
+                    "division_id": last_division["_id"],
+                    "is_bot": True,
+                    "bot_takeover": {"$ne": True},
+                },
+            ):
+                self.division_for_tier(repo, last_division["tier"] + 1)
+                return checkpoint()
             if not self.initial_universe_ready(repo):
                 raise RuntimeError("A liga inicial não ficou completa.")
             repo.database.game_state.update_one(
                 {"_id": marker},
                 {
-                    "$set": {"completed_at": utcnow(), "season_id": season["_id"]},
+                    "$set": {
+                        "status": "ready",
+                        "completed_at": utcnow(),
+                        "season_id": season["_id"],
+                    },
                 },
                 upsert=True,
                 session=repo.session,
             )
             return True
 
-        return self.repo.transaction(prepare)
+        steps = 0
+        while True:
+            result = self.repo.transaction(prepare)
+            steps += 1
+            if result is not None:
+                return result
+            if max_steps is not None and steps >= max_steps:
+                return None
 
     def bootstrap(self):
         self.ensure_lock(self.repo)
@@ -1138,6 +1215,9 @@ class CompetitionService:
         return len(attempted)
 
     def process_due(self, now=None, max_matches=None):
+        initialization = self.repo.find("game_state", {"_id": "initial_universe"})
+        if initialization and initialization.get("status") == "preparing":
+            return
         self.ensure_lock(self.repo)
         now = now or utcnow()
         attempted = 0
