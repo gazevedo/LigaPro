@@ -56,9 +56,12 @@ def test_register_normalization_hashing_and_me(client):
     assert client.get("/api/settings", headers=bearer(data)).status_code == 200
 
 
+@pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize("name", ["Test User", "test user", " TEST USER "])
-def test_duplicate_name_is_rejected_with_another_email(client, name):
+def test_duplicate_name_is_rejected_with_another_email(client, name, legacy):
     assert register(client).status_code == 201
+    if legacy:
+        app.state.database.users.update_one({}, {"$unset": {"name_key": ""}})
     response = client.post(
         "/api/auth/register",
         json={
@@ -70,6 +73,46 @@ def test_duplicate_name_is_rejected_with_another_email(client, name):
     assert response.status_code == 409
     assert response.json()["detail"] == "Este nome já está cadastrado. Escolha outro nome."
     assert app.state.database.users.count_documents({}) == 1
+
+
+def test_name_already_duplicated_in_legacy_accounts_cannot_be_registered_again(client):
+    assert register(client).status_code == 201
+    users = app.state.database.users
+    user = users.find_one({"email": "user@example.com"})
+    users.update_one(
+        {"_id": user["_id"]}, {"$set": {"name": "Gabriel"}, "$unset": {"name_key": ""}}
+    )
+    legacy_copy = {key: value for key, value in user.items() if key not in {"_id", "name_key"}}
+    legacy_copy.update(name="Gabriel", email="second@example.com")
+    users.insert_one(legacy_copy)
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Gabriel",
+            "email": "third@example.com",
+            "password": PASSWORD,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Este nome já está cadastrado. Escolha outro nome."
+    assert users.count_documents({}) == 2
+
+
+def test_duplicate_name_in_simultaneous_registrations(client):
+    def create(email):
+        return client.post(
+            "/api/auth/register",
+            json={
+                "name": "Gabriel",
+                "email": email,
+                "password": PASSWORD,
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(create, ["first@example.com", "second@example.com"]))
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    assert app.state.database.users.count_documents({"name_key": "gabriel"}) == 1
 
 
 def test_duplicate_email_and_invalid_registration(client):
