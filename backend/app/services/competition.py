@@ -141,7 +141,10 @@ class CompetitionService:
 
     @staticmethod
     def create_season(repo, starts_at, number=1):
-        config = GameConfig.from_rules({**repo.rules(), "ROUND_OFFSETS_DAYS": ()})
+        rules = {**repo.rules(), "ROUND_OFFSETS_DAYS": ()}
+        if number == 1:
+            rules["PRESEASON_DAYS"] = 0
+        config = GameConfig.from_rules(rules)
         season = {
             "_id": ObjectId(),
             "number": number,
@@ -328,13 +331,23 @@ class CompetitionService:
                 repo.update("standings", {"_id": row["_id"]}, {"$set": {"position": position}})
         return rows
 
-    def enroll(self, repo, club, now=None):
-        self.lock(repo)
+    def enroll(self, repo, club, now=None, *, lock_universe=True):
+        if lock_universe:
+            self.lock(repo)
         season = self.current(repo)
         if not season:
             previous = repo.many("seasons", {}, limit=1, sort=[("number", -1)])
             number = previous[0]["number"] + 1 if previous else 1
             season = self.create_season(repo, now or utcnow(), number)
+        if not lock_universe:
+            # Fence registration against season finalization without competing
+            # with every match transaction on the global universe document.
+            season = repo.update(
+                "seasons", {"_id": season["_id"], "status": "active"},
+                {"$inc": {"enrollment_revision": 1}},
+            )
+            if not season:
+                raise HTTPException(503, "A temporada está mudando. Tente novamente em instantes.")
         existing = repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
         if existing:
             return existing

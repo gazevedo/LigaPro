@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -370,3 +371,22 @@ def test_club_cannot_join_a_partially_prepared_league(client):
     assert response.status_code == 503
     assert database.clubs.count_documents({}) == 1
     assert database.clubs.count_documents({"is_bot": False}) == 0
+
+
+def test_new_database_first_round_starts_at_creation_time(client):
+    database = app.state.database
+    now = utcnow().replace(microsecond=0)
+    with patch("app.services.competition.utcnow", return_value=now):
+        CompetitionService(GameRepository(database)).initialize_universe()
+    season = database.seasons.find_one({"status": "active"})
+    first_round = list(database.matches.find({"round": 1}))
+    assert len(first_round) == 10
+    assert season["starts_at"] == now
+    assert season["config"]["PRESEASON_DAYS"] == 0
+    assert all(match["date"] == now for match in first_round)
+    assert database.calendar_events.count_documents({"type": "match", "date": now}) == 20
+    database.seasons.update_one({"_id": season["_id"]}, {"$set": {"status": "completed"}})
+    next_season = CompetitionService.create_season(
+        GameRepository(database), now + timedelta(days=30), number=2
+    )
+    assert next_season["config"]["PRESEASON_DAYS"] == 2

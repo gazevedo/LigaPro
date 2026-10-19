@@ -122,7 +122,6 @@ class ClubService:
 
     def create(self, user, data):
         def operation(repo):
-            CompetitionService.lock(repo)
             initialization = repo.find("game_state", {"_id": "initial_universe"})
             if initialization and initialization.get("status") == "preparing":
                 raise HTTPException(
@@ -199,7 +198,7 @@ class ClubService:
             ChemistryService().save(repo, club_id, {})
             ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
             competition = CompetitionService(repo)
-            competition.enroll(repo, club, now)
+            competition.enroll(repo, club, now, lock_universe=False)
             season = competition.current(repo)
             competition.generate_youth(repo, club, season, competition.season_config(season))
             ClubRankingService.refresh(repo, season["_id"])
@@ -209,7 +208,6 @@ class ClubService:
         try:
             # Bound lock contention and transaction retries within the request budget.
             with timeout(45):
-                CompetitionService.ensure_lock(self.repo)
                 return self.repo.transaction(operation)
         except DuplicateKeyError as exc:
             raise HTTPException(409, "Você já possui um clube.") from exc

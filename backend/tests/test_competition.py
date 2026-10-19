@@ -597,3 +597,22 @@ def test_incomplete_league_is_repaired_and_daily_frequency_reconfigures_pending_
     assert all((b - a).total_seconds() == 7200 for a, b in zip(adjusted, adjusted[1:]))
     assert list(database.matches.find({**query, "status": "completed"})) == completed
     assert len(originals) == 70
+
+
+def test_registration_replaces_bot_while_global_universe_document_is_locked(client):
+    database = app.state.database
+    CompetitionService(GameRepository(database)).initialize_universe()
+    with database.client.start_session() as session:
+        session.start_transaction()
+        try:
+            database.game_state.update_one(
+                {"_id": "universe"}, {"$inc": {"revision": 1}}, session=session
+            )
+            _, club = add_club("Clube com universo ocupado")
+        finally:
+            session.abort_transaction()
+    assert database.season_clubs.count_documents({}) == 20
+    assert database.standings.count_documents({"is_bot": True}) == 19
+    assert database.season_clubs.count_documents({"club_id": ObjectId(club["id"])}) == 1
+    assert database.matches.count_documents({}) == 380
+    assert database.clubs.count_documents({"owner_user_id": {"$type": "objectId"}}) == 1
