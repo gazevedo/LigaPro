@@ -2,7 +2,7 @@ import { useState } from 'react';
 import version from '../../version.json';
 import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActionButton, Card, Field, GamePage, NotificationBubble, pageLayout, palette } from './GameUI';
+import { ActionButton, Card, Field, GamePage, NotificationBubble, pageLayout } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useClubStore } from '../stores/clubStore';
 import { useAuthStore } from '../stores/authStore';
@@ -53,16 +53,14 @@ export function AuthForm({ register = false, onCreateAccount, background }: {
             <View style={styles.divider}><View style={styles.line} /><Text style={{ color: '#728297' }}>ou</Text><View style={styles.line} /></View>
             <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
           </View>
-          <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#8ce7c9', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
+          <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#60a5fa', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
         </View>
       </ScrollView>
       <View style={styles.footer}><Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text></View>
     </KeyboardAvoidingView></SafeAreaView>
   </ImageBackground>;
   return <GamePage error={validation || auth.error} loading={auth.loading}>
-    <Text style={{ color: palette.primary, fontWeight: '800', letterSpacing: 4 }}>LIGAPRO</Text>
-    <Text style={{ fontSize: 36, fontWeight: '800', color: palette.ink }}>{register ? 'Sua história começa aqui.' : 'Seu próximo título começa aqui.'}</Text>
-    <Text style={{ color: palette.muted, fontSize: 16 }}>{register ? 'Crie sua conta e entre direto no jogo para montar seu clube.' : 'Entre para comandar seu clube, desenvolver seu elenco e conquistar o campeonato.'}</Text>
+    <View style={styles.brand}><Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={styles.logo} /></View>
     <NotificationBubble message={info} tone="info" /><Card>
     {register && <><Field label="Nome" value={name} onChange={setName} maxLength={100} editable={!auth.loading} /><Field label="Nome do estádio" value={stadiumName} onChange={setStadiumName} maxLength={60} placeholder="Como seu estádio será conhecido?" editable={!auth.loading} /></>}
     <Field label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={!auth.loading} />
