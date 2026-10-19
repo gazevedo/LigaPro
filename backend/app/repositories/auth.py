@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 
 from bson import ObjectId
@@ -13,6 +14,18 @@ class AuthRepository:
 
     def get_by_email(self, email: str) -> dict | None:
         return self.users.find_one({"email": email})
+
+    def get_by_name(self, name: str) -> dict | None:
+        # Include older accounts that do not have a normalized name key yet.
+        return self.users.find_one(
+            {
+                "$or": [
+                    {"name_key": name.lower()},
+                    {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}},
+                ]
+            },
+            {"_id": 1},
+        )
 
     def get_by_google_id(self, google_id: str) -> dict | None:
         return self.users.find_one({"google_id": google_id})

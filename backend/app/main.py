@@ -48,6 +48,9 @@ async def lifespan(app: FastAPI):
         app.state.database["app_settings"].create_index("key", unique=True)
         app.state.database["users"].create_index("email", unique=True)
         app.state.database["users"].create_index(
+            "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
+        )
+        app.state.database["users"].create_index(
             "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
         )
         app.state.database["user_sessions"].create_index("refresh_token_hash", unique=True)

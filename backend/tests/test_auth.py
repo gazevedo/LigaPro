@@ -56,6 +56,22 @@ def test_register_normalization_hashing_and_me(client):
     assert client.get("/api/settings", headers=bearer(data)).status_code == 200
 
 
+@pytest.mark.parametrize("name", ["Test User", "test user", " TEST USER "])
+def test_duplicate_name_is_rejected_with_another_email(client, name):
+    assert register(client).status_code == 201
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "name": name,
+            "email": "another@example.com",
+            "password": PASSWORD,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Este nome já está cadastrado. Escolha outro nome."
+    assert app.state.database.users.count_documents({}) == 1
+
+
 def test_duplicate_email_and_invalid_registration(client):
     assert register(client).status_code == 201
     assert register(client, "USER@example.com").status_code == 409

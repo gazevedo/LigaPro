@@ -117,3 +117,10 @@ test('network failure keeps the saved session but a revoked session returns to l
   expect(useAuthStore.getState().authenticated).toBe(false);
   expect(tokenService.current()).toBeNull();
 });
+
+test.each(['Este e-mail já está cadastrado.', 'Este nome já está cadastrado. Escolha outro nome.'])('registration exposes duplicate validation: %s', async message => {
+  jest.mocked(authService.register).mockRejectedValueOnce(new ApiError(409, message));
+  await useAuthStore.getState().register('User', 'user@example.com', 'password123');
+  expect(useAuthStore.getState()).toMatchObject({ authenticated: false, loading: false, error: message });
+  expect(tokenService.save).not.toHaveBeenCalled();
+});

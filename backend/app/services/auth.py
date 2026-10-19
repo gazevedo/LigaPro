@@ -41,9 +41,14 @@ class AuthService:
             )
 
     def register(self, body: RegisterRequest) -> TokenResponse:
+        if self.repository.get_by_email(str(body.email)):
+            raise HTTPException(409, "Este e-mail já está cadastrado.")
+        if self.repository.get_by_name(body.name):
+            raise HTTPException(409, "Este nome já está cadastrado. Escolha outro nome.")
         now = datetime.now(UTC)
         document = {
             "name": body.name,
+            "name_key": body.name.lower(),
             "stadium_name": body.stadium_name.strip() if body.stadium_name else None,
             "email": str(body.email),
             "password_hash": hash_password(body.password),
@@ -58,8 +63,12 @@ class AuthService:
         }
         try:
             user = self.repository.create_user(document)
-        except DuplicateKeyError:
-            raise HTTPException(409, "Não foi possível cadastrar este e-mail.") from None
+        except DuplicateKeyError as error:
+            if (error.details or {}).get("keyPattern", {}).get("name_key"):
+                raise HTTPException(
+                    409, "Este nome já está cadastrado. Escolha outro nome."
+                ) from None
+            raise HTTPException(409, "Este e-mail já está cadastrado.") from None
         return self.issue_session(user, body.device_id, body.device_name)
 
     def login(self, body: LoginRequest) -> TokenResponse:
