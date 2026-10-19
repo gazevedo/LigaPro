@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from threading import Lock
 from time import monotonic
 
 from fastapi import FastAPI, Request
@@ -38,35 +39,40 @@ async def run_game_maintenance(manager, repository, config):
             logger.exception("Game maintenance stage failed: %s", name)
 
 
+def initialize_database(database):
+    database.command("ping")
+    database["app_settings"].create_index("key", unique=True)
+    database["users"].create_index("email", unique=True)
+    database["users"].create_index(
+        "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
+    )
+    database["users"].create_index(
+        "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
+    )
+    database["user_sessions"].create_index("refresh_token_hash", unique=True)
+    database["user_sessions"].create_index("user_id")
+    database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
+    database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
+    database.push_subscriptions.create_index("user_id")
+    database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
+    repository = GameRepository(database)
+    repository.initialize()
+    CompetitionService(repository).initialize_universe()
+    CompetitionService(repository).bootstrap()
+    ContractService(repository).bootstrap()
+    bootstrap_player_attributes(repository)
+    bootstrap_economy(repository)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = get_settings()
     client = create_client(config)
     app.state.database = client[config.mongodb_database_name]
     try:
-        app.state.database.command("ping")
-        app.state.database["app_settings"].create_index("key", unique=True)
-        app.state.database["users"].create_index("email", unique=True)
-        app.state.database["users"].create_index(
-            "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
-        )
-        app.state.database["users"].create_index(
-            "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
-        )
-        app.state.database["user_sessions"].create_index("refresh_token_hash", unique=True)
-        app.state.database["user_sessions"].create_index("user_id")
-        app.state.database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
-        app.state.database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
-        app.state.database.push_subscriptions.create_index("user_id")
-        app.state.database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
+        await asyncio.to_thread(initialize_database, app.state.database)
+        app.state.database_ready = True
         repository = GameRepository(app.state.database)
-        repository.initialize()
-        CompetitionService(repository).bootstrap()
-        # Finish persistent one-time preparation before accepting club requests.
-        await asyncio.to_thread(CompetitionService(repository).initialize_universe)
-        ContractService(repository).bootstrap()
-        bootstrap_player_attributes(repository)
-        bootstrap_economy(repository)
 
         from app.services.live_match import MatchRoomManager
 
@@ -110,6 +116,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     config = get_settings()
     app = FastAPI(title="LigaPro API", version="0.1.0", lifespan=lifespan)
+    app.state.database_lock = Lock()
 
     @app.middleware("http")
     async def refresh_due_games(request: Request, call_next):

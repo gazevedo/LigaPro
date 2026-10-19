@@ -83,6 +83,10 @@ O cliente pode armazenar informações localmente para reduzir consultas ao serv
 Campeonatos:
 
 - 20 clubes por divisão;
+- sempre deve existir ao menos uma série ativa e completa, mesmo formada apenas por bots;
+- ao esgotar as vagas de bots da última série, prepare a próxima com 20 bots;
+- acessos e rebaixamentos devem manter todas as séries com 20 clubes; crie a série inferior quando necessária;
+- não extinga uma série por ausência de técnicos humanos;
 - clubes bots ocupam vagas disponíveis;
 - novos usuários podem substituir bots;
 - sem vaga disponível, o usuário entra em divisão inferior.

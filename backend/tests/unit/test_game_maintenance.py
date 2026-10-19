@@ -146,6 +146,7 @@ def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
         patch.object(main, "create_client", return_value=MagicMock()),
         patch.object(main, "GameRepository", return_value=Mock()),
         patch.object(main.CompetitionService, "bootstrap"),
+        patch.object(main.CompetitionService, "initialize_universe"),
         patch.object(main.ContractService, "bootstrap"),
         patch.object(main, "bootstrap_player_attributes"),
         patch.object(main, "bootstrap_economy"),

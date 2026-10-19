@@ -106,8 +106,14 @@ def test_concurrent_joins_replace_distinct_bots(client):
 def test_full_division_creates_next_and_lowest_available_is_used(client):
     for i in range(20):
         add_club(f"Humano {i}")
-    _, lower = add_club("Primeiro da B")
     db = app.state.database
+    lower_division = db.divisions.find_one({"tier": 1})
+    assert lower_division is not None
+    assert (
+        db.standings.count_documents({"division_id": lower_division["_id"], "is_bot": True}) == 20
+    )
+    assert db.matches.count_documents({"division_id": lower_division["_id"]}) == 380
+    _, lower = add_club("Primeiro da B")
     assert db.divisions.count_documents({}) == 2
     assert db.clubs.find_one({"_id": ObjectId(lower["id"])})["division_tier"] == 1
     assert db.season_clubs.count_documents({"is_bot": False}) == 21
@@ -352,13 +358,13 @@ def test_promotion_relegation_and_retirement_are_idempotent(client):
         )
         == 20
     )
-    # The resulting bottom tier has only bots; promotion history survives its extinction.
-    assert db.divisions.find_one({"_id": division["_id"]})["active"] is False
+    # Bot-only series remain complete and running for the next season.
+    assert db.divisions.find_one({"_id": division["_id"]}).get("active", True) is True
     assert (
         db.season_clubs.count_documents(
             {"season_id": upcoming["_id"], "division_id": division["_id"]}
         )
-        == 0
+        == 20
     )
     retired = repo.find("players", {"_id": retiree["_id"]})
     assert retired["age"] == 35 and retired["status"] == "retired"

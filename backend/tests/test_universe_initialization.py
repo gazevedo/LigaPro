@@ -1,12 +1,19 @@
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from bson import ObjectId
 from fastapi.testclient import TestClient
 
 from app.main import app, create_app
+from app.models.game import utcnow
 from app.repositories.game import GameRepository
-from app.services.competition import CompetitionService
+from app.schemas.game import ClubInput
+from app.services.competition import CompetitionService, SeasonFinalizationService
+from app.services.game import ClubService
+from app.services.monthly_finance import MonthlyFinanceService
+from app.services.player_development import PlayerAgingService
 
 
 def counts(database):
@@ -114,3 +121,151 @@ def test_backend_startup_prepares_base_once_before_serving_requests(client):
         before = counts(database)
     with TestClient(create_app()) as restarted:
         assert counts(restarted.app.state.database) == before
+
+
+def test_first_health_request_without_lifespan_prepares_base(client):
+    cold = create_app()
+    try:
+        response = TestClient(cold).get("/api/health")
+        assert response.status_code == 200
+        database = cold.state.database
+        assert database.users.count_documents({}) == 0
+        assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
+        assert CompetitionService.initial_universe_ready(GameRepository(database))
+        before = counts(database)
+        assert TestClient(cold).get("/api/health").status_code == 200
+        assert counts(database) == before
+    finally:
+        cold.state.database_client.close()
+
+
+def test_stale_marker_does_not_hide_deleted_clubs(client):
+    database = app.state.database
+    service = CompetitionService(GameRepository(database))
+    service.initialize_universe()
+    slots = set(row["_id"] for row in database.season_clubs.find({}))
+    database.clubs.delete_many({})
+    assert service.initialize_universe() is True
+    assert CompetitionService.initial_universe_ready(GameRepository(database))
+    assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
+    assert set(row["_id"] for row in database.season_clubs.find({})) == slots
+    assert service.initialize_universe() is False
+
+
+def test_existing_empty_division_is_completed_without_duplication(client):
+    database = app.state.database
+    repo = GameRepository(database)
+    season = CompetitionService.create_season(repo, utcnow())
+    division = CompetitionService.division_for_tier(repo, 0)
+    database.game_state.insert_one({"_id": "initial_universe", "season_id": season["_id"]})
+    assert CompetitionService(repo).initialize_universe() is True
+    assert database.divisions.count_documents({}) == 1
+    assert database.divisions.find_one({})["_id"] == division["_id"]
+    assert CompetitionService.initial_universe_ready(GameRepository(database))
+
+
+def test_missing_standings_and_games_are_repaired_preserving_clubs(client):
+    database = app.state.database
+    service = CompetitionService(GameRepository(database))
+    service.initialize_universe()
+    clubs = set(row["_id"] for row in database.clubs.find({}))
+    database.standings.delete_one({})
+    database.matches.delete_one({})
+    assert service.initialize_universe() is True
+    assert set(row["_id"] for row in database.clubs.find({})) == clubs
+    assert CompetitionService.initial_universe_ready(GameRepository(database))
+
+
+@pytest.mark.parametrize("managed", [False, True])
+def test_next_season_keeps_full_leagues_and_handles_relegation(client, managed):
+    database = app.state.database
+    repo = GameRepository(database)
+    service = CompetitionService(repo)
+    service.initialize_universe()
+    human = None
+    if managed:
+        human = ClubService(repo).create(
+            SimpleNamespace(id=str(ObjectId())),
+            ClubInput(name="Rebaixado", country_id="BR", badge_id="blue"),
+        )
+        database.standings.update_many({}, {"$set": {"points": 100}})
+        database.standings.update_one({"club_id": ObjectId(human["id"])}, {"$set": {"points": 0}})
+    season = service.current(repo)
+    database.matches.update_many({}, {"$set": {"status": "completed"}})
+    with (
+        patch.object(CompetitionService, "play_due"),
+        patch.object(MonthlyFinanceService, "process_due"),
+        patch.object(PlayerAgingService, "process"),
+    ):
+        SeasonFinalizationService(repo).finalize(season["_id"], season["ends_at"])
+    upcoming = service.current(repo)
+    assert upcoming and upcoming["_id"] != season["_id"]
+    assert service.initial_universe_ready(repo)
+    divisions = list(database.divisions.find({"active": True}))
+    assert len(divisions) == (2 if managed else 1)
+    for division in divisions:
+        query = {"season_id": upcoming["_id"], "division_id": division["_id"]}
+        assert database.season_clubs.count_documents(query) == 20
+        assert database.matches.count_documents(query) == 380
+    if managed:
+        assert database.clubs.find_one({"_id": ObjectId(human["id"])})["division_tier"] == 1
+    before = counts(database)
+    with patch.object(CompetitionService, "play_due"):
+        SeasonFinalizationService(repo).finalize(season["_id"], season["ends_at"])
+    assert counts(database) == before
+
+
+def test_two_filled_series_leave_next_series_with_twenty_bots(client):
+    database = app.state.database
+    repo = GameRepository(database)
+    CompetitionService(repo).initialize_universe()
+    for index in range(40):
+        ClubService(repo).create(
+            SimpleNamespace(id=str(ObjectId())),
+            ClubInput(
+                name=f"Manager {index}",
+                country_id="BR",
+                badge_id="blue",
+            ),
+        )
+    season = CompetitionService.current(repo)
+    assert database.divisions.count_documents({"active": True}) == 3
+    for tier in range(3):
+        division = database.divisions.find_one({"tier": tier})
+        query = {"season_id": season["_id"], "division_id": division["_id"]}
+        assert database.season_clubs.count_documents(query) == 20
+        assert database.season_clubs.count_documents({**query, "is_bot": True}) == (
+            20 if tier == 2 else 0
+        )
+        assert database.matches.count_documents(query) == 380
+    before = counts(database)
+    assert CompetitionService(repo).initialize_universe() is False
+    assert counts(database) == before
+
+
+def test_failed_serverless_initialization_can_retry_on_next_request(client):
+    from app.main import initialize_database
+
+    cold = create_app()
+    attempts = 0
+
+    def initialize(database):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("interrupted initialization")
+        initialize_database(database)
+
+    try:
+        with patch("app.main.initialize_database", side_effect=initialize):
+            assert (
+                TestClient(cold, raise_server_exceptions=False).get("/api/health").status_code
+                == 500
+            )
+            assert not getattr(cold.state, "database_ready", False)
+            assert TestClient(cold).get("/api/health").status_code == 200
+        assert attempts == 2
+        assert cold.state.database.clubs.count_documents({"active": True, "is_bot": True}) == 20
+    finally:
+        if getattr(cold.state, "database_ready", False):
+            cold.state.database_client.close()
