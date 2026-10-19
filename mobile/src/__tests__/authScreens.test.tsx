@@ -65,6 +65,8 @@ test('forgot password shows honest availability message', async () => {
 
 test('registration toggles both passwords and omits alternative sign-in actions', async () => {
   await render(<AuthForm register onLogin={jest.fn()} />);
+  expect(screen.queryByText('Mostrar senha')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Mostrar senha' })).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Senha'), 'password123');
   await fireEvent.changeText(screen.getByLabelText('Confirmar senha'), 'password123');
   for (const label of ['Senha', 'Confirmar senha']) {
