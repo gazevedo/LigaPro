@@ -1,3 +1,4 @@
+import { AppState } from 'react-native';
 import { useSquadStore } from '../stores/squadStore';
 import { useTacticsStore } from '../stores/tacticsStore';
 import { useStadiumStore } from '../stores/stadiumStore';
@@ -20,14 +21,14 @@ export async function prefetchGameData(clubId: string, isCurrent: () => boolean,
   }
   preparedClub = clubId;
   const jobs = [
-    () => screens.useClubRankingStore.getState()[fresh ? 'refresh' : 'ensure'](),
+    () => screens.useCompetitionMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useUpcomingMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => useInboxStore.getState()[fresh ? 'refresh' : 'ensure'](),
-    () => screens.useClubDetailsStore.getState()[fresh ? 'refresh' : 'ensure'](clubId),
     () => screens.useCompetitionStore.getState()[fresh ? 'refresh' : 'ensure'](),
+    () => screens.useClubRankingStore.getState()[fresh ? 'refresh' : 'ensure'](),
+    () => screens.useClubDetailsStore.getState()[fresh ? 'refresh' : 'ensure'](clubId),
     () => useSquadStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => useFinanceStore.getState()[fresh ? 'refresh' : 'ensure'](),
-    () => screens.useCompetitionMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useCupStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useLeagueStatisticsStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useCupStatisticsStore.getState()[fresh ? 'refresh' : 'ensure'](),
@@ -63,17 +64,54 @@ export async function refreshGameData(isCurrent: () => boolean) {
   }));
 }
 export function startGameDataRefresh(clubId: string, isCurrent: () => boolean) {
-  let active = true, pending = false;
+  let active = true, pending = false, prepared = false;
+  let catchUpTimer: ReturnType<typeof setTimeout> | undefined;
   const current = () => active && isCurrent();
-  async function run(initial: boolean) {
-    if (pending || !current()) return;
+  const visible = () => AppState.currentState !== 'background' && AppState.currentState !== 'inactive' &&
+    (typeof document === 'undefined' || document.visibilityState !== 'hidden') &&
+    (typeof navigator === 'undefined' || navigator.onLine !== false);
+  function hasOverdueMatches() {
+    const matches = screens.useCompetitionMatchesStore.getState().data;
+    return Array.isArray(matches) && matches.some(match =>
+      match.status === 'scheduled' && new Date(match.date).getTime() <= Date.now());
+  }
+  async function run(initial: boolean, catchUp = false) {
+    if (pending || !current() || !visible()) return;
+    clearTimeout(catchUpTimer);
     pending = true;
     try {
-      if (initial) await prefetchGameData(clubId, current, true);
+      if (initial || !prepared) {
+        await prefetchGameData(clubId, current, true);
+        prepared = true;
+      } else if (catchUp) {
+        await screens.useCompetitionMatchesStore.getState().refresh();
+        if (!current()) return;
+        await screens.useCompetitionStore.getState().refresh();
+        if (!current()) return;
+        await Promise.allSettled([
+          useCalendarStore.getState().refreshCurrent(),
+          useFinanceStore.getState().refreshCurrent(),
+          screens.useUpcomingMatchesStore.getState().refresh(),
+        ]);
+      }
       else await refreshGameData(current);
-    } finally { pending = false; }
+    } finally {
+      pending = false;
+      if (current() && visible() && hasOverdueMatches()) {
+        catchUpTimer = setTimeout(() => { void run(false, true); }, 3000);
+      }
+    }
   }
+  const resume = () => { void run(false); };
+  const appState = AppState.addEventListener('change', resume);
+  const browserEvents = typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', resume);
+  if (browserEvents) { window.addEventListener('focus', resume); window.addEventListener('online', resume); }
   void run(true);
   const timer = setInterval(() => { void run(false); }, 60000);
-  return () => { active = false; clearInterval(timer); };
+  return () => {
+    active = false; clearInterval(timer); clearTimeout(catchUpTimer); appState.remove();
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', resume);
+    if (browserEvents) { window.removeEventListener('focus', resume); window.removeEventListener('online', resume); }
+  };
 }

@@ -9,12 +9,14 @@ import { useFinanceStore } from '../stores/financeStore';
 import { useCalendarStore } from '../stores/calendarStore';
 import { useMarketStore } from '../stores/marketStore';
 import { useInboxStore } from '../stores/inboxStore';
+import { AppState, AppStateStatus } from 'react-native';
 jest.mock('../services/apiClient', () => ({ ...jest.requireActual('../services/apiClient'), apiRequest: jest.fn(async () => ({})) }));
-beforeEach(() => { jest.clearAllMocks(); jest.mocked(apiRequest).mockImplementation(async path => path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {}); resetDomainStores(); });
+beforeEach(() => { jest.clearAllMocks(); jest.mocked(AppState.addEventListener).mockReturnValue({ remove: jest.fn() }); jest.mocked(apiRequest).mockImplementation(async path => path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {}); resetDomainStores(); });
 
 test('all dashboard destinations preload before they are opened and reuse their data', async () => {
   await prefetchGameData('club', () => true);
   const paths = jest.mocked(apiRequest).mock.calls.map(([path]) => path);
+  expect(paths[0]).toBe('/competition/matches');
   expect(paths).toEqual(expect.arrayContaining(['/clubs/club', '/competition', '/competition/matches', '/competition/cup', '/squad', '/tactics', '/stadium', '/finance', '/finance/bank', '/finance/tickets', '/finance/sponsors', '/training', '/youth', '/history', '/game/catalog', '/market/players?sort=value_asc', '/market/mine', '/settings', '/market/players?sort=value_asc&type=sale', '/market/players?sort=value_asc&type=loan', '/market/players?sort=value_asc&status=free_agent']));
   expect(paths.filter(path => path.startsWith('/competition/statistics?'))).toHaveLength(2);
   expect(paths.filter(path => path.startsWith('/calendar?'))).toHaveLength(2);
@@ -98,5 +100,74 @@ test('minute ticks do not overlap a slow initial load', async () => {
     stop();
     for (const finish of finishes) finish();
     await jest.advanceTimersByTimeAsync(0);
+  } finally { stop(); jest.useRealTimers(); }
+});
+
+test('overdue games keep updating in background until completed without reloading the market', async () => {
+  jest.useFakeTimers();
+  let matchReads = 0;
+  const match = { id: 'late', date: new Date(Date.now() - 86400000).toISOString(), status: 'scheduled' };
+  jest.mocked(apiRequest).mockImplementation(async path => {
+    if (path === '/competition/matches') {
+      matchReads++;
+      return [{ ...match, status: matchReads < 3 ? 'scheduled' : 'completed' }];
+    }
+    return path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {};
+  });
+  const stop = startGameDataRefresh('club', () => true);
+  try {
+    await jest.advanceTimersByTimeAsync(0);
+    expect(matchReads).toBe(1);
+    const marketReads = jest.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/market/')).length;
+    await jest.advanceTimersByTimeAsync(2999);
+    expect(matchReads).toBe(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(matchReads).toBe(2);
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(matchReads).toBe(3);
+    await jest.advanceTimersByTimeAsync(9000);
+    expect(matchReads).toBe(3);
+    expect(jest.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/market/'))).toHaveLength(marketReads);
+    expect(screens.useCompetitionMatchesStore.getState().data?.[0].status).toBe('completed');
+  } finally { stop(); jest.useRealTimers(); }
+});
+
+test('returning to the app refreshes data immediately and removes the listener on logout', async () => {
+  jest.useFakeTimers();
+  let listener: ((state: AppStateStatus) => void) | undefined;
+  const remove = jest.fn();
+  const subscription = jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => {
+    listener = callback;
+    return { remove };
+  });
+  const stop = startGameDataRefresh('club', () => true);
+  try {
+    await jest.advanceTimersByTimeAsync(0);
+    jest.mocked(apiRequest).mockClear();
+    listener?.('active');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(apiRequest).toHaveBeenCalledWith('/competition/matches');
+    expect(apiRequest).toHaveBeenCalledWith('/competition');
+    stop();
+    expect(remove).toHaveBeenCalled();
+    jest.mocked(apiRequest).mockClear();
+    listener?.('active');
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(apiRequest).not.toHaveBeenCalled();
+  } finally { stop(); subscription.mockRestore(); jest.useRealTimers(); }
+});
+
+test('future scheduled games do not trigger catch-up polling', async () => {
+  jest.useFakeTimers();
+  jest.mocked(apiRequest).mockImplementation(async path => {
+    if (path === '/competition/matches') return [{ id: 'future', date: new Date(Date.now() + 86400000).toISOString(), status: 'scheduled' }];
+    return path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {};
+  });
+  const stop = startGameDataRefresh('club', () => true);
+  try {
+    await jest.advanceTimersByTimeAsync(0);
+    jest.mocked(apiRequest).mockClear();
+    await jest.advanceTimersByTimeAsync(15000);
+    expect(apiRequest).not.toHaveBeenCalled();
   } finally { stop(); jest.useRealTimers(); }
 });
