@@ -63,7 +63,7 @@ export function AuthForm({ register = false, onCreateAccount, background }: {
     <Field label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={!auth.loading} />
     <Field label="Senha" value={password} onChange={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" maxLength={128} editable={!auth.loading} />
     {register && <Field label="Confirmar senha" value={confirm} onChange={setConfirm} secureTextEntry={!showPassword} autoCapitalize="none" maxLength={128} editable={!auth.loading} />}
-    <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.forgot}><Text style={styles.link}>{showPassword ? 'Ocultar senha' : 'Mostrar senha'}</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={[styles.eye, { alignSelf: 'flex-end' }]}><Image source={showPassword ? require('../../assets/auth/eye.png') : require('../../assets/auth/eye-off.png')} accessible={false} style={{ width: 24, height: 24 }} /></Pressable>
     <ActionButton title={register ? 'Criar conta' : 'Entrar'} onPress={() => void submit()} disabled={auth.loading} />
     {!register && <ActionButton secondary title="Esqueci minha senha" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} />}
     {!register && <ActionButton secondary title="Criar conta" disabled={auth.loading} onPress={() => onCreateAccount?.()} />}
