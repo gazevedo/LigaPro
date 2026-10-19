@@ -162,6 +162,17 @@ Para funcionalidades maiores:
 
 Trabalhe sempre na branch `main`. Não crie novas branches.
 
+Ao concluir qualquer alteração:
+
+- incremente sempre a versão em `mobile/version.json`, usando `mobile/scripts/bump-version.cjs` (patch por padrão);
+- inclua o incremento de versão no mesmo commit da alteração;
+- execute as validações relacionadas antes do commit;
+- faça sempre commit e push para `origin/main`;
+- confirme o resultado do push antes de informar que o trabalho foi publicado no GitHub;
+- se o commit ou push falhar, informe o impedimento; não declare a publicação concluída.
+
+O workflow de versão já reconhece incrementos incluídos no commit; não duplique o incremento automático.
+
 ## Experiência de uso
 
 As ações não podem bloquear a tela nem impedir novas edições enquanto salvam.
