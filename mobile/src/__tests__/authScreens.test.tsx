@@ -77,7 +77,7 @@ test('registration toggles both passwords and omits alternative sign-in actions'
     expect(screen.getByLabelText(label).props.secureTextEntry).toBe(false);
     expect(screen.getByLabelText(label).props.value).toBe('password123');
   }
-  await fireEvent.press(screen.getByLabelText('Ocultar senha'));
+  await fireEvent.press(screen.getByLabelText('Ocultar confirmação de senha'));
   for (const label of ['Senha', 'Confirmar senha']) {
     expect(screen.getByLabelText(label).props.secureTextEntry).toBe(true);
     expect(screen.getByLabelText(label).props.value).toBe('password123');
