@@ -54,7 +54,8 @@ curl http://localhost:8000/api/health
 
 | Serviço | Endereço local |
 | --- | --- |
-| API | `http://localhost:8000/api` |
+| API local | `http://localhost:8000/api` |
+| API publicada | `https://liga-pro-eta.vercel.app/api` |
 | Health check, incluindo MongoDB | `http://localhost:8000/api/health` |
 | Swagger e schemas | `http://localhost:8000/docs` |
 | OpenAPI | `http://localhost:8000/openapi.json` |
@@ -64,6 +65,9 @@ curl http://localhost:8000/api/health
 O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às transações. Com `MONGODB_CONNECTION_STRING` vazio, a API em Docker usa o hostname interno `mongodb`; clientes no host usam `localhost`. Uma URI preenchida no `.env` substitui esse padrão. O volume `mongodb_data` persiste os dados.
 
 Na primeira inicialização, o backend prepara uma divisão com 20 bots, elencos, contratos, juniores e calendário. Em adaptadores serverless que não executam o ciclo `lifespan`, a primeira requisição à API (por exemplo, `GET /api/health`) faz a mesma preparação antes de responder. O marcador `game_state.initial_universe` só é aceito se as séries tiverem 20 clubes e 380 partidas; bases incompletas são recuperadas, preservando clubes e resultados existentes. Travas e transações evitam duplicações em inicializações simultâneas. Na Vercel, um redeploy disponibiliza a função; a execução acontece quando chega uma requisição.
+
+Verificação da base: abra `https://liga-pro-eta.vercel.app/api/health`. Além da conexão, o endpoint verifica e recupera a liga mesmo quando a conexão já está em cache. Só responde `status: ok` após a preparação e inclui `league` com `divisions`, `clubs`, `bots` e `matches`; uma base nova retorna 1 série, 20 clubes bots e 380 partidas. O campo `revision` informa `VERCEL_GIT_COMMIT_SHA` quando disponível. Respostas antigas contendo apenas `status`, `api` e `mongodb` não comprovam a criação da base.
+
 
 
 ### Instalar o app web no Android e iPhone

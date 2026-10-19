@@ -269,3 +269,40 @@ def test_failed_serverless_initialization_can_retry_on_next_request(client):
     finally:
         if getattr(cold.state, "database_ready", False):
             cold.state.database_client.close()
+
+
+def test_health_repairs_empty_base_even_when_connection_was_already_initialized(client):
+    # The fixture keeps the warm application's connection but removes all game data.
+    assert app.state.database_ready is True
+    assert app.state.database.clubs.count_documents({}) == 0
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["league"] == {
+        "status": "ready",
+        "divisions": 1,
+        "clubs": 20,
+        "bots": 20,
+        "matches": 380,
+    }
+    before = counts(app.state.database)
+    assert client.get("/api/health").json()["league"]["clubs"] == 20
+    assert counts(app.state.database) == before
+
+
+def test_health_retries_repair_with_old_marker_but_no_clubs(client):
+    database = app.state.database
+    CompetitionService(GameRepository(database)).initialize_universe()
+    database.clubs.delete_many({})
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["league"]["clubs"] == 20
+    assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
+
+
+def test_health_does_not_report_ready_when_preparation_fails(client):
+    with patch.object(
+        CompetitionService, "initialize_universe", side_effect=RuntimeError("preparation failed")
+    ):
+        response = TestClient(app, raise_server_exceptions=False).get("/api/health")
+    assert response.status_code == 500
+    assert response.json().get("status") != "ok"

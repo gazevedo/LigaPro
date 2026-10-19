@@ -9,7 +9,20 @@ from app.main import app
 def test_health_and_docs(authenticated_client):
     response = authenticated_client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "api": "ok", "mongodb": "ok"}
+    data = response.json()
+    assert {key: data[key] for key in ("status", "api", "mongodb")} == {
+        "status": "ok",
+        "api": "ok",
+        "mongodb": "ok",
+    }
+    assert data["league"] == {
+        "status": "ready",
+        "divisions": 1,
+        "clubs": 20,
+        "bots": 20,
+        "matches": 380,
+    }
+    assert "revision" in data
     assert authenticated_client.get("/docs").status_code == 200
     assert authenticated_client.get("/openapi.json").json()["info"]["version"] == "0.1.0"
 
