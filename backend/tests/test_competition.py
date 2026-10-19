@@ -616,3 +616,54 @@ def test_registration_replaces_bot_while_global_universe_document_is_locked(clie
     assert database.season_clubs.count_documents({"club_id": ObjectId(club["id"])}) == 1
     assert database.matches.count_documents({}) == 380
     assert database.clubs.count_documents({"owner_user_id": {"$type": "objectId"}}) == 1
+
+
+def test_registration_does_not_touch_other_clubs_or_unbeaten_record_under_contention(client):
+    from app.services.club_prestige import ClubRankingService
+
+    database = app.state.database
+    repo = GameRepository(database)
+    CompetitionService(repo).initialize_universe()
+    season = database.seasons.find_one({"status": "active"})
+    for position, row in enumerate(database.standings.find({}).sort("_id", 1), 1):
+        database.standings.update_one({"_id": row["_id"]}, {"$set": {"position": position}})
+    ClubRankingService.refresh(repo, season["_id"])
+    first = database.standings.find_one({"position": 1})
+    database.game_records.update_one(
+        {"_id": "highest_market_value"}, {"$set": {"value": 10**15}}, upsert=True
+    )
+    with database.client.start_session() as session:
+        session.start_transaction()
+        try:
+            database.clubs.update_one(
+                {"_id": first["club_id"]}, {"$inc": {"test_revision": 1}}, session=session
+            )
+            database.game_records.update_one(
+                {"_id": "highest_market_value"}, {"$inc": {"test_revision": 1}}, session=session
+            )
+            _, club = add_club("Clube com partidas em andamento")
+        finally:
+            session.abort_transaction()
+    assert database.season_clubs.count_documents({}) == 20
+    assert database.standings.count_documents({"is_bot": True}) == 19
+    assert database.players.count_documents({"current_club_id": ObjectId(club["id"])}) == 25
+    assert database.player_contracts.count_documents({"club_id": ObjectId(club["id"])}) == 25
+
+
+def test_failed_roster_creation_rolls_back_the_reserved_bot_slot(client, monkeypatch):
+    from app.services.player_development import PlayerGeneratorService
+
+    database = app.state.database
+    CompetitionService(GameRepository(database)).initialize_universe()
+    before = list(database.season_clubs.find({}).sort("_id", 1))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("roster failed")
+
+    monkeypatch.setattr(PlayerGeneratorService, "squad", fail)
+    with pytest.raises(RuntimeError, match="roster failed"):
+        add_club("Clube que deve reverter")
+    assert list(database.season_clubs.find({}).sort("_id", 1)) == before
+    assert database.standings.count_documents({"is_bot": True}) == 20
+    assert database.clubs.count_documents({"owner_user_id": {"$type": "objectId"}}) == 0
+    assert database.clubs.count_documents({"active": False}) == 0

@@ -17,6 +17,9 @@ class HistoryService:
     def record(repo, kind, value, reference, club_id=None, player_id=None, now=None):
         if value <= 0:
             return
+        existing = repo.find("game_records", {"_id": kind}, projection={"value": 1})
+        if existing and value <= existing.get("value", -1):
+            return
         doc = repo.database.game_records.find_one_and_update(
             {"_id": kind},
             [

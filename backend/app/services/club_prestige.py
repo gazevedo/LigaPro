@@ -1,6 +1,7 @@
 """Recent sporting ranking, and slower historical reputation."""
 
 from bson import ObjectId
+from pymongo import UpdateOne
 
 from app.models.game import utcnow
 
@@ -57,24 +58,17 @@ class ClubRankingService:
             )
             scored.append((cls.points(club, row, weighted), club["_id"]))
         scored.sort(key=lambda item: (-item[0], str(item[1])))
+        updates, history = [], []
         for position, (points, club_id) in enumerate(scored, 1):
             club = clubs[club_id]
-            repo.update(
-                "clubs",
-                {"_id": club_id},
-                {
-                    "$set": {
-                        "ranking_points": points,
-                        "ranking_position": position,
-                        "ranking": points,
-                    }
-                },
-            )
+            values = {"ranking_points": points, "ranking_position": position, "ranking": points}
+            if all(club.get(key) == value for key, value in values.items()):
+                continue
+            updates.append(UpdateOne({"_id": club_id}, {"$set": values}))
             if reference is not None and (
                 club.get("ranking_points") != points or club.get("ranking_position") != position
             ):
-                repo.insert(
-                    "club_ranking_history",
+                history.append(
                     {
                         "_id": ObjectId(),
                         "club_id": club_id,
@@ -83,8 +77,12 @@ class ClubRankingService:
                         "ranking_points": points,
                         "ranking_position": position,
                         "created_at": utcnow(),
-                    },
+                    }
                 )
+        if updates:
+            repo.database.clubs.bulk_write(updates, session=repo.session)
+        if history:
+            repo.insert_many("club_ranking_history", history)
 
     @staticmethod
     def result(repo, club_id, points):

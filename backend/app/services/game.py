@@ -1,5 +1,7 @@
+import logging
 from collections import Counter
 from datetime import timedelta
+from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -32,6 +34,8 @@ from app.services.player_contracts import ContractService
 from app.services.player_development import PlayerGeneratorService
 from app.services.player_morale import PlayerMoraleService
 from app.services.tactics import TacticsService
+
+logger = logging.getLogger(__name__)
 
 
 class ClubService:
@@ -121,7 +125,11 @@ class ClubService:
         )
 
     def create(self, user, data):
+        started = perf_counter()
+        logger.info("club_creation event=start user=%s", user.id)
+
         def operation(repo):
+            logger.info("club_creation event=transaction_start user=%s", user.id)
             initialization = repo.find("game_state", {"_id": "initial_universe"})
             if initialization and initialization.get("status") == "preparing":
                 raise HTTPException(
@@ -148,6 +156,11 @@ class ClubService:
                     "trophies": [],
                 },
             )
+            # Claim the sporting slot before the expensive roster and finance work.
+            # A conflict retries here, without discarding a fully built squad.
+            competition = CompetitionService(repo)
+            competition.enroll(repo, club, now, lock_universe=False)
+            logger.info("club_creation event=slot_reserved club=%s", club_id)
             players = PlayerGeneratorService(GameConfig.from_rules(rules), str(club_id)).squad(
                 club_id, data.country_id
             )
@@ -197,21 +210,39 @@ class ClubService:
             FanBaseService.initialize(repo, club_id)
             ChemistryService().save(repo, club_id, {})
             ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
-            competition = CompetitionService(repo)
-            competition.enroll(repo, club, now, lock_universe=False)
+            logger.info("club_creation event=roster_and_finances_ready club=%s", club_id)
             season = competition.current(repo)
             competition.generate_youth(repo, club, season, competition.season_config(season))
             ClubRankingService.refresh(repo, season["_id"])
+            logger.info("club_creation event=ranking_ready club=%s", club_id)
             MarketValueService().recalculate(repo, players, "initial", now=now)
+            logger.info("club_creation event=ready_to_commit club=%s", club_id)
             return self.response(repo.find("clubs", {"_id": club_id}))
 
         try:
             # Bound lock contention and transaction retries within the request budget.
             with timeout(45):
-                return self.repo.transaction(operation)
+                result = self.repo.transaction(operation)
+            logger.info(
+                "club_creation event=committed club=%s elapsed_ms=%d",
+                result["id"],
+                (perf_counter() - started) * 1000,
+            )
+            return result
         except DuplicateKeyError as exc:
-            raise HTTPException(409, "Você já possui um clube.") from exc
+            logger.exception("club_creation event=duplicate_key user=%s", user.id)
+            if "owner_user_id" in (exc.details or {}).get("keyPattern", {}) or (
+                "owner_user_id" in str(exc)
+            ):
+                raise HTTPException(409, "Você já possui um clube.") from exc
+            raise
         except PyMongoError as exc:
+            logger.exception(
+                "club_creation event=failed user=%s code=%s elapsed_ms=%d",
+                user.id,
+                getattr(exc, "code", None),
+                (perf_counter() - started) * 1000,
+            )
             if exc.timeout:
                 raise HTTPException(
                     503,

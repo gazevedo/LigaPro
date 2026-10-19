@@ -39,3 +39,48 @@ def test_rules_are_cached_only_inside_a_transaction(transactional):
     first["initial_capacity"] = 1
     assert repo.rules()["initial_capacity"] == 12345
     assert repo.find.call_count == (1 if transactional else 2)
+
+
+def test_ranking_refresh_does_not_rewrite_unchanged_clubs():
+    from app.services.club_prestige import ClubRankingService
+
+    identity = "club"
+    repo = Mock()
+    row = {"club_id": identity, "position": 1, "points": 3}
+    points = ClubRankingService.points({}, row, 0)
+    repo.many.side_effect = [
+        [row],
+        [{"_id": identity, "ranking_points": points, "ranking_position": 1, "ranking": points}],
+    ]
+    ClubRankingService.refresh(repo, "season")
+    repo.database.clubs.bulk_write.assert_not_called()
+    repo.update.assert_not_called()
+
+
+def test_existing_record_is_not_written_when_new_value_does_not_beat_it():
+    from app.services.game_history import HistoryService
+
+    repo = Mock()
+    repo.find.return_value = {"value": 100}
+    HistoryService.record(repo, "highest_market_value", 90, "player")
+    repo.database.game_records.find_one_and_update.assert_not_called()
+
+
+@pytest.mark.parametrize("owner_conflict", [True, False])
+def test_only_duplicate_owner_is_reported_as_already_having_a_club(owner_conflict):
+    from pymongo.errors import DuplicateKeyError
+
+    repo = Mock()
+    error = DuplicateKeyError(
+        "duplicate key",
+        details={
+            "keyPattern": {"owner_user_id" if owner_conflict else "_id": 1},
+        },
+    )
+    repo.transaction.side_effect = error
+    with pytest.raises(HTTPException if owner_conflict else DuplicateKeyError) as caught:
+        ClubService(repo).create(Mock(), ClubInput(name="Clube", country_id="BR", badge_id="blue"))
+    if owner_conflict:
+        assert caught.value.status_code == 409
+    else:
+        assert caught.value is error
