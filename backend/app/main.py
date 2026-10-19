@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI):
         repository = GameRepository(app.state.database)
         repository.initialize()
         CompetitionService(repository).bootstrap()
+        # Finish persistent one-time preparation before accepting club requests.
+        await asyncio.to_thread(CompetitionService(repository).initialize_universe)
         ContractService(repository).bootstrap()
         bootstrap_player_attributes(repository)
         bootstrap_economy(repository)

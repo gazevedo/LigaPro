@@ -5,6 +5,7 @@ from math import floor
 
 from bson import ObjectId
 from fastapi import HTTPException
+from pymongo import UpdateOne
 
 from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
@@ -95,17 +96,22 @@ class ContractService:
                     for c in contracts
                 ],
             )
-        for contract in contracts:
-            repo.update(
-                "players",
-                {"_id": contract["player_id"]},
-                {
-                    "$set": {
-                        "salary": contract["salary"],
-                        "contract_status": contract["status"],
-                        "contract_expires_at": contract["expires_at"],
-                    }
-                },
+        if contracts:
+            repo.database.players.bulk_write(
+                [
+                    UpdateOne(
+                        {"_id": contract["player_id"]},
+                        {
+                            "$set": {
+                                "salary": contract["salary"],
+                                "contract_status": contract["status"],
+                                "contract_expires_at": contract["expires_at"],
+                            }
+                        },
+                    )
+                    for contract in contracts
+                ],
+                session=repo.session,
             )
         for club_id in {c["club_id"] for c in contracts}:
             repo.update(

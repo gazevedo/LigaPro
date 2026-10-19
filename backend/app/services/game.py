@@ -3,7 +3,8 @@ from datetime import timedelta
 
 from bson import ObjectId
 from fastapi import HTTPException
-from pymongo.errors import DuplicateKeyError
+from pymongo import timeout
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from app.config.game import GameConfig, legacy_position
 from app.config.stadium import (
@@ -120,8 +121,6 @@ class ClubService:
         )
 
     def create(self, user, data):
-        CompetitionService.ensure_lock(self.repo)
-
         def operation(repo):
             CompetitionService.lock(repo)
             if repo.find("clubs", {"owner_user_id": ObjectId(user.id)}):
@@ -181,9 +180,8 @@ class ClubService:
                 "stadiums",
                 {
                     "_id": club_id,
-                    "name": data.stadium_name or (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get(
-                        "stadium_name"
-                    )
+                    "name": data.stadium_name
+                    or (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get("stadium_name")
                     or f"Estádio {data.name}",
                     "capacity": rules["initial_capacity"],
                     "ticket_price": rules["ticket_price"],
@@ -204,9 +202,19 @@ class ClubService:
             return self.response(repo.find("clubs", {"_id": club_id}))
 
         try:
-            return self.repo.transaction(operation)
+            # Bound lock contention and transaction retries within the request budget.
+            with timeout(45):
+                CompetitionService.ensure_lock(self.repo)
+                return self.repo.transaction(operation)
         except DuplicateKeyError as exc:
             raise HTTPException(409, "Você já possui um clube.") from exc
+        except PyMongoError as exc:
+            if exc.timeout:
+                raise HTTPException(
+                    503,
+                    "A criação do clube demorou além do esperado. Tente novamente em instantes.",
+                ) from exc
+            raise
 
 
 class SquadService:

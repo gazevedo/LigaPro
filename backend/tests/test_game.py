@@ -91,6 +91,32 @@ def test_create_club_and_initial_data(client):
     assert app.state.database.clubs.count_documents({"is_bot": True}) == 19
 
 
+def test_create_club_with_reported_numeric_name_and_stadium(client):
+    headers = account(client, 1)
+    response = client.post(
+        "/api/clubs",
+        headers=headers,
+        json={
+            "name": "123",
+            "country_id": "BR",
+            "badge_id": "blue",
+            "stadium_name": "123",
+        },
+    )
+    assert response.status_code == 201, response.text
+    club_id = ObjectId(response.json()["id"])
+    database = app.state.database
+    assert database.stadiums.find_one({"_id": club_id})["name"] == "123"
+    assert database.players.count_documents({"current_club_id": club_id}) == 25
+    assert database.player_contracts.count_documents({"club_id": club_id}) == 25
+    assert (
+        database.matches.count_documents(
+            {"$or": [{"home_club_id": club_id}, {"away_club_id": club_id}]}
+        )
+        == 38
+    )
+
+
 def test_public_club_and_permissions(client, clubs):
     seller, buyer, first, second = clubs
     public = client.get(f"/api/clubs/{first['id']}", headers=buyer).json()

@@ -10,6 +10,7 @@ class GameRepository:
     def __init__(self, database, session=None):
         self.database = database
         self.session = session
+        self._rules = None
 
     def find(self, collection, query, projection=None):
         return self.database[collection].find_one(query, projection, session=self.session)
@@ -117,8 +118,13 @@ class GameRepository:
         return club
 
     def rules(self):
+        if self.session is not None and self._rules is not None:
+            return dict(self._rules)
         setting = self.find("app_settings", {"key": "game_rules"})
-        return {**DEFAULT_RULES, **(setting["value"] if setting else {})}
+        rules = {**DEFAULT_RULES, **(setting["value"] if setting else {})}
+        if self.session is not None:
+            self._rules = rules
+        return dict(rules)
 
     def money(
         self, club_id, amount, category, reference=None, *, allow_overdraft=False, effective_at=None

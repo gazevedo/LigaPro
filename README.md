@@ -63,6 +63,9 @@ curl http://localhost:8000/api/health
 
 O Compose cria o replica set `rs0` através de `mongodb-init`, necessário às transações. Com `MONGODB_CONNECTION_STRING` vazio, a API em Docker usa o hostname interno `mongodb`; clientes no host usam `localhost`. Uma URI preenchida no `.env` substitui esse padrão. O volume `mongodb_data` persiste os dados.
 
+Na primeira inicialização, o backend prepara uma divisão com 20 clubes bots, elencos, contratos, base e calendário antes de aceitar requisições. A preparação roda em uma thread de inicialização e grava o marcador `game_state.initial_universe` na mesma transação dos dados. Reinícios e inicializações simultâneas não duplicam a base; uma falha reverte a preparação e permite nova tentativa no próximo início. Bancos que já possuem temporada e divisão são preservados. O cadastro do clube aproveita uma vaga bot existente.
+
+
 ### Instalar o app web no Android e iPhone
 
 Abra o frontend publicado em HTTPS (`https://ligapro-mobile.vercel.app/`). No Android, use Chrome → menu ⋮ → **Instalar aplicativo** ou **Adicionar à tela inicial**. No iPhone, use Safari → Compartilhar → **Adicionar à Tela de Início**; mantenha **Abrir como App** ativado se essa opção aparecer. Abra pelo ícone LigaPro para usar a janela sem a barra do navegador.

@@ -552,6 +552,30 @@ class CompetitionService:
             },
         )
 
+    def initialize_universe(self):
+        marker = "initial_universe"
+        if self.repo.find("game_state", {"_id": marker}):
+            return False
+        self.ensure_lock(self.repo)
+
+        def prepare(repo):
+            self.lock(repo)
+            if repo.find("game_state", {"_id": marker}):
+                return False
+            # Adopt an existing universe without replacing clubs or their history.
+            season = self.current(repo)
+            if not (season and repo.find("divisions", {"active": {"$ne": False}})):
+                config = GameConfig.from_rules(repo.rules())
+                bot = self.create_bot(repo, 0, 0, config)
+                self.enroll(repo, bot)
+            season = self.current(repo)
+            repo.insert(
+                "game_state", {"_id": marker, "completed_at": utcnow(), "season_id": season["_id"]}
+            )
+            return True
+
+        return self.repo.transaction(prepare)
+
     def bootstrap(self):
         self.ensure_lock(self.repo)
         # Upgrade old generic bot labels once; keep existing custom names.

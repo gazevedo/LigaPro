@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from bson import ObjectId
 from fastapi import HTTPException
+from pymongo import UpdateOne
 
 from app.config.game import GameConfig
 from app.models.game import public, utcnow
@@ -41,24 +42,28 @@ class SeasonCalendarService:
                     "Fechamento financeiro",
                 )
             )
+        updates = []
         for kind, date, title in events:
             identity = f"{club_id}:{season['_id']}:{kind}:{date.isoformat(timespec='milliseconds')}"
-            repo.database.calendar_events.update_one(
-                {"_id": identity},
-                {
-                    "$setOnInsert": {
-                        "club_id": club_id,
-                        "season_id": season["_id"],
-                        "type": kind,
-                        "kind": kind,
-                        "title": title,
-                        "date": date,
-                        "reference_id": season["_id"],
-                    }
-                },
-                upsert=True,
-                session=repo.session,
+            updates.append(
+                UpdateOne(
+                    {"_id": identity},
+                    {
+                        "$setOnInsert": {
+                            "club_id": club_id,
+                            "season_id": season["_id"],
+                            "type": kind,
+                            "kind": kind,
+                            "title": title,
+                            "date": date,
+                            "reference_id": season["_id"],
+                        }
+                    },
+                    upsert=True,
+                )
             )
+        if updates:
+            repo.database.calendar_events.bulk_write(updates, session=repo.session)
 
     @staticmethod
     def free(repo, clubs, date, exclude=None):
