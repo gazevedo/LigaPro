@@ -53,7 +53,7 @@ export function AuthForm({ register = false, onCreateAccount, background }: {
             <View style={styles.divider}><View style={styles.line} /><Text style={{ color: '#728297' }}>ou</Text><View style={styles.line} /></View>
             <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
           </View>
-          <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#60a5fa', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
+          <View style={styles.signup}><Text style={{ color: '#d5e5ee', fontSize: 15 }}>Não tem conta?</Text><Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => onCreateAccount?.()} hitSlop={8}><Text style={{ color: '#1e3a8a', fontWeight: '800', fontSize: 15 }}>Criar conta</Text></Pressable></View>
         </View>
       </ScrollView>
       <View style={styles.footer}><Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text></View>
