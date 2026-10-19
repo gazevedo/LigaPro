@@ -136,7 +136,7 @@ class ClubService:
                 {
                     "_id": club_id,
                     "owner_user_id": ObjectId(user.id),
-                    **data.model_dump(),
+                    **data.model_dump(exclude={"stadium_name"}),
                     "country": public(country),
                     "badge": public(badge),
                     "created_at": now,
@@ -181,7 +181,7 @@ class ClubService:
                 "stadiums",
                 {
                     "_id": club_id,
-                    "name": (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get(
+                    "name": data.stadium_name or (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get(
                         "stadium_name"
                     )
                     or f"Estádio {data.name}",

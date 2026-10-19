@@ -85,13 +85,13 @@ test('registration toggles both passwords and omits alternative sign-in actions'
 });
 
 
-test('registration sends the stadium name entered on the phone', async () => {
+test('registration omits stadium name', async () => {
   await render(<AuthForm register />);
   await fireEvent.changeText(screen.getByLabelText('Nome'), 'Diretor');
-  await fireEvent.changeText(screen.getByLabelText('Nome do estádio'), ' Arena do Clube ');
+  expect(screen.queryByLabelText('Nome do estádio')).toBeNull();
   await fireEvent.changeText(screen.getByLabelText('E-mail'), 'user@example.com');
   await fireEvent.changeText(screen.getByLabelText('Senha'), 'password123');
   await fireEvent.changeText(screen.getByLabelText('Confirmar senha'), 'password123');
   await fireEvent.press(screen.getByText('Criar conta'));
-  expect(register).toHaveBeenCalledWith('Diretor', 'user@example.com', 'password123', 'Arena do Clube');
+  expect(register).toHaveBeenCalledWith('Diretor', 'user@example.com', 'password123');
 });

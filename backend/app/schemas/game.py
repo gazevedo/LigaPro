@@ -17,9 +17,13 @@ class ClubInput(Input):
     country_id: str = Field(min_length=2, max_length=3)
     badge_id: str = Field(min_length=1, max_length=40)
 
-    @field_validator("name")
+    stadium_name: str | None = Field(default=None, min_length=3, max_length=60)
+
+    @field_validator("name", "stadium_name")
     @classmethod
     def name_valid(cls, value):
+        if value is None:
+            return value
         value = value.strip()
         if len(value) < 3:
             raise ValueError("Nome deve ter ao menos 3 caracteres")

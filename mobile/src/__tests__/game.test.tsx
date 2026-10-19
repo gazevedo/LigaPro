@@ -40,8 +40,10 @@ test('creates club from catalog and enters with the returned club', async () => 
   jest.mocked(clubService.create).mockResolvedValue(club);
   await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
+  await fireEvent.changeText(screen.getByLabelText('Nome do estádio'), ' Arena do Clube ');
   await fireEvent.press(screen.getByText('Criar clube'));
-  await waitFor(() => expect(clubService.create).toHaveBeenCalledWith({ name: 'Clube teste', country_id: 'BR', badge_id: 'blue' }));
+  await waitFor(() => expect(clubService.create).toHaveBeenCalledWith({ name: 'Clube teste', country_id: 'BR', badge_id: 'blue', stadium_name: 'Arena do Clube' }));
   await waitFor(() => expect(useClubStore.getState().data?.club?.id).toBe('club1'));
 });
 test('dashboard opens every module', async () => {
