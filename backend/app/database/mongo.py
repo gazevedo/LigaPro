@@ -39,4 +39,12 @@ def get_database(request: Request) -> Database:
                 state.database_ready = True
         finally:
             state.database_lock.release()
+    if request.url.path != "/api/health" and not getattr(state, "database_schema_ready", False):
+        from app.repositories.game import GameRepository
+
+        if not all(step["completed"] for step in GameRepository(state.database).schema_progress()):
+            raise HTTPException(
+                503, "A base está sendo preparada. Acompanhe o progresso em /api/health."
+            )
+        state.database_schema_ready = True
     return state.database

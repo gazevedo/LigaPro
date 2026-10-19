@@ -29,7 +29,24 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def is_serverless_runtime():
+    return getenv("VERCEL") == "1" or any(
+        getenv(name)
+        for name in (
+            "VERCEL_ENV",
+            "AWS_LAMBDA_FUNCTION_NAME",
+            "LAMBDA_TASK_ROOT",
+        )
+    )
+
+
 async def run_game_maintenance(manager, repository, config):
+    if (
+        getenv("VERCEL") == "1"
+        and repository.find("game_state", {"_id": GameRepository.SCHEMA_MARKER, "status": "ready"})
+        is None
+    ):
+        return
     for name, operation in (
         ("live", manager.start_due),
         ("scheduled", lambda: asyncio.to_thread(process_due, repository)),
@@ -42,26 +59,12 @@ async def run_game_maintenance(manager, repository, config):
 
 
 def initialize_database(database, *, prepare_universe=True):
-    with timeout(8):
+    with timeout(3):
         database.command("ping")
-        database["app_settings"].create_index("key", unique=True)
-        database["users"].create_index("email", unique=True)
-        database["users"].create_index(
-            "name_key", unique=True, partialFilterExpression={"name_key": {"$type": "string"}}
-        )
-        database["users"].create_index(
-            "google_id", unique=True, partialFilterExpression={"google_id": {"$type": "string"}}
-        )
-        database["user_sessions"].create_index("refresh_token_hash", unique=True)
-        database["user_sessions"].create_index("user_id")
-        database["user_sessions"].create_index("expires_at", expireAfterSeconds=0)
-        database["auth_rate_limits"].create_index("expires_at", expireAfterSeconds=0)
-        database.push_subscriptions.create_index("user_id")
-        database.push_deliveries.create_index("expires_at", expireAfterSeconds=0)
-        repository = GameRepository(database)
-        repository.initialize()
     if not prepare_universe:
         return
+    repository = GameRepository(database)
+    repository.initialize()
     CompetitionService(repository).initialize_universe()
     CompetitionService(repository).bootstrap()
     ContractService(repository).bootstrap()
@@ -76,9 +79,10 @@ async def lifespan(app: FastAPI):
     app.state.database = client[config.mongodb_database_name]
     try:
         await asyncio.to_thread(
-            initialize_database, app.state.database, prepare_universe=getenv("VERCEL") != "1"
+            initialize_database, app.state.database, prepare_universe=not is_serverless_runtime()
         )
         app.state.database_ready = True
+        app.state.database_schema_ready = not is_serverless_runtime()
         repository = GameRepository(app.state.database)
 
         from app.services.live_match import MatchRoomManager

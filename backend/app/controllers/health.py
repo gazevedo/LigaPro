@@ -14,4 +14,6 @@ def health(
     if result["status"] == "initializing":
         response.status_code = 202
         response.headers["Retry-After"] = "1"
+    elif result["status"] == "error":
+        response.status_code = 503
     return result

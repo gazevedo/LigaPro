@@ -35,7 +35,13 @@ def clear_settings(client):
     for collection in app.state.database.list_collection_names():
         if collection in {"countries", "club_badges"}:
             continue
-        app.state.database[collection].delete_many({})
+        if collection == "game_state":
+            app.state.database[collection].delete_many({"_id": {"$ne": "database_schema_v1"}})
+        else:
+            app.state.database[collection].delete_many({})
+    from app.repositories.game import GameRepository
+
+    GameRepository(app.state.database).initialize()
 
 
 @pytest.fixture
