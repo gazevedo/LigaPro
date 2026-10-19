@@ -144,7 +144,7 @@ test('country picker searches without accents and selects the result', async () 
   expect(screen.queryByText('Voltar')).toBeNull();
 });
 
-test.each([new ApiTimeoutError(), new ApiError(401, 'Sessão expirada')])('failed creation returns to login without checking or creating again (%s)', async error => {
+test.each([new ApiError(401, 'Sessão expirada')])('failed creation returns to login without checking or creating again (%s)', async error => {
   useAuthStore.setState({ authenticated: true });
   jest.mocked(clubService.create).mockRejectedValueOnce(error);
   await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
@@ -155,6 +155,57 @@ test.each([new ApiTimeoutError(), new ApiError(401, 'Sessão expirada')])('faile
   expect(clubService.status).not.toHaveBeenCalled();
   expect(useClubStore.getState().data?.club).toBeFalsy();
   expect(screen.queryByText('Verificar criação')).toBeNull();
+});
+
+test.each([new ApiTimeoutError(), new ApiError(409, 'Você já possui um clube.')])('recovers the created club without repeating the POST (%s)', async error => {
+  useAuthStore.setState({ authenticated: true });
+  jest.mocked(clubService.create).mockRejectedValueOnce(error);
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await waitFor(() => expect(useClubStore.getState().data?.club?.id).toBe('club1'));
+  expect(clubService.create).toHaveBeenCalledTimes(1);
+  expect(clubService.status).toHaveBeenCalledTimes(1);
+  expect(useAuthStore.getState().authenticated).toBe(true);
+});
+
+test.each([false, true])('unconfirmed timeout keeps the session and form (status fails: %s)', async statusFails => {
+  useAuthStore.setState({ authenticated: true });
+  jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
+  if (statusFails) jest.mocked(clubService.status).mockRejectedValueOnce(new ApiTimeoutError());
+  else jest.mocked(clubService.status).mockResolvedValueOnce({ club: null });
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await screen.findByText('Não foi possível confirmar a criação do clube a tempo. Seus dados foram mantidos. Tente novamente em instantes.');
+  expect(useAuthStore.getState().authenticated).toBe(true);
+  expect(screen.getByLabelText('Nome do clube').props.value).toBe('Clube teste');
+  expect(clubService.create).toHaveBeenCalledTimes(1);
+});
+
+test('expired session during timeout recovery returns to login', async () => {
+  useAuthStore.setState({ authenticated: true });
+  jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
+  jest.mocked(clubService.status).mockRejectedValueOnce(new ApiError(401, 'Sessão expirada'));
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await waitFor(() => expect(useAuthStore.getState().authenticated).toBe(false));
+  expect(clubService.create).toHaveBeenCalledTimes(1);
+});
+
+test('late timeout recovery cannot enter another session', async () => {
+  useAuthStore.setState({ authenticated: true });
+  jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
+  let finish!: (value: { club: typeof club }) => void;
+  jest.mocked(clubService.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  await waitFor(() => expect(clubService.status).toHaveBeenCalledTimes(1));
+  await act(async () => { await useAuthStore.getState().clearSession(); finish({ club }); });
+  expect(useClubStore.getState().data?.club).toBeFalsy();
+  expect(useAuthStore.getState().authenticated).toBe(false);
 });
 
 test('opening the initial form never creates a club', async () => {

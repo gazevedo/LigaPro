@@ -10,5 +10,5 @@ export const clubService = {
   get: (id: string) => apiRequest<Club>(`/clubs/${encodeURIComponent(id)}`),
   // Creation is an explicit, single POST. An expired session must return to login.
   create: (data: { name: string; country_id: string; badge_id: string; stadium_name?: string }) =>
-    apiRequest<Club>('/clubs', { method: 'POST', body: JSON.stringify(data) }, true, 30000, false),
+    apiRequest<Club>('/clubs', { method: 'POST', body: JSON.stringify(data) }, true, 120000, false),
 };

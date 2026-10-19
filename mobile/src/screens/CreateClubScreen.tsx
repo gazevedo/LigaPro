@@ -30,14 +30,31 @@ export function CreateClubScreen() {
       const current = useAuthStore.getState();
       if (current.authenticated === session.authenticated && current.user?.id === session.user?.id) enterClub(club);
     } catch (error) {
-      if (error instanceof ApiTimeoutError || (error instanceof ApiError && error.status === 401)) {
+      const sameSession = () => {
         const current = useAuthStore.getState();
-        // A late response from an old session must not change a newer login.
-        if (current.user?.id && current.user.id !== session.user?.id) return;
-        await current.clearSession();
-        useNotificationStore.getState().show(error instanceof ApiTimeoutError
-          ? 'O tempo para criar o clube esgotou. Entre novamente para continuar.'
-          : 'Sua sessão expirou. Entre novamente para continuar.');
+        return current.authenticated === session.authenticated && current.user?.id === session.user?.id;
+      };
+      if (!sameSession()) return;
+      if (error instanceof ApiTimeoutError || (error instanceof ApiError && error.status === 409)) {
+        // The POST may have committed even though its response never arrived.
+        // Check the result without issuing another creation request.
+        try {
+          const { club } = await clubService.status();
+          if (!sameSession()) return;
+          if (club) { enterClub(club); return; }
+        } catch (statusError) {
+          if (!sameSession()) return;
+          if (statusError instanceof ApiError && statusError.status === 401) {
+            await useAuthStore.getState().clearSession();
+            useNotificationStore.getState().show('Sua sessão expirou. Entre novamente para continuar.');
+            return;
+          }
+        }
+        if (error instanceof ApiTimeoutError) throw new Error('Não foi possível confirmar a criação do clube a tempo. Seus dados foram mantidos. Tente novamente em instantes.');
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        await useAuthStore.getState().clearSession();
+        useNotificationStore.getState().show('Sua sessão expirou. Entre novamente para continuar.');
         return;
       }
       throw error;
