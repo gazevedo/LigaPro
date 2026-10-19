@@ -113,8 +113,6 @@ def create_app() -> FastAPI:
             "/api/calendar",
             "/api/matches/upcoming",
             "/api/game/status",
-            "/api/competition",
-            "/api/competition/matches",
         }:
             kick = getattr(app.state, "request_game_tick", None)
             if kick:

@@ -875,10 +875,10 @@ class CompetitionService:
 
         return self.repo.transaction(operation)
 
-    def play_due(self, season, now):
+    def play_due(self, season, now, max_matches=None):
         self.repo.transaction(lambda repo: (self.lock(repo), CupService.ensure(repo, season)))
         attempted = set()
-        while True:
+        while max_matches is None or len(attempted) < max_matches:
             from app.services.live_match import busy_clubs
 
             busy = busy_clubs(self.repo)
@@ -931,15 +931,22 @@ class CompetitionService:
                     self.play(identity, now)
             except Exception:
                 logger.exception("Scheduled match failed: %s %s", kind, identity)
+        return len(attempted)
 
-    def process_due(self, now=None):
+    def process_due(self, now=None, max_matches=None):
         self.ensure_lock(self.repo)
         now = now or utcnow()
+        attempted = 0
         while season := self.current(self.repo):
             if self.needs_schedule_update(self.repo, season):
                 self.repo.transaction(self.update_league_interval)
                 season = self.current(self.repo)
-            self.play_due(season, now)
+            if max_matches is None:
+                self.play_due(season, now)
+            else:
+                attempted += self.play_due(season, now, max_matches=max_matches - attempted)
+                if attempted >= max_matches:
+                    break
             if season["ends_at"] > now or any(
                 self.repo.find(collection, {"season_id": season["_id"], "status": "live"})
                 for collection in ["matches", "competition_matches", "friendly_matches"]

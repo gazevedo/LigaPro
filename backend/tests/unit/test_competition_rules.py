@@ -243,7 +243,11 @@ class CompetitionRulesTests(unittest.TestCase):
         matches = repo.insert_many.call_args_list[0].args[1]
         for match in matches[:30]:
             match["status"] = "completed"
-        now = datetime(2026, 10, 18, tzinfo=UTC)
+        for match in matches[30:]:
+            match["date"] = datetime(2026, 10, 15, 0, 16, 23, tzinfo=UTC) + timedelta(
+                hours=match["round"] - 4
+            )
+        now = datetime(2026, 10, 19, tzinfo=UTC)
         future = {**matches[-1], "_id": "future", "date": now + timedelta(hours=1)}
         matches.append(future)
 
@@ -266,12 +270,27 @@ class CompetitionRulesTests(unittest.TestCase):
             patch("app.services.live_match.busy_clubs", return_value=set()),
             patch.object(service, "play", side_effect=play) as played,
         ):
-            service.play_due(season, now)
+            for _ in range(35):
+                self.assertEqual(service.play_due(season, now, max_matches=10), 10)
             self.assertEqual(played.call_count, 350)
-            service.play_due(season, now)
+            self.assertEqual(service.play_due(season, now, max_matches=10), 0)
             self.assertEqual(played.call_count, 350)
         self.assertEqual(future["status"], "scheduled")
         self.assertTrue(all(match["status"] == "completed" for match in matches[:380]))
+
+    def test_bounded_processing_defers_season_finalization_until_next_batch(self):
+        now = datetime(2026, 10, 19, tzinfo=UTC)
+        service = CompetitionService(Mock())
+        season = {"_id": "season", "ends_at": datetime(2026, 10, 18, tzinfo=UTC)}
+        with (
+            patch.object(service, "current", return_value=season),
+            patch.object(service, "needs_schedule_update", return_value=False),
+            patch.object(service, "play_due", return_value=10) as play,
+            patch("app.services.competition.SeasonFinalizationService") as finalization,
+        ):
+            service.process_due(now, max_matches=10)
+        play.assert_called_once_with(season, now, max_matches=10)
+        finalization.assert_not_called()
 
     def test_missing_fixtures_after_round_seven_are_restored_without_replaying_results(self):
         from copy import deepcopy

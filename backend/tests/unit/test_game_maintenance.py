@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_auth_service
+from app.api.dependencies import get_auth_service, get_current_user
 from app.config.settings import get_settings
 
 
@@ -65,18 +65,45 @@ def application(main):
     return app
 
 
-def test_competition_reads_request_background_processing_without_waiting():
+def test_authenticated_competition_reads_finish_batch_before_reading_results():
     main = module()
     app = application(main)
-    app.state.request_game_tick = Mock()
+    user, repo = Mock(), Mock()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[main.game.repository] = lambda: repo
+    app.state.request_game_tick = AsyncMock()
+    events = []
+
+    def process(**kwargs):
+        assert kwargs == {"max_matches": 10}
+        events.append("processed")
+
+    def read(_user):
+        assert events[-1] == "processed"
+        events.append("read")
+        return {"games": 4}
+
+    with patch.object(main.game, "CompetitionService") as competition:
+        competition.return_value.process_due.side_effect = process
+        competition.return_value.table.side_effect = read
+        competition.return_value.matches.side_effect = read
+        client = TestClient(app)
+        for path in ("/api/competition", "/api/competition/matches"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.json() == {"games": 4}
+    assert events == ["processed", "read", "processed", "read"]
+    app.state.request_game_tick.assert_not_awaited()
+
+
+def test_unauthenticated_reads_do_not_process_matches():
+    main = module()
+    app = application(main)
     app.dependency_overrides[get_auth_service] = lambda: Mock()
-    # No lifespan/database: even an unauthenticated read must pass through the
-    # middleware and wake the existing, throttled background worker.
-    client = TestClient(app)
-    for path in ("/api/competition", "/api/competition/matches"):
-        response = client.get(path)
-        assert response.status_code in (401, 403)
-    assert app.state.request_game_tick.call_count == 2
+    with patch.object(main.game, "CompetitionService") as competition:
+        for path in ("/api/competition", "/api/competition/matches"):
+            assert TestClient(app).get(path).status_code == 401
+    competition.assert_not_called()
 
 
 def test_async_maintenance_runs_after_response_body_and_finishes_before_request_ends():
@@ -104,7 +131,7 @@ def test_async_maintenance_runs_after_response_body_and_finishes_before_request_
     app.add_middleware(ObserveResponse)
     app.state.request_game_tick = maintenance
     app.dependency_overrides[get_auth_service] = lambda: Mock()
-    TestClient(app).get("/api/competition")
+    TestClient(app).get("/api/game/status")
     assert events == ["body", "maintenance_finished"]
 
 
@@ -127,11 +154,11 @@ def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
         patch.object(main, "monotonic", return_value=100) as clock,
     ):
         with TestClient(app) as client:
-            client.get("/api/competition")
+            client.get("/api/game/status")
             maintenance.assert_awaited_once()
-            client.get("/api/competition/matches")
+            client.get("/api/matches/upcoming")
             maintenance.assert_awaited_once()
             clock.return_value = 131
-            client.get("/api/competition")
+            client.get("/api/game/status")
             assert maintenance.await_count == 2
     manager.close.assert_awaited_once()
