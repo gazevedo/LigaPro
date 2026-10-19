@@ -75,7 +75,7 @@ def test_lock_logs_original_transient_error_before_driver_retry(caplog):
             "errorLabels": ["TransientTransactionError"],
         },
     )
-    repository.update.side_effect = error
+    repository.database.game_state.update_one.side_effect = error
     with pytest.raises(OperationFailure) as caught:
         CompetitionService.lock(repository)
     assert caught.value is error
@@ -105,3 +105,50 @@ def test_generation_releases_only_its_own_lease_after_failure():
     database.game_state.delete_one.assert_called_once_with(
         {"_id": "database_generation_lease", "owner": "first"}
     )
+
+
+def test_lock_uses_update_without_reading_document_back():
+    repository = MagicMock()
+    CompetitionService.lock(repository)
+    repository.database.game_state.update_one.assert_called_once_with(
+        {"_id": "universe"}, {"$inc": {"revision": 1}}, session=repository.session
+    )
+    repository.update.assert_not_called()
+
+
+def test_release_failure_does_not_hide_original_transaction_error(caplog):
+    database, competition = MagicMock(), MagicMock()
+    original = ExecutionTimeout("original transaction timeout")
+    competition.initialize_universe.side_effect = original
+    database.game_state.delete_one.side_effect = ExecutionTimeout("release timeout")
+    with pytest.raises(ExecutionTimeout) as caught:
+        HealthService(database).advance_league(competition, "owner")
+    assert caught.value is original
+    assert "event=lease_release_failed" in caplog.text
+
+
+def test_release_budget_is_outside_generation_timeout():
+    active = []
+
+    @contextmanager
+    def budget(seconds):
+        active.append(seconds)
+        try:
+            yield
+        finally:
+            active.pop()
+
+    database, competition = MagicMock(), MagicMock()
+
+    def generation(**kwargs):
+        assert active == [12]
+        raise ExecutionTimeout("generation expired")
+
+    def release(query):
+        assert active == [1]
+
+    competition.initialize_universe.side_effect = generation
+    database.game_state.delete_one.side_effect = release
+    with patch("app.services.health.timeout", budget), pytest.raises(ExecutionTimeout):
+        HealthService(database).advance_league(competition, "owner")
+    database.game_state.delete_one.assert_called_once()

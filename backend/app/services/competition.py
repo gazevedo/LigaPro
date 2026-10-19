@@ -100,7 +100,9 @@ class CompetitionService:
     @staticmethod
     def lock(repo):
         try:
-            repo.update("game_state", {"_id": "universe"}, {"$inc": {"revision": 1}})
+            repo.database.game_state.update_one(
+                {"_id": "universe"}, {"$inc": {"revision": 1}}, session=repo.session
+            )
         except OperationFailure as error:
             # with_transaction retries transient failures internally. Record the
             # original server error before the eventual timeout hides it.

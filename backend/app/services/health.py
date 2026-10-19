@@ -39,8 +39,7 @@ class HealthService:
                 if not schema_ready:
                     continue
                 logger.info("database_generation request=%s event=league_start", request_id)
-                with timeout(12):
-                    outcome = self.advance_league(competition, request_id)
+                outcome = self.advance_league(competition, request_id)
                 logger.info("database_generation request=%s event=league_finished", request_id)
                 if outcome is not None:
                     complete = True
@@ -97,12 +96,18 @@ class HealthService:
             return None
         try:
             logger.info("database_generation request=%s event=lease_acquired", owner)
-            return competition.initialize_universe(max_steps=1)
+            with timeout(12):
+                return competition.initialize_universe(max_steps=1)
         finally:
             # Use a fresh budget even when the transaction exhausted its own.
-            with timeout(1):
-                self.database.game_state.delete_one(
-                    {"_id": "database_generation_lease", "owner": owner}
+            try:
+                with timeout(1):
+                    self.database.game_state.delete_one(
+                        {"_id": "database_generation_lease", "owner": owner}
+                    )
+            except PyMongoError:
+                logger.exception(
+                    "database_generation request=%s event=lease_release_failed", owner
                 )
 
     def progress(self, repository, competition, complete):
