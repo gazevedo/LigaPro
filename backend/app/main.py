@@ -54,10 +54,14 @@ async def run_game_maintenance(manager, repository, config):
             logger.exception("Game maintenance stage failed: %s", name)
 
 
-def initialize_database(database, *, prepare_universe=False):
-    # Database provisioning is an explicit offline import, never a startup task.
+def initialize_database(database, *, prepare_universe=True):
+    # Load the prepared data once; never generate squads or fixtures at startup.
     with timeout(3):
         database.command("ping")
+    if prepare_universe:
+        from mock_database import import_database
+
+        import_database(database)
 
 
 @asynccontextmanager
@@ -67,10 +71,10 @@ async def lifespan(app: FastAPI):
     app.state.database = client[config.mongodb_database_name]
     try:
         await asyncio.to_thread(
-            initialize_database, app.state.database, prepare_universe=False
+            initialize_database, app.state.database, prepare_universe=True
         )
         app.state.database_ready = True
-        app.state.database_schema_ready = False
+        app.state.database_schema_ready = True
         repository = GameRepository(app.state.database)
 
         from app.services.live_match import MatchRoomManager
@@ -97,7 +101,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(30)
 
         task = asyncio.create_task(maintenance())
-        logger.info("MongoDB connected; database generation disabled during startup")
+        logger.info("MongoDB connected; mock database ready")
         try:
             yield
         finally:

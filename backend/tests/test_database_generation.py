@@ -100,3 +100,15 @@ def test_imported_base_supports_registration_replacing_one_bot(client):
     assert database.matches.count_documents({}) == 380
     assert database.season_clubs.find_one({"club_id": ObjectId(club["id"])})
     assert database.players.count_documents({"current_club_id": ObjectId(club["id"])}) == 25
+
+
+def test_parallel_cold_instances_import_only_one_universe(client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    database = app.state.database
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(lambda _: import_database(database), range(2)))
+    assert database.clubs.count_documents({}) == 20
+    assert database.players.count_documents({}) == 500
+    assert database.matches.count_documents({}) == 380
+    assert database.game_state.find_one({"_id": SEED_MARKER})["status"] == "ready"

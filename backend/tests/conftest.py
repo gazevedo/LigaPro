@@ -1,6 +1,6 @@
 import os
 import secrets
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -22,6 +22,7 @@ def client():
     # Tests advance game time explicitly; the real-time worker must not mutate fixtures.
     with (
         patch("app.main.process_due"),
+        patch("app.main.run_game_maintenance", new_callable=AsyncMock),
         TestClient(app, raise_server_exceptions=False) as test_client,
     ):
         yield test_client

@@ -34,7 +34,12 @@ def import_database(database):
         logger.info("mock_database already initialized; preserving existing data")
         return False
     if not seed and database.clubs.find_one({}, {"_id": 1}):
-        raise RuntimeError("A base contém clubes. A importação não sobrescreve uma liga existente.")
+        # Another cold instance may have claimed/imported the seed meanwhile.
+        seed = repo.find("game_state", {"_id": SEED_MARKER})
+        if not seed:
+            raise RuntimeError(
+                "A base contém clubes. A importação não sobrescreve uma liga existente."
+            )
     payload = loads(DATA_FILE.read_text(), json_options=JSONOptions(tz_aware=True))
     if payload["version"] != 1:
         raise ValueError("Versão do mock database não suportada")

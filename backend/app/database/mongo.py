@@ -1,5 +1,5 @@
 from fastapi import HTTPException, Request
-from pymongo import MongoClient, timeout
+from pymongo import MongoClient
 from pymongo.database import Database
 
 from app.config.settings import Settings, get_settings
@@ -29,14 +29,14 @@ def get_database(request: Request) -> Database:
                 client = create_client(config)
                 database = client[config.mongodb_database_name]
                 try:
-                    with timeout(8):
-                        initialize_database(database, prepare_universe=False)
+                    initialize_database(database, prepare_universe=True)
                 except Exception:
                     client.close()
                     raise
                 state.database_client = client
                 state.database = database
                 state.database_ready = True
+                state.database_schema_ready = True
         finally:
             state.database_lock.release()
     if request.url.path != "/api/health" and not getattr(state, "database_schema_ready", False):

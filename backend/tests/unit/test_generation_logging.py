@@ -36,7 +36,7 @@ def test_lock_uses_update_without_reading_document_back():
     repository.update.assert_not_called()
 
 
-def test_server_startup_only_pings_database():
+def test_server_startup_imports_prepared_database():
     from unittest.mock import patch
 
     from test_game_maintenance import module
@@ -44,7 +44,8 @@ def test_server_startup_only_pings_database():
     initialize_database = module().initialize_database
 
     database = MagicMock()
-    with patch("app.repositories.game.GameRepository.initialize", side_effect=AssertionError):
+    with patch("mock_database.import_database") as importer:
         initialize_database(database)
+    importer.assert_called_once_with(database)
     database.command.assert_called_once_with("ping")
     database.clubs.assert_not_called()

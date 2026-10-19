@@ -114,23 +114,26 @@ def test_failed_preparation_rolls_back_and_next_start_can_retry(client):
     assert database.clubs.count_documents({}) == 20
 
 
-def test_backend_startup_does_not_generate_base(client):
-    with TestClient(create_app()) as started:
+def test_backend_startup_imports_prepared_base_once(client):
+    with (
+        patch.object(CompetitionService, "create_bot", side_effect=AssertionError("generation")),
+        TestClient(create_app()) as started,
+    ):
         database = started.app.state.database
-        assert database.game_state.find_one({"_id": "initial_universe"}) is None
-        assert database.clubs.count_documents({}) == 0
+        assert database.game_state.find_one({"_id": "initial_universe"})["status"] == "ready"
+        assert database.clubs.count_documents({}) == 20
         before = counts(database)
     with TestClient(create_app()) as restarted:
         assert counts(restarted.app.state.database) == before
 
 
-def test_first_health_request_without_lifespan_only_checks_base(client):
+def test_serverless_cold_start_imports_base_before_serving_health(client):
     cold = create_app()
     try:
         response = TestClient(cold).get("/api/health")
-        assert response.status_code == 202
-        assert response.json()["initialization"]["status"] == "waiting_for_import"
-        assert cold.state.database.clubs.count_documents({}) == 0
+        assert response.status_code == 200
+        assert response.json()["initialization"]["status"] == "ready"
+        assert cold.state.database.clubs.count_documents({}) == 20
     finally:
         cold.state.database_client.close()
 
@@ -259,9 +262,9 @@ def test_failed_serverless_initialization_can_retry_on_next_request(client):
                 == 500
             )
             assert not getattr(cold.state, "database_ready", False)
-            assert TestClient(cold).get("/api/health").status_code == 202
+            assert TestClient(cold).get("/api/health").status_code == 200
         assert attempts == 2
-        assert cold.state.database.clubs.count_documents({"active": True, "is_bot": True}) == 0
+        assert cold.state.database.clubs.count_documents({"active": True, "is_bot": True}) == 20
     finally:
         if getattr(cold.state, "database_ready", False):
             cold.state.database_client.close()

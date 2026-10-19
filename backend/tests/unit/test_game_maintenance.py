@@ -144,6 +144,7 @@ def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
     with (
         patch.object(main, "get_settings", return_value=config),
         patch.object(main, "create_client", return_value=MagicMock()),
+        patch("mock_database.import_database"),
         patch.object(main, "GameRepository", return_value=Mock()),
         patch("app.services.live_match.MatchRoomManager", return_value=manager),
         patch.object(main, "run_game_maintenance", new_callable=AsyncMock) as maintenance,
