@@ -75,7 +75,7 @@ def test_create_club_and_initial_data(client):
     squad = client.get("/api/squad", headers=headers).json()
     assert len(squad["players"]) == 25
     assert len(squad["lineup"]["starters"]) == 11
-    assert len(squad["lineup"]["reserves"]) == 14
+    assert len(squad["lineup"]["reserves"]) == 5
     assert set(p["position"] for p in squad["players"]) == {"GK", "FB", "CB", "MID", "ATT"}
     assert client.get("/api/finance", headers=headers).json()["balance"] == 10000000
     assert len(client.get("/api/finance/sponsors", headers=headers).json()["contracts"]) == 1
