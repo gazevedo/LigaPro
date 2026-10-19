@@ -173,3 +173,16 @@ def test_serverless_request_does_not_wait_indefinitely_for_another_initializatio
     response = TestClient(app).get("/api/health")
     assert response.status_code == 503
     assert "inicializando" in response.json()["detail"]
+
+
+def test_serverless_maintenance_waits_until_initial_league_is_ready():
+    main = module()
+    repository = Mock()
+    repository.find.return_value = None
+    manager = Mock(start_due=AsyncMock())
+    with patch.object(main, "is_serverless_runtime", return_value=True):
+        asyncio.run(main.run_game_maintenance(manager, repository, Mock()))
+    repository.find.assert_called_once_with(
+        "game_state", {"_id": "initial_universe", "status": "ready"}
+    )
+    manager.start_due.assert_not_awaited()

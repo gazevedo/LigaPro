@@ -36,9 +36,9 @@ def test_league_has_own_budget_and_reports_committed_progress(caplog):
         repository.return_value.initialize.return_value = True
         competition.return_value.initialize_universe.return_value = None
         assert HealthService(MagicMock()).check() == progress
-    assert budgets == [3, 5, 12, 2]
+    assert budgets == [3, 5, 12, 1, 2]
     competition.return_value.initialize_universe.assert_called_once_with(max_steps=1)
-    assert "event=league_committed" in caplog.text
+    assert "event=league_finished" in caplog.text
     assert "percentage=71" in caplog.text
 
 
@@ -83,3 +83,25 @@ def test_lock_logs_original_transient_error_before_driver_retry(caplog):
     assert "code=112" in caplog.text
     assert "WriteConflict" in caplog.text
     assert "TransientTransactionError" in caplog.text
+
+
+def test_busy_generation_returns_without_starting_another_transaction(caplog):
+    from pymongo.errors import DuplicateKeyError
+
+    database, competition = MagicMock(), MagicMock()
+    database.game_state.find_one_and_update.side_effect = DuplicateKeyError("lease owned")
+    with caplog.at_level("INFO"):
+        assert HealthService(database).advance_league(competition, "second") is None
+    competition.initialize_universe.assert_not_called()
+    database.game_state.delete_one.assert_not_called()
+    assert "event=busy" in caplog.text
+
+
+def test_generation_releases_only_its_own_lease_after_failure():
+    database, competition = MagicMock(), MagicMock()
+    competition.initialize_universe.side_effect = ExecutionTimeout("expired")
+    with pytest.raises(ExecutionTimeout):
+        HealthService(database).advance_league(competition, "first")
+    database.game_state.delete_one.assert_called_once_with(
+        {"_id": "database_generation_lease", "owner": "first"}
+    )

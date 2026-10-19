@@ -1,12 +1,14 @@
 import logging
+from datetime import timedelta
 from os import getenv
 from time import monotonic, perf_counter
 from uuid import uuid4
 
 from pymongo import timeout
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
+from app.models.game import utcnow
 from app.repositories.game import GameRepository
 from app.services.competition import CompetitionService
 
@@ -38,8 +40,8 @@ class HealthService:
                     continue
                 logger.info("database_generation request=%s event=league_start", request_id)
                 with timeout(12):
-                    outcome = competition.initialize_universe(max_steps=1)
-                logger.info("database_generation request=%s event=league_committed", request_id)
+                    outcome = self.advance_league(competition, request_id)
+                logger.info("database_generation request=%s event=league_finished", request_id)
                 if outcome is not None:
                     complete = True
                 # One league transaction per request keeps response time bounded.
@@ -76,6 +78,32 @@ class HealthService:
                 "Não foi possível concluir esta etapa da preparação. Consulte os logs do backend."
             )
         return result
+
+    def advance_league(self, competition, owner):
+        # A persisted lease coordinates separate Vercel instances, unlike a
+        # process-local mutex. A killed invocation releases it by expiry.
+        now = utcnow()
+        try:
+            self.database.game_state.find_one_and_update(
+                {
+                    "_id": "database_generation_lease",
+                    "$or": [{"expires_at": {"$lte": now}}, {"expires_at": {"$exists": False}}],
+                },
+                {"$set": {"owner": owner, "expires_at": now + timedelta(seconds=60)}},
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            logger.info("database_generation request=%s event=busy", owner)
+            return None
+        try:
+            logger.info("database_generation request=%s event=lease_acquired", owner)
+            return competition.initialize_universe(max_steps=1)
+        finally:
+            # Use a fresh budget even when the transaction exhausted its own.
+            with timeout(1):
+                self.database.game_state.delete_one(
+                    {"_id": "database_generation_lease", "owner": owner}
+                )
 
     def progress(self, repository, competition, complete):
         season = competition.current(repository)

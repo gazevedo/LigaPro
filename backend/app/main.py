@@ -42,8 +42,8 @@ def is_serverless_runtime():
 
 async def run_game_maintenance(manager, repository, config):
     if (
-        getenv("VERCEL") == "1"
-        and repository.find("game_state", {"_id": GameRepository.SCHEMA_MARKER, "status": "ready"})
+        is_serverless_runtime()
+        and repository.find("game_state", {"_id": "initial_universe", "status": "ready"})
         is None
     ):
         return

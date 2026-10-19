@@ -169,3 +169,41 @@ def test_bot_can_commit_when_creation_exceeds_previous_five_second_budget(client
     assert response.status_code == 202, response.text
     assert response.json()["league"]["clubs"] == 1
     assert response.json()["initialization"]["percentage"] > 69
+
+
+def test_generation_lease_serializes_instances_and_recovers_after_expiry(client):
+    from datetime import timedelta
+    from threading import Event
+    from unittest.mock import Mock
+
+    from app.models.game import utcnow
+    from app.services.health import HealthService
+
+    database = app.state.database
+    started, release = Event(), Event()
+    competition = Mock()
+
+    def advance(**kwargs):
+        started.set()
+        assert release.wait(3)
+        return None
+
+    competition.initialize_universe.side_effect = advance
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(HealthService(database).advance_league, competition, "first")
+        try:
+            assert started.wait(3)
+            assert HealthService(database).advance_league(competition, "second") is None
+            assert competition.initialize_universe.call_count == 1
+        finally:
+            release.set()
+        assert first.result() is None
+    assert database.game_state.find_one({"_id": "database_generation_lease"}) is None
+    database.game_state.insert_one({
+        "_id": "database_generation_lease", "owner": "terminated",
+        "expires_at": utcnow() - timedelta(seconds=1),
+    })
+    competition.initialize_universe.side_effect = None
+    competition.initialize_universe.return_value = True
+    assert HealthService(database).advance_league(competition, "replacement") is True
+    assert database.game_state.find_one({"_id": "database_generation_lease"}) is None
