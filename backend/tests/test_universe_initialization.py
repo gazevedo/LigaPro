@@ -114,28 +114,23 @@ def test_failed_preparation_rolls_back_and_next_start_can_retry(client):
     assert database.clubs.count_documents({}) == 20
 
 
-def test_backend_startup_prepares_base_once_before_serving_requests(client):
+def test_backend_startup_does_not_generate_base(client):
     with TestClient(create_app()) as started:
         database = started.app.state.database
-        assert database.game_state.find_one({"_id": "initial_universe"})
-        assert database.clubs.count_documents({}) == 20
+        assert database.game_state.find_one({"_id": "initial_universe"}) is None
+        assert database.clubs.count_documents({}) == 0
         before = counts(database)
     with TestClient(create_app()) as restarted:
         assert counts(restarted.app.state.database) == before
 
 
-def test_first_health_request_without_lifespan_prepares_base(client):
+def test_first_health_request_without_lifespan_only_checks_base(client):
     cold = create_app()
     try:
         response = TestClient(cold).get("/api/health")
-        assert response.status_code == 200
-        database = cold.state.database
-        assert database.users.count_documents({}) == 0
-        assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
-        assert CompetitionService.initial_universe_ready(GameRepository(database))
-        before = counts(database)
-        assert TestClient(cold).get("/api/health").status_code == 200
-        assert counts(database) == before
+        assert response.status_code == 202
+        assert response.json()["initialization"]["status"] == "waiting_for_import"
+        assert cold.state.database.clubs.count_documents({}) == 0
     finally:
         cold.state.database_client.close()
 
@@ -264,49 +259,12 @@ def test_failed_serverless_initialization_can_retry_on_next_request(client):
                 == 500
             )
             assert not getattr(cold.state, "database_ready", False)
-            assert TestClient(cold).get("/api/health").status_code == 200
+            assert TestClient(cold).get("/api/health").status_code == 202
         assert attempts == 2
-        assert cold.state.database.clubs.count_documents({"active": True, "is_bot": True}) == 20
+        assert cold.state.database.clubs.count_documents({"active": True, "is_bot": True}) == 0
     finally:
         if getattr(cold.state, "database_ready", False):
             cold.state.database_client.close()
-
-
-def test_health_repairs_empty_base_even_when_connection_was_already_initialized(client):
-    # The fixture keeps the warm application's connection but removes all game data.
-    assert app.state.database_ready is True
-    assert app.state.database.clubs.count_documents({}) == 0
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    assert response.json()["league"] == {
-        "status": "ready",
-        "divisions": 1,
-        "clubs": 20,
-        "bots": 20,
-        "matches": 380,
-    }
-    before = counts(app.state.database)
-    assert client.get("/api/health").json()["league"]["clubs"] == 20
-    assert counts(app.state.database) == before
-
-
-def test_health_retries_repair_with_old_marker_but_no_clubs(client):
-    database = app.state.database
-    CompetitionService(GameRepository(database)).initialize_universe()
-    database.clubs.delete_many({})
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    assert response.json()["league"]["clubs"] == 20
-    assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
-
-
-def test_health_does_not_report_ready_when_preparation_fails(client):
-    with patch.object(
-        CompetitionService, "initialize_universe", side_effect=RuntimeError("preparation failed")
-    ):
-        response = TestClient(app, raise_server_exceptions=False).get("/api/health")
-    assert response.status_code == 500
-    assert response.json().get("status") != "ok"
 
 
 def test_preparation_commits_short_steps_and_resumes_without_duplicates(client):
@@ -321,30 +279,6 @@ def test_preparation_commits_short_steps_and_resumes_without_duplicates(client):
     assert database.clubs.count_documents({}) == 20
     assert database.clubs.find_one({"_id": first_bot})
     assert database.game_state.find_one({"_id": "initial_universe"})["status"] == "ready"
-
-
-def test_health_returns_progress_then_finishes_on_following_request(client):
-    with patch("app.services.health.monotonic", side_effect=[0, 0, 5]):
-        response = client.get("/api/health")
-    assert response.status_code == 202
-    assert response.headers["Retry-After"] == "1"
-    assert response.json()["status"] == "initializing"
-    assert response.json()["league"]["clubs"] == 1
-    assert client.get("/api/health").json()["league"]["clubs"] == 20
-
-
-def test_a_timed_out_step_keeps_previous_committed_progress(client):
-    from pymongo.errors import NetworkTimeout
-
-    database = app.state.database
-    CompetitionService(GameRepository(database)).initialize_universe(max_steps=1)
-    with patch.object(
-        CompetitionService, "initialize_universe", side_effect=NetworkTimeout("deadline")
-    ):
-        response = client.get("/api/health")
-    assert response.status_code == 202
-    assert response.json()["league"]["clubs"] == 1
-    assert client.get("/api/health").json()["league"]["clubs"] == 20
 
 
 def test_club_cannot_join_a_partially_prepared_league(client):

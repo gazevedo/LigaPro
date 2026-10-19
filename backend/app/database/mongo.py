@@ -44,7 +44,7 @@ def get_database(request: Request) -> Database:
 
         if not all(step["completed"] for step in GameRepository(state.database).schema_progress()):
             raise HTTPException(
-                503, "A base está sendo preparada. Acompanhe o progresso em /api/health."
+                503, "A base precisa ser importada. Execute python mock_database.py no backend."
             )
         state.database_schema_ready = True
     return state.database

@@ -1,209 +1,102 @@
-from concurrent.futures import ThreadPoolExecutor
-from time import monotonic, sleep
+from datetime import timedelta
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+import pytest
+from bson import ObjectId
 from pymongo.errors import OperationFailure
 from pymongo.synchronous.collection import Collection
 
-from app.main import app, create_app
+from app.main import app
+from app.models.game import utcnow
 from app.repositories.game import GameRepository
+from mock_database import SEED_MARKER, import_database
 
 
-def test_schema_resumes_from_last_confirmed_collection(client, monkeypatch):
+def test_offline_import_builds_complete_league_on_current_date_and_is_idempotent(client):
     database = app.state.database
-    database.game_state.delete_one({"_id": GameRepository.SCHEMA_MARKER})
-    calls = []
-    original = Collection.create_indexes
-
-    def create(collection, models, **kwargs):
-        calls.append(collection.name)
-        return original(collection, models, **kwargs)
-
-    monkeypatch.setattr(Collection, "create_indexes", create)
-    assert GameRepository(database).initialize(max_steps=1) is False
-    assert len(calls) == 1
-    first = calls[0]
-    assert GameRepository(database).initialize(max_steps=1) is False
-    assert len(calls) == 2
-    assert calls.count(first) == 1
-    assert GameRepository(database).initialize() is True
-    assert calls.count(first) == 1
-
-
-def test_health_reports_every_generation_stage_and_reaches_one_hundred(client):
-    database = app.state.database
-    database.game_state.delete_one({"_id": GameRepository.SCHEMA_MARKER})
-    percentages, stages = [], set()
-    for _ in range(120):
-        with patch("app.services.health.monotonic", side_effect=[0, 0, 5]):
-            response = client.get("/api/health")
-        assert response.status_code in (200, 202), response.text
-        data = response.json()
-        progress = data["initialization"]
-        percentages.append(progress["percentage"])
-        stages.add(progress["stage"])
-        assert progress["completed_steps"] == sum(step["completed"] for step in progress["steps"])
-        assert progress["total_steps"] == sum(step["total"] for step in progress["steps"])
-        if response.status_code == 200:
-            break
-        assert progress["percentage"] < 100
-        assert response.headers["Retry-After"] == "1"
-    else:
-        raise AssertionError("Generation did not finish")
-    assert percentages == sorted(percentages)
-    assert percentages[-1] == 100
-    assert stages == {"indexes", "catalogs", "clubs", "calendar", "ready"}
-    assert data["league"] == {
-        "status": "ready",
-        "divisions": 1,
-        "clubs": 20,
-        "bots": 20,
-        "matches": 380,
+    now = utcnow().replace(microsecond=0)
+    with patch("mock_database.utcnow", return_value=now):
+        assert import_database(database) is True
+    assert database.clubs.count_documents({"is_bot": True}) == 20
+    assert database.players.count_documents({}) == 500
+    assert database.player_contracts.count_documents({}) == 500
+    assert database.youth_players.count_documents({}) == 60
+    assert database.matches.count_documents({}) == 380
+    assert database.season_clubs.count_documents({}) == 20
+    assert database.standings.count_documents({}) == 20
+    assert database.matches.count_documents({"round": 1, "date": now}) == 10
+    player = database.players.find_one({})
+    database.players.update_one({"_id": player["_id"]}, {"$set": {"strength": 99}})
+    counts = {name: database[name].count_documents({}) for name in database.list_collection_names()}
+    assert import_database(database) is False
+    assert database.players.find_one({"_id": player["_id"]})["strength"] == 99
+    assert counts == {
+        name: database[name].count_documents({}) for name in database.list_collection_names()
     }
-    before = database.game_state.find_one({"_id": "initial_universe"})
-    for _ in range(25):
-        recovered = client.get("/api/health")
-        if recovered.status_code == 200:
-            break
-    assert recovered.json()["initialization"]["percentage"] == 100
-    assert database.game_state.find_one({"_id": "initial_universe"}) == before
-
-
-def test_health_with_reported_network_latency_advances_instead_of_restarting(client, monkeypatch):
-    database = app.state.database
-    database.game_state.delete_one({"_id": GameRepository.SCHEMA_MARKER})
-    create, update, find = Collection.create_indexes, Collection.update_one, Collection.find_one
-
-    def slow_create(collection, *args, **kwargs):
-        sleep(0.113)
-        return create(collection, *args, **kwargs)
-
-    def slow_update(collection, query, *args, **kwargs):
-        if collection.name == "game_state" and query.get("_id") == GameRepository.SCHEMA_MARKER:
-            sleep(0.113)
-        return update(collection, query, *args, **kwargs)
-
-    def slow_find(collection, query=None, *args, **kwargs):
-        if (
-            collection.name == "game_state"
-            and query
-            and query.get("_id") == GameRepository.SCHEMA_MARKER
-        ):
-            sleep(0.113)
-        return find(collection, query, *args, **kwargs)
-
-    monkeypatch.setattr(Collection, "create_indexes", slow_create)
-    monkeypatch.setattr(Collection, "update_one", slow_update)
-    monkeypatch.setattr(Collection, "find_one", slow_find)
-    percentages, durations = [], []
-    for _ in range(40):
-        started = monotonic()
-        response = client.get("/api/health")
-        durations.append(monotonic() - started)
-        assert response.status_code in (200, 202), response.text
-        percentages.append(response.json()["initialization"]["percentage"])
-        if response.status_code == 200:
-            break
-    assert len(percentages) > 1
-    assert percentages == sorted(percentages)
-    assert percentages[-1] == 100
-    assert sum(durations) > 8  # The former single startup budget could not fit this work.
-    assert max(durations) < 8
-    assert database.clubs.count_documents({"active": True, "is_bot": True}) == 20
-
-
-def test_vercel_startup_does_not_create_indexes_before_serving_health(client, monkeypatch):
-    monkeypatch.setenv("VERCEL", "1")
-    with patch.object(GameRepository, "initialize", side_effect=AssertionError("heavy startup")):
-        with TestClient(create_app()) as cold:
-            assert cold.app.state.database_schema_ready is False
-            assert cold.get("/docs").status_code == 200
-
-
-def test_simultaneous_schema_generations_keep_one_checkpoint_per_step(client):
-    database = app.state.database
-    database.game_state.delete_one({"_id": GameRepository.SCHEMA_MARKER})
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(lambda _: GameRepository(database).initialize(), range(2)))
-    assert results == [True, True]
-    state = database.game_state.find_one({"_id": GameRepository.SCHEMA_MARKER})
-    assert len(state["completed"]) == len(set(state["completed"]))
-    assert all(step["completed"] for step in GameRepository(database).schema_progress())
-    assert database.countries.count_documents({}) == 249
-    assert database.club_badges.count_documents({}) == 8
-
-
-def test_failed_schema_step_reports_progress_without_exposing_database_details(client):
-    database = app.state.database
-    database.game_state.delete_one({"_id": GameRepository.SCHEMA_MARKER})
-    with patch.object(
-        Collection, "create_indexes", side_effect=OperationFailure("private database detail")
-    ):
-        response = client.get("/api/health")
-    assert response.status_code == 503
-    progress = response.json()["initialization"]
-    assert progress["status"] == "failed"
-    assert progress["percentage"] == 0
-    assert progress["stage"] == "indexes"
-    assert progress["error"] == "OperationFailure"
-    assert "private database detail" not in response.text
-    for _ in range(25):
-        recovered = client.get("/api/health")
-        if recovered.status_code == 200:
-            break
-    assert recovered.json()["initialization"]["percentage"] == 100
-
-
-def test_bot_can_commit_when_creation_exceeds_previous_five_second_budget(client, monkeypatch):
-    from app.services.competition import CompetitionService
-
-    original = CompetitionService.create_bot
-
-    def slow_bot(*args, **kwargs):
-        sleep(5.1)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(CompetitionService, "create_bot", staticmethod(slow_bot))
     response = client.get("/api/health")
-    assert response.status_code == 202, response.text
-    assert response.json()["league"]["clubs"] == 1
-    assert response.json()["initialization"]["percentage"] > 69
+    assert response.status_code == 200
+    assert response.json()["initialization"]["percentage"] == 100
+    assert response.json()["league"]["bots"] == 20
 
 
-def test_generation_lease_serializes_instances_and_recovers_after_expiry(client):
-    from datetime import timedelta
-    from threading import Event
-    from unittest.mock import Mock
+def test_import_resumes_after_failure_without_recreating_or_redating_documents(client):
+    database = app.state.database
+    original = Collection.bulk_write
 
-    from app.models.game import utcnow
-    from app.services.health import HealthService
+    def fail(collection, *args, **kwargs):
+        if collection.name == "players":
+            raise OperationFailure("interrupted import")
+        return original(collection, *args, **kwargs)
+
+    now = utcnow().replace(microsecond=0)
+    with (
+        patch("mock_database.utcnow", return_value=now),
+        patch.object(Collection, "bulk_write", fail),
+    ):
+        with pytest.raises(OperationFailure):
+            import_database(database)
+    assert database.game_state.find_one({"_id": "initial_universe"})["status"] == "preparing"
+    assert database.game_state.find_one({"_id": SEED_MARKER})["status"] == "importing"
+    assert database.clubs.count_documents({}) == 20
+    with patch("mock_database.utcnow", return_value=now + timedelta(days=1)):
+        assert import_database(database) is True
+    assert database.clubs.count_documents({}) == 20
+    assert database.players.count_documents({}) == 500
+    assert database.seasons.find_one({"status": "active"})["starts_at"] == now
+    assert database.matches.count_documents({"round": 1, "date": now}) == 10
+
+
+def test_import_refuses_to_overwrite_an_existing_unprepared_league(client):
+    database = app.state.database
+    database.clubs.insert_one({"_id": ObjectId(), "name": "Existente"})
+    with pytest.raises(RuntimeError, match="não sobrescreve"):
+        import_database(database)
+    assert database.clubs.count_documents({}) == 1
+
+
+def test_health_only_reports_progress_and_never_generates_data(client):
+    database = app.state.database
+    before = {name: database[name].count_documents({}) for name in database.list_collection_names()}
+    with patch.object(GameRepository, "initialize", side_effect=AssertionError("generation")):
+        for _ in range(2):
+            response = client.get("/api/health")
+            assert response.status_code == 202
+            assert response.json()["initialization"]["status"] == "waiting_for_import"
+            assert "mock_database.py" in response.json()["detail"]
+    assert before == {
+        name: database[name].count_documents({}) for name in database.list_collection_names()
+    }
+
+
+def test_imported_base_supports_registration_replacing_one_bot(client):
+    from test_game import account, create
 
     database = app.state.database
-    started, release = Event(), Event()
-    competition = Mock()
-
-    def advance(**kwargs):
-        started.set()
-        assert release.wait(3)
-        return None
-
-    competition.initialize_universe.side_effect = advance
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(HealthService(database).advance_league, competition, "first")
-        try:
-            assert started.wait(3)
-            assert HealthService(database).advance_league(competition, "second") is None
-            assert competition.initialize_universe.call_count == 1
-        finally:
-            release.set()
-        assert first.result() is None
-    assert database.game_state.find_one({"_id": "database_generation_lease"}) is None
-    database.game_state.insert_one({
-        "_id": "database_generation_lease", "owner": "terminated",
-        "expires_at": utcnow() - timedelta(seconds=1),
-    })
-    competition.initialize_universe.side_effect = None
-    competition.initialize_universe.return_value = True
-    assert HealthService(database).advance_league(competition, "replacement") is True
-    assert database.game_state.find_one({"_id": "database_generation_lease"}) is None
+    import_database(database)
+    headers = account(client, 987)
+    club = create(client, headers)
+    assert database.season_clubs.count_documents({}) == 20
+    assert database.standings.count_documents({"is_bot": True}) == 19
+    assert database.matches.count_documents({}) == 380
+    assert database.season_clubs.find_one({"club_id": ObjectId(club["id"])})
+    assert database.players.count_documents({"current_club_id": ObjectId(club["id"])}) == 25

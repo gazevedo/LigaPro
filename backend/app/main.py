@@ -18,11 +18,7 @@ from app.controllers import auth, game, health, live, push, settings
 from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
-from app.services.competition import CompetitionService
 from app.services.game import process_due
-from app.services.monthly_finance import bootstrap_economy
-from app.services.player_contracts import ContractService
-from app.services.player_development import bootstrap_player_attributes
 from app.services.push_notifications import send_match_reminders
 
 configure_logging()
@@ -58,18 +54,10 @@ async def run_game_maintenance(manager, repository, config):
             logger.exception("Game maintenance stage failed: %s", name)
 
 
-def initialize_database(database, *, prepare_universe=True):
+def initialize_database(database, *, prepare_universe=False):
+    # Database provisioning is an explicit offline import, never a startup task.
     with timeout(3):
         database.command("ping")
-    if not prepare_universe:
-        return
-    repository = GameRepository(database)
-    repository.initialize()
-    CompetitionService(repository).initialize_universe()
-    CompetitionService(repository).bootstrap()
-    ContractService(repository).bootstrap()
-    bootstrap_player_attributes(repository)
-    bootstrap_economy(repository)
 
 
 @asynccontextmanager
@@ -79,10 +67,10 @@ async def lifespan(app: FastAPI):
     app.state.database = client[config.mongodb_database_name]
     try:
         await asyncio.to_thread(
-            initialize_database, app.state.database, prepare_universe=not is_serverless_runtime()
+            initialize_database, app.state.database, prepare_universe=False
         )
         app.state.database_ready = True
-        app.state.database_schema_ready = not is_serverless_runtime()
+        app.state.database_schema_ready = False
         repository = GameRepository(app.state.database)
 
         from app.services.live_match import MatchRoomManager
@@ -109,7 +97,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.sleep(30)
 
         task = asyncio.create_task(maintenance())
-        logger.info("MongoDB connected; application indexes ready")
+        logger.info("MongoDB connected; database generation disabled during startup")
         try:
             yield
         finally:
