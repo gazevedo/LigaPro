@@ -1,5 +1,7 @@
 import json
+import logging
 from hashlib import sha256
+from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -8,6 +10,8 @@ from pymongo.errors import OperationFailure
 
 from app.models.catalog import BADGES, COUNTRIES
 from app.models.game import DEFAULT_RULES, utcnow
+
+logger = logging.getLogger(__name__)
 
 
 class GameRepository:
@@ -359,6 +363,8 @@ class GameRepository:
         for key, stage, label, operation in steps:
             if key in completed:
                 continue
+            started = perf_counter()
+            logger.info("database_generation event=step_start stage=%s step=%s", stage, label)
             operation()
             self.database.game_state.update_one(
                 {"_id": self.SCHEMA_MARKER},
@@ -368,6 +374,12 @@ class GameRepository:
                     "$setOnInsert": {"status": "preparing"},
                 },
                 upsert=True,
+            )
+            logger.info(
+                "database_generation event=step_committed stage=%s step=%s elapsed_ms=%d",
+                stage,
+                label,
+                (perf_counter() - started) * 1000,
             )
             completed.add(key)
             performed += 1

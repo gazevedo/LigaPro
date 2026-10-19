@@ -62,7 +62,11 @@ def test_health_reports_every_generation_stage_and_reaches_one_hundred(client):
         "matches": 380,
     }
     before = database.game_state.find_one({"_id": "initial_universe"})
-    assert client.get("/api/health").json()["initialization"]["percentage"] == 100
+    for _ in range(25):
+        recovered = client.get("/api/health")
+        if recovered.status_code == 200:
+            break
+    assert recovered.json()["initialization"]["percentage"] == 100
     assert database.game_state.find_one({"_id": "initial_universe"}) == before
 
 
@@ -93,7 +97,7 @@ def test_health_with_reported_network_latency_advances_instead_of_restarting(cli
     monkeypatch.setattr(Collection, "update_one", slow_update)
     monkeypatch.setattr(Collection, "find_one", slow_find)
     percentages, durations = [], []
-    for _ in range(12):
+    for _ in range(40):
         started = monotonic()
         response = client.get("/api/health")
         durations.append(monotonic() - started)
@@ -144,4 +148,24 @@ def test_failed_schema_step_reports_progress_without_exposing_database_details(c
     assert progress["stage"] == "indexes"
     assert progress["error"] == "OperationFailure"
     assert "private database detail" not in response.text
-    assert client.get("/api/health").json()["initialization"]["percentage"] == 100
+    for _ in range(25):
+        recovered = client.get("/api/health")
+        if recovered.status_code == 200:
+            break
+    assert recovered.json()["initialization"]["percentage"] == 100
+
+
+def test_bot_can_commit_when_creation_exceeds_previous_five_second_budget(client, monkeypatch):
+    from app.services.competition import CompetitionService
+
+    original = CompetitionService.create_bot
+
+    def slow_bot(*args, **kwargs):
+        sleep(5.1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(CompetitionService, "create_bot", staticmethod(slow_bot))
+    response = client.get("/api/health")
+    assert response.status_code == 202, response.text
+    assert response.json()["league"]["clubs"] == 1
+    assert response.json()["initialization"]["percentage"] > 69

@@ -1,6 +1,7 @@
 import logging
 from os import getenv
-from time import monotonic
+from time import monotonic, perf_counter
+from uuid import uuid4
 
 from pymongo import timeout
 from pymongo.database import Database
@@ -21,23 +22,52 @@ class HealthService:
         competition = CompetitionService(repository)
         complete = False
         failure = None
-        # Each committed step survives a cancelled serverless request.
+        request_id = uuid4().hex[:12]
+        started = perf_counter()
+        logger.info("database_generation request=%s event=start", request_id)
+        # Bound each step separately: a bot must not inherit an almost expired
+        # schema budget, otherwise its entire transaction is rolled back.
         deadline = monotonic() + 4
         try:
-            with timeout(5):
+            with timeout(3):
                 self.database.command("ping")
-                while monotonic() < deadline:
-                    if not repository.initialize(max_steps=1):
-                        continue
-                    if competition.initialize_universe(max_steps=1) is not None:
-                        complete = True
-                        break
+            while monotonic() < deadline:
+                with timeout(5):
+                    schema_ready = repository.initialize(max_steps=1)
+                if not schema_ready:
+                    continue
+                logger.info("database_generation request=%s event=league_start", request_id)
+                with timeout(12):
+                    outcome = competition.initialize_universe(max_steps=1)
+                logger.info("database_generation request=%s event=league_committed", request_id)
+                if outcome is not None:
+                    complete = True
+                # One league transaction per request keeps response time bounded.
+                break
         except PyMongoError as error:
+            logger.exception(
+                "database_generation request=%s event=%s elapsed_ms=%d error=%s",
+                request_id,
+                "timeout" if error.timeout else "failed",
+                (perf_counter() - started) * 1000,
+                type(error).__name__,
+            )
             if not error.timeout:
-                logger.exception("Database generation step failed")
                 failure = type(error).__name__
         with timeout(2):
             result = self.progress(repository, competition, complete)
+        progress = result["initialization"]
+        logger.info(
+            "database_generation request=%s event=progress stage=%s percentage=%s "
+            "completed=%s total=%s current_step=%s elapsed_ms=%d",
+            request_id,
+            progress["stage"],
+            progress["percentage"],
+            progress["completed_steps"],
+            progress["total_steps"],
+            progress["current_step"],
+            (perf_counter() - started) * 1000,
+        )
         if failure:
             result["status"] = "error"
             result["initialization"]["status"] = "failed"

@@ -3,6 +3,7 @@
 import logging
 from datetime import timedelta
 from random import Random
+from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -654,7 +655,9 @@ class CompetitionService:
         self.ensure_lock(self.repo)
 
         def prepare(repo):
+            logger.info("database_generation event=league_lock_start")
             self.lock(repo)
+            logger.info("database_generation event=league_lock_acquired")
             completed = repo.find("game_state", {"_id": marker})
             if (
                 completed
@@ -668,11 +671,14 @@ class CompetitionService:
                 season = self.create_season(
                     repo, utcnow(), previous[0]["number"] + 1 if previous else 1
                 )
+            logger.info("database_generation event=season_ready season=%s", season["_id"])
             divisions = repo.many(
                 "divisions", {"active": {"$ne": False}}, limit=None, sort=[("tier", 1)]
             )
             if not divisions:
                 divisions = [self.division_for_tier(repo, 0)]
+
+            logger.info("database_generation event=divisions_ready count=%s", len(divisions))
 
             def checkpoint():
                 repo.database.game_state.update_one(
@@ -789,13 +795,22 @@ class CompetitionService:
                     if repaired:
                         return checkpoint()
                 if len(slots) < 20:
+                    logger.info(
+                        "database_generation event=bot_start tier=%s bot=%s total=20",
+                        division["tier"],
+                        len(slots) + 1,
+                    )
                     bot = self.create_bot(repo, division["tier"], len(slots), config)
+                    logger.info("database_generation event=bot_roster_ready club=%s", bot["_id"])
                     slots.append(self.add_slot(repo, season, division, bot))
                     self.generate_youth(repo, bot, season, config)
+                    logger.info("database_generation event=bot_youth_ready club=%s", bot["_id"])
                     return checkpoint()
+                logger.info("database_generation event=calendar_start tier=%s", division["tier"])
                 self.schedule(
                     repo, season, division, slots, repo.many("matches", query, limit=None)
                 )
+                logger.info("database_generation event=calendar_prepared tier=%s", division["tier"])
             last_division = divisions[-1]
             if not repo.find(
                 "standings",
@@ -826,7 +841,21 @@ class CompetitionService:
 
         steps = 0
         while True:
-            result = self.repo.transaction(prepare)
+            started = perf_counter()
+            logger.info("database_generation event=transaction_start")
+            try:
+                result = self.repo.transaction(prepare)
+            except Exception:
+                logger.exception(
+                    "database_generation event=transaction_failed elapsed_ms=%d",
+                    (perf_counter() - started) * 1000,
+                )
+                raise
+            logger.info(
+                "database_generation event=transaction_committed ready=%s elapsed_ms=%d",
+                result,
+                (perf_counter() - started) * 1000,
+            )
             steps += 1
             if result is not None:
                 return result
