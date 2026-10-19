@@ -1,8 +1,10 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
-from pymongo.errors import ExecutionTimeout
+import pytest
+from pymongo.errors import ExecutionTimeout, OperationFailure
 
+from app.services.competition import CompetitionService
 from app.services.health import HealthService
 
 
@@ -60,3 +62,24 @@ def test_timeout_is_logged_and_keeps_last_committed_progress(caplog):
         assert HealthService(MagicMock()).check() == progress
     assert "event=timeout" in caplog.text
     assert "ExecutionTimeout" in caplog.text
+
+
+def test_lock_logs_original_transient_error_before_driver_retry(caplog):
+    repository = MagicMock()
+    error = OperationFailure(
+        "transaction aborted",
+        112,
+        {
+            "codeName": "WriteConflict",
+            "errmsg": "transaction aborted",
+            "errorLabels": ["TransientTransactionError"],
+        },
+    )
+    repository.update.side_effect = error
+    with pytest.raises(OperationFailure) as caught:
+        CompetitionService.lock(repository)
+    assert caught.value is error
+    assert "event=league_lock_failed" in caplog.text
+    assert "code=112" in caplog.text
+    assert "WriteConflict" in caplog.text
+    assert "TransientTransactionError" in caplog.text

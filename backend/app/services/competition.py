@@ -7,7 +7,7 @@ from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
@@ -99,7 +99,19 @@ class CompetitionService:
 
     @staticmethod
     def lock(repo):
-        repo.update("game_state", {"_id": "universe"}, {"$inc": {"revision": 1}})
+        try:
+            repo.update("game_state", {"_id": "universe"}, {"$inc": {"revision": 1}})
+        except OperationFailure as error:
+            # with_transaction retries transient failures internally. Record the
+            # original server error before the eventual timeout hides it.
+            details = error.details or {}
+            logger.error(
+                "database_generation event=league_lock_failed code=%s code_name=%s "
+                "labels=%s reason=%s",
+                error.code, details.get("codeName"), details.get("errorLabels", []),
+                details.get("errmsg", str(error)),
+            )
+            raise
 
     @staticmethod
     def current(repo):
