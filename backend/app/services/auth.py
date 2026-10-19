@@ -119,9 +119,13 @@ class AuthService:
             }
             try:
                 user = self.repository.create_user(document)
-            except DuplicateKeyError:
+            except DuplicateKeyError as error:
                 user = self.repository.get_by_google_id(info["sub"])
                 if not user:
+                    if (error.details or {}).get("keyPattern", {}).get("name_key"):
+                        raise HTTPException(
+                            409, "Este nome já está cadastrado. Escolha outro nome."
+                        ) from None
                     raise HTTPException(409, "Conta já existente. Use o método original.") from None
         if not user["active"]:
             raise HTTPException(401, "Não foi possível autenticar.")

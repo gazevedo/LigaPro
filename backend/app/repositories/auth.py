@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from bson import ObjectId
 from pymongo import ReturnDocument
 from pymongo.database import Database
+from pymongo.errors import DuplicateKeyError
 
 
 class AuthRepository:
@@ -36,6 +37,15 @@ class AuthRepository:
         return self.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
 
     def create_user(self, document: dict) -> dict:
+        document = {
+            **document,
+            "name": document["name"].strip(),
+            "email": document["email"].strip().lower(),
+        }
+        document["name_key"] = document["name"].lower()
+        # Apply the same rule to every registration path, including legacy accounts.
+        if self.get_by_name(document["name"]):
+            raise DuplicateKeyError("Nome já cadastrado", details={"keyPattern": {"name_key": 1}})
         document["_id"] = self.users.insert_one(document).inserted_id
         return document
 

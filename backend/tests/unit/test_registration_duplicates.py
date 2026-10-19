@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
 from app.repositories.auth import AuthRepository
-from app.schemas.auth import RegisterRequest
+from app.schemas.auth import GoogleRequest, RegisterRequest
 from app.services.auth import AuthService
 
 
@@ -83,3 +83,54 @@ def test_name_lookup_matches_legacy_accounts_and_escapes_regex_characters():
     assert query["$or"][0] == {"name_key": "user.*"}
     assert query["$or"][1] == {"name": {"$regex": r"^User\.\*$", "$options": "i"}}
     assert projection == {"_id": 1}
+
+
+@pytest.mark.parametrize("provider", ["local", "google"])
+def test_repository_normalizes_and_indexes_names_for_every_registration(provider):
+    database = Mock()
+    database.__getitem__ = Mock(return_value=Mock())
+    repo = AuthRepository(database)
+    repo.users.find_one.return_value = None
+    result = repo.create_user(
+        {"name": " Gabriel ", "email": " USER@EXAMPLE.COM ", "auth_provider": provider}
+    )
+    assert result["name"] == "Gabriel"
+    assert result["name_key"] == "gabriel"
+    assert result["email"] == "user@example.com"
+    repo.users.insert_one.assert_called_once()
+
+
+@pytest.mark.parametrize("provider", ["local", "google"])
+def test_repository_blocks_names_already_used_including_legacy_users(provider):
+    database = Mock()
+    database.__getitem__ = Mock(return_value=Mock())
+    repo = AuthRepository(database)
+    repo.users.find_one.return_value = {"_id": "existing"}
+    with pytest.raises(DuplicateKeyError) as error:
+        repo.create_user(
+            {"name": "Gabriel", "email": "another@example.com", "auth_provider": provider}
+        )
+    assert error.value.details["keyPattern"] == {"name_key": 1}
+    repo.users.insert_one.assert_not_called()
+
+
+def test_google_duplicate_name_returns_validation_error_without_session():
+    repo = Mock(spec=AuthRepository)
+    repo.get_by_google_id.return_value = None
+    repo.get_by_email.return_value = None
+    repo.create_user.side_effect = DuplicateKeyError(
+        "duplicate", details={"keyPattern": {"name_key": 1}}
+    )
+    service = AuthService(repo, Mock(google_web_client_id="client"))
+    identity = {
+        "sub": "google-user",
+        "email": "user@example.com",
+        "email_verified": True,
+        "name": "Gabriel",
+    }
+    with patch("app.services.auth.id_token.verify_oauth2_token", return_value=identity):
+        with pytest.raises(HTTPException) as error:
+            service.google(GoogleRequest(id_token="token"))
+    assert error.value.status_code == 409
+    assert error.value.detail == "Este nome já está cadastrado. Escolha outro nome."
+    repo.create_session.assert_not_called()
