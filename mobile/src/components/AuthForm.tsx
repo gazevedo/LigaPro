@@ -7,7 +7,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { useClubStore } from '../stores/clubStore';
 import { useAuthStore } from '../stores/authStore';
 const appVersion = `${version.major}.${version.minor}.${version.patch}`;
-export function AuthForm({ register = false, onCreateAccount, onLogin, background }: {
+export function AuthForm({ register = false, onCreateAccount, background }: {
   register?: boolean; onCreateAccount?: () => void; onLogin?: () => void; background?: ImageSourcePropType;
 }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -66,13 +66,12 @@ export function AuthForm({ register = false, onCreateAccount, onLogin, backgroun
     <NotificationBubble message={info} tone="info" /><Card>
     {register && <><Field label="Nome" value={name} onChange={setName} maxLength={100} editable={!auth.loading} /><Field label="Nome do estádio" value={stadiumName} onChange={setStadiumName} maxLength={60} placeholder="Como seu estádio será conhecido?" editable={!auth.loading} /></>}
     <Field label="E-mail" value={email} onChange={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={!auth.loading} />
-    <Field label="Senha" value={password} onChange={setPassword} secureTextEntry autoCapitalize="none" maxLength={128} editable={!auth.loading} />
-    {register && <Field label="Confirmar senha" value={confirm} onChange={setConfirm} secureTextEntry autoCapitalize="none" maxLength={128} editable={!auth.loading} />}
+    <Field label="Senha" value={password} onChange={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" maxLength={128} editable={!auth.loading} />
+    {register && <Field label="Confirmar senha" value={confirm} onChange={setConfirm} secureTextEntry={!showPassword} autoCapitalize="none" maxLength={128} editable={!auth.loading} />}
+    <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.forgot}><Text style={styles.link}>{showPassword ? 'Ocultar senha' : 'Mostrar senha'}</Text></Pressable>
     <ActionButton title={register ? 'Criar conta' : 'Entrar'} onPress={() => void submit()} disabled={auth.loading} />
     {!register && <ActionButton secondary title="Esqueci minha senha" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} />}
-    <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
     {!register && <ActionButton secondary title="Criar conta" disabled={auth.loading} onPress={() => onCreateAccount?.()} />}
-    {register && onLogin && <ActionButton secondary title="Já tenho conta" disabled={auth.loading} onPress={onLogin} />}
     </Card></GamePage>;
 }
 

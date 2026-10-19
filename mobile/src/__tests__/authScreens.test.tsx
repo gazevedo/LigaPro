@@ -63,6 +63,27 @@ test('forgot password shows honest availability message', async () => {
   expect(screen.getByText('A recuperação de senha ainda não está disponível.')).toBeTruthy();
 });
 
+test('registration toggles both passwords and omits alternative sign-in actions', async () => {
+  await render(<AuthForm register onLogin={jest.fn()} />);
+  await fireEvent.changeText(screen.getByLabelText('Senha'), 'password123');
+  await fireEvent.changeText(screen.getByLabelText('Confirmar senha'), 'password123');
+  for (const label of ['Senha', 'Confirmar senha']) {
+    expect(screen.getByLabelText(label).props.secureTextEntry).toBe(true);
+  }
+  await fireEvent.press(screen.getByLabelText('Mostrar senha'));
+  for (const label of ['Senha', 'Confirmar senha']) {
+    expect(screen.getByLabelText(label).props.secureTextEntry).toBe(false);
+    expect(screen.getByLabelText(label).props.value).toBe('password123');
+  }
+  await fireEvent.press(screen.getByLabelText('Ocultar senha'));
+  for (const label of ['Senha', 'Confirmar senha']) {
+    expect(screen.getByLabelText(label).props.secureTextEntry).toBe(true);
+    expect(screen.getByLabelText(label).props.value).toBe('password123');
+  }
+  expect(screen.queryByText('Continuar com Google')).toBeNull();
+  expect(screen.queryByText('Já tenho conta')).toBeNull();
+});
+
 
 test('registration sends the stadium name entered on the phone', async () => {
   await render(<AuthForm register />);
