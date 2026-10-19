@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo.errors import PyMongoError
+from starlette.background import BackgroundTasks
 
 from app.config.settings import get_settings
 from app.controllers import auth, game, health, live, push, settings
@@ -67,28 +68,18 @@ async def lifespan(app: FastAPI):
         app.state.match_rooms = MatchRoomManager(repository)
         await app.state.match_rooms.recover()
 
-        running = False
+        tick_lock = asyncio.Lock()
         last_attempt = float("-inf")
-        request_task = None
 
         async def tick():
-            nonlocal running, last_attempt
-            if running:
-                return
-            running = True
-            last_attempt = monotonic()
-            try:
+            nonlocal last_attempt
+            async with tick_lock:
+                if monotonic() - last_attempt < 30:
+                    return
+                last_attempt = monotonic()
                 await run_game_maintenance(app.state.match_rooms, repository, config)
-            finally:
-                running = False
 
-        def request_tick():
-            nonlocal request_task
-            if not running and monotonic() - last_attempt >= 30:
-                if request_task is None or request_task.done():
-                    request_task = asyncio.create_task(tick())
-
-        app.state.request_game_tick = request_tick
+        app.state.request_game_tick = tick
 
         async def maintenance():
             while True:
@@ -101,9 +92,6 @@ async def lifespan(app: FastAPI):
             yield
         finally:
             app.state.request_game_tick = lambda: None
-            if request_task and not request_task.done():
-                request_task.cancel()
-                await asyncio.gather(request_task, return_exceptions=True)
             await app.state.match_rooms.close()
             task.cancel()
             try:
@@ -120,11 +108,24 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def refresh_due_games(request: Request, call_next):
-        if request.url.path in {"/api/calendar", "/api/matches/upcoming", "/api/game/status"}:
+        response = await call_next(request)
+        if request.url.path in {
+            "/api/calendar",
+            "/api/matches/upcoming",
+            "/api/game/status",
+            "/api/competition",
+            "/api/competition/matches",
+        }:
             kick = getattr(app.state, "request_game_tick", None)
             if kick:
-                kick()
-        return await call_next(request)
+                # Send the screen data first, then await maintenance as part of
+                # the response lifecycle instead of detaching a cancellable task.
+                background = BackgroundTasks()
+                if response.background:
+                    background.add_task(response.background)
+                background.add_task(kick)
+                response.background = background
+        return response
 
     app.add_middleware(
         CORSMiddleware,

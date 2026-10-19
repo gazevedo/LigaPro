@@ -1,8 +1,12 @@
 import asyncio
 import importlib
 import os
-from unittest.mock import AsyncMock, Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+from fastapi.testclient import TestClient
+
+from app.api.dependencies import get_auth_service
 from app.config.settings import get_settings
 
 
@@ -45,3 +49,89 @@ def test_offline_processing_failure_does_not_stop_other_stages():
         asyncio.run(main.run_game_maintenance(manager, repo, config))
     manager.start_due.assert_awaited_once()
     reminders.assert_called_once_with(repo, config)
+
+
+def application(main):
+    with patch.dict(
+        os.environ,
+        {
+            "MONGODB_CONNECTION_STRING": "mongodb://localhost",
+            "MONGODB_DATABASE_NAME": "test",
+            "JWT_SECRET_KEY": "test-only-key-with-at-least-32-characters",
+        },
+    ):
+        app = main.create_app()
+    get_settings.cache_clear()
+    return app
+
+
+def test_competition_reads_request_background_processing_without_waiting():
+    main = module()
+    app = application(main)
+    app.state.request_game_tick = Mock()
+    app.dependency_overrides[get_auth_service] = lambda: Mock()
+    # No lifespan/database: even an unauthenticated read must pass through the
+    # middleware and wake the existing, throttled background worker.
+    client = TestClient(app)
+    for path in ("/api/competition", "/api/competition/matches"):
+        response = client.get(path)
+        assert response.status_code in (401, 403)
+    assert app.state.request_game_tick.call_count == 2
+
+
+def test_async_maintenance_runs_after_response_body_and_finishes_before_request_ends():
+    main = module()
+    app = application(main)
+    events = []
+
+    class ObserveResponse:
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            async def observed_send(message):
+                if message["type"] == "http.response.body" and not message.get("more_body"):
+                    events.append("body")
+                await send(message)
+
+            await self.app(scope, receive, observed_send)
+
+    async def maintenance():
+        assert events == ["body"]
+        await asyncio.sleep(0)
+        events.append("maintenance_finished")
+
+    app.add_middleware(ObserveResponse)
+    app.state.request_game_tick = maintenance
+    app.dependency_overrides[get_auth_service] = lambda: Mock()
+    TestClient(app).get("/api/competition")
+    assert events == ["body", "maintenance_finished"]
+
+
+def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
+    main = module()
+    app = application(main)
+    app.dependency_overrides[get_auth_service] = lambda: Mock()
+    manager = Mock(recover=AsyncMock(), close=AsyncMock())
+    config = SimpleNamespace(mongodb_database_name="test")
+    with (
+        patch.object(main, "get_settings", return_value=config),
+        patch.object(main, "create_client", return_value=MagicMock()),
+        patch.object(main, "GameRepository", return_value=Mock()),
+        patch.object(main.CompetitionService, "bootstrap"),
+        patch.object(main.ContractService, "bootstrap"),
+        patch.object(main, "bootstrap_player_attributes"),
+        patch.object(main, "bootstrap_economy"),
+        patch("app.services.live_match.MatchRoomManager", return_value=manager),
+        patch.object(main, "run_game_maintenance", new_callable=AsyncMock) as maintenance,
+        patch.object(main, "monotonic", return_value=100) as clock,
+    ):
+        with TestClient(app) as client:
+            client.get("/api/competition")
+            maintenance.assert_awaited_once()
+            client.get("/api/competition/matches")
+            maintenance.assert_awaited_once()
+            clock.return_value = 131
+            client.get("/api/competition")
+            assert maintenance.await_count == 2
+    manager.close.assert_awaited_once()

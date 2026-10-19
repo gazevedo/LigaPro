@@ -223,6 +223,56 @@ class CompetitionRulesTests(unittest.TestCase):
         season["league_games_per_day"] = 12
         self.assertFalse(CompetitionService.needs_schedule_update(repo, season))
 
+    def test_october_eighth_season_catches_up_after_only_three_completed_rounds(self):
+        from datetime import timedelta
+
+        config = GameConfig()
+        season = {
+            "_id": "season",
+            "starts_at": datetime(2026, 10, 8, tzinfo=UTC),
+            "config": config.snapshot(),
+        }
+        repo = Mock()
+        with patch.object(CompetitionService, "refresh_positions"):
+            CompetitionService.schedule(
+                repo,
+                season,
+                {"_id": "division", "name": "A"},
+                [{"_id": i, "club_id": i} for i in range(20)],
+            )
+        matches = repo.insert_many.call_args_list[0].args[1]
+        for match in matches[:30]:
+            match["status"] = "completed"
+        now = datetime(2026, 10, 18, tzinfo=UTC)
+        future = {**matches[-1], "_id": "future", "date": now + timedelta(hours=1)}
+        matches.append(future)
+
+        def many(collection, query, **kwargs):
+            if collection != "matches":
+                return []
+            return [
+                match for match in matches
+                if match["status"] == "scheduled"
+                and match["date"] <= query["date"]["$lte"]
+                and match["_id"] not in query["_id"]["$nin"]
+            ][:1]
+
+        def play(identity, when):
+            next(match for match in matches if match["_id"] == identity)["status"] = "completed"
+
+        repo.many.side_effect = many
+        service = CompetitionService(repo)
+        with (
+            patch("app.services.live_match.busy_clubs", return_value=set()),
+            patch.object(service, "play", side_effect=play) as played,
+        ):
+            service.play_due(season, now)
+            self.assertEqual(played.call_count, 350)
+            service.play_due(season, now)
+            self.assertEqual(played.call_count, 350)
+        self.assertEqual(future["status"], "scheduled")
+        self.assertTrue(all(match["status"] == "completed" for match in matches[:380]))
+
     def test_missing_fixtures_after_round_seven_are_restored_without_replaying_results(self):
         from copy import deepcopy
 
