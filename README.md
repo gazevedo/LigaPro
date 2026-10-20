@@ -74,6 +74,8 @@ Verificação da base: `GET /api/health` apenas consulta conexão e progresso pe
 
 O job consulta a próxima partida agendada da liga, copa e amistosos e aguarda até o horário dela. A cada no máximo 30 segundos também verifica novas partidas. Ele usa as mesmas transações e regras de liquidação existentes, retoma após falhas e registra `game_job event=running/waiting/failed`. Tabela e jogos apenas leem o estado salvo; abrir uma tela não simula partidas.
 
+No backend persistente, o agendador inicia automaticamente em uma tarefa própria no startup, após a preparação da base. Salas ao vivo e notificações não bloqueiam seu ciclo. Partidas vencidas são processadas ao iniciar; no encerramento, uma simulação em andamento termina antes de fechar a conexão com o banco. `GAME_SCHEDULER_MODE=external` desativa essa tarefa na API e exige o worker separado.
+
 Para execução independente dos acessos, mantenha **uma réplica** do worker em um serviço continuamente ativo, com as mesmas variáveis do backend:
 
 ```bash

@@ -17,7 +17,7 @@ from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
 from app.services.game import process_due
-from app.services.game_scheduler import next_game_delay
+from app.services.game_scheduler import run_game_scheduler
 from app.services.push_notifications import send_match_reminders
 
 configure_logging()
@@ -35,7 +35,7 @@ def is_serverless_runtime():
     )
 
 
-async def run_game_maintenance(manager, repository, config):
+async def run_game_maintenance(manager, repository, config, *, scheduled=True):
     if (
         is_serverless_runtime()
         and repository.find("game_state", {"_id": "initial_universe", "status": "ready"}) is None
@@ -46,7 +46,7 @@ async def run_game_maintenance(manager, repository, config):
         ("scheduled", lambda: asyncio.to_thread(process_due, repository)),
         ("reminders", lambda: asyncio.to_thread(send_match_reminders, repository, config)),
     ):
-        if name == "scheduled" and getenv("GAME_SCHEDULER_MODE") == "external":
+        if name == "scheduled" and (not scheduled or getenv("GAME_SCHEDULER_MODE") == "external"):
             continue
         try:
             await operation()
@@ -82,29 +82,35 @@ async def lifespan(app: FastAPI):
 
         async def maintenance():
             while True:
-                await run_game_maintenance(app.state.match_rooms, repository, config)
-                try:
-                    delay = (
-                        30
-                        if getenv("GAME_SCHEDULER_MODE") == "external"
-                        else await asyncio.to_thread(next_game_delay, repository)
-                    )
-                except Exception:
-                    logger.exception("Could not read next scheduled match")
-                    delay = 5
-                await asyncio.sleep(delay)
+                await run_game_maintenance(
+                    app.state.match_rooms, repository, config, scheduled=False
+                )
+                await asyncio.sleep(30)
 
+        stop = asyncio.Event()
+        scheduler = None
+        if getenv("GAME_SCHEDULER_MODE") != "external":
+            scheduler = asyncio.create_task(
+                run_game_scheduler(
+                    repository, lambda: asyncio.to_thread(process_due, repository), stop
+                ),
+                name="game-scheduler",
+            )
         task = asyncio.create_task(maintenance())
         logger.info("MongoDB connected; mock database ready")
         try:
             yield
         finally:
-            await app.state.match_rooms.close()
+            # Let an in-flight simulation finish before closing rooms and MongoDB.
+            stop.set()
+            if scheduler is not None:
+                await scheduler
             task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
                 pass
+            await app.state.match_rooms.close()
     finally:
         client.close()
 

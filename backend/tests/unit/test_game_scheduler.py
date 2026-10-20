@@ -115,3 +115,47 @@ def test_near_fixture_keeps_fractional_delay_instead_of_starting_late():
     repository = Mock()
     repository.many.side_effect = [[{"date": now + timedelta(milliseconds=250)}], [], []]
     assert next_game_delay(repository, now) == 0.25
+
+
+def test_scheduler_discovers_new_fixture_and_executes_only_when_due():
+    async def scenario():
+        now = datetime(2026, 10, 20, tzinfo=timezone.utc)
+        stop = asyncio.Event()
+        repository = Mock()
+        fixtures = []
+        completed = []
+        waits = []
+
+        def upcoming(collection, query, **kwargs):
+            return [{"date": min(fixtures)}] if collection == "matches" and fixtures else []
+
+        repository.many.side_effect = upcoming
+
+        async def process():
+            due = [date for date in fixtures if date <= now]
+            for date in due:
+                fixtures.remove(date)
+                completed.append(date)
+            if completed:
+                stop.set()
+
+        async def wait(awaitable, timeout):
+            nonlocal now
+            awaitable.close()
+            waits.append(timeout)
+            assert completed == []
+            if len(waits) == 1:
+                # A new fixture is saved while the scheduler waits on an empty calendar.
+                fixtures.append(now + timedelta(seconds=35))
+            now += timedelta(seconds=timeout)
+            raise TimeoutError
+
+        with (
+            patch("app.services.game_scheduler.utcnow", side_effect=lambda: now),
+            patch("app.services.game_scheduler.asyncio.wait_for", side_effect=wait),
+        ):
+            await run_game_scheduler(repository, process, stop)
+        assert waits == [30, 5]
+        assert completed == [now]
+
+    asyncio.run(scenario())

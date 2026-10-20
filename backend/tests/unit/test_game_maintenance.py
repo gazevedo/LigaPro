@@ -126,7 +126,7 @@ def test_api_timer_runs_maintenance_without_screen_requests():
     config = SimpleNamespace(mongodb_database_name="test")
     ran = Event()
 
-    async def maintenance(*args):
+    async def maintenance(*args, **kwargs):
         ran.set()
 
     with (
@@ -135,7 +135,8 @@ def test_api_timer_runs_maintenance_without_screen_requests():
         patch("mock_database.import_database"),
         patch.object(main, "GameRepository", return_value=Mock()),
         patch("app.services.live_match.MatchRoomManager", return_value=manager),
-        patch.object(main, "next_game_delay", return_value=30),
+        patch.object(main, "process_due"),
+        patch("app.services.game_scheduler.next_game_delay", return_value=30),
         patch.object(main, "run_game_maintenance", side_effect=maintenance) as task,
     ):
         with TestClient(app):
@@ -178,3 +179,71 @@ def test_external_worker_mode_does_not_run_offline_simulation_from_api():
         asyncio.run(main.run_game_maintenance(manager, Mock(), Mock()))
     games.assert_not_called()
     manager.start_due.assert_awaited_once()
+
+
+def test_startup_scheduler_runs_even_when_live_maintenance_is_blocked():
+    main = module()
+
+    async def scenario():
+        app = application(main)
+        manager = Mock(recover=AsyncMock(), close=AsyncMock())
+        config = SimpleNamespace(mongodb_database_name="test")
+        client = MagicMock()
+        ran = Event()
+        maintenance_started = asyncio.Event()
+        release = Event()
+
+        async def maintenance(*args, **kwargs):
+            assert kwargs == {"scheduled": False}
+            maintenance_started.set()
+            await asyncio.Event().wait()
+
+        def process(repository):
+            ran.set()
+            assert release.wait(2)
+            # MongoDB must stay open until the running simulation finishes.
+            client.close.assert_not_called()
+
+        with (
+            patch.dict(os.environ, {"GAME_SCHEDULER_MODE": "embedded"}),
+            patch.object(main, "get_settings", return_value=config),
+            patch.object(main, "create_client", return_value=client),
+            patch.object(main, "initialize_database"),
+            patch.object(main, "GameRepository", return_value=Mock()),
+            patch("app.services.live_match.MatchRoomManager", return_value=manager),
+            patch.object(main, "run_game_maintenance", side_effect=maintenance),
+            patch.object(main, "process_due", side_effect=process) as games,
+        ):
+            async with main.lifespan(app):
+                await asyncio.wait_for(maintenance_started.wait(), 2)
+                assert await asyncio.to_thread(ran.wait, 2)
+                release.set()
+            games.assert_called_once()
+            client.close.assert_called_once()
+            manager.close.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_external_mode_does_not_start_an_embedded_scheduler():
+    main = module()
+
+    async def scenario():
+        app = application(main)
+        manager = Mock(recover=AsyncMock(), close=AsyncMock())
+        with (
+            patch.dict(os.environ, {"GAME_SCHEDULER_MODE": "external"}),
+            patch.object(
+                main, "get_settings", return_value=SimpleNamespace(mongodb_database_name="test")
+            ),
+            patch.object(main, "create_client", return_value=MagicMock()),
+            patch.object(main, "initialize_database"),
+            patch.object(main, "GameRepository", return_value=Mock()),
+            patch("app.services.live_match.MatchRoomManager", return_value=manager),
+            patch.object(main, "run_game_scheduler", new_callable=AsyncMock) as scheduler,
+        ):
+            async with main.lifespan(app):
+                pass
+            scheduler.assert_not_awaited()
+
+    asyncio.run(scenario())
