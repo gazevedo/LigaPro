@@ -10,7 +10,6 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from app.config.game import GameConfig, legacy_position
 from app.config.stadium import (
-    DEFAULT_FACILITIES,
     FACILITY_DEFINITIONS,
     FACILITY_LEVEL_NAMES,
     SECTOR_NAMES,
@@ -25,13 +24,11 @@ from app.models.game import FACILITIES, public, utcnow
 from app.models.player import choose_shirt_number, player_public
 from app.services.bank_loans import PRODUCTS, BankLoanService
 from app.services.chemistry import ChemistryService
-from app.services.club_prestige import ClubRankingService
 from app.services.competition import CompetitionService
 from app.services.fan_base import FanBaseService
 from app.services.market_value import MarketValueService
 from app.services.monthly_finance import MonthlyFinanceService
 from app.services.player_contracts import ContractService
-from app.services.player_development import PlayerGeneratorService
 from app.services.player_morale import PlayerMoraleService
 from app.services.tactics import TacticsService
 
@@ -141,88 +138,92 @@ class ClubService:
             badge = repo.find("club_badges", {"_id": data.badge_id})
             if not country or not badge:
                 raise HTTPException(422, "País ou escudo inválido.")
-            rules, now, club_id = repo.rules(), utcnow(), ObjectId()
-            club = repo.insert(
+            season = CompetitionService.current(repo)
+            if not season:
+                raise HTTPException(
+                    503, "A liga está sendo preparada. Tente novamente em instantes."
+                )
+            # Fence ownership changes against season finalization and competing joins.
+            season = repo.update(
+                "seasons",
+                {"_id": season["_id"], "status": "active"},
+                {"$inc": {"enrollment_revision": 1}, "$set": {"open_division_pending": True}},
+            )
+            if not season:
+                raise HTTPException(503, "A temporada está mudando. Tente novamente em instantes.")
+            divisions = repo.many(
+                "divisions", {"active": {"$ne": False}}, limit=1, sort=[("tier", -1)]
+            )
+            config = CompetitionService.season_config(season)
+            slots = (
+                repo.many(
+                    "standings",
+                    {
+                        "season_id": season["_id"],
+                        "division_id": divisions[0]["_id"] if divisions else None,
+                        "is_bot": True,
+                        "bot_takeover": {"$ne": True},
+                    },
+                    limit=1,
+                    sort=[
+                        (
+                            "position",
+                            -1 if config.BOT_REPLACEMENT_STRATEGY == "lowest_ranked" else 1,
+                        )
+                    ],
+                )
+                if divisions
+                else []
+            )
+            if not slots:
+                # Commit the durable maintenance flag even when the next division
+                # is still being prepared. The request never generates a squad.
+                return None
+            slot = slots[0]
+            club_id, now = slot["club_id"], utcnow()
+            club = repo.update(
                 "clubs",
                 {
                     "_id": club_id,
-                    "owner_user_id": ObjectId(user.id),
-                    **data.model_dump(exclude={"stadium_name"}),
-                    "country": public(country),
-                    "badge": public(badge),
-                    "created_at": now,
-                    "ranking": 0,
-                    "competition_positions": [],
-                    "trophies": [],
+                    "is_bot": True,
+                    "owner_user_id": None,
+                    "active": {"$ne": False},
+                    "bot_takeover": {"$ne": True},
                 },
-            )
-            # Claim the sporting slot before the expensive roster and finance work.
-            # A conflict retries here, without discarding a fully built squad.
-            competition = CompetitionService(repo)
-            competition.enroll(repo, club, now, lock_universe=False)
-            logger.info("club_creation event=slot_reserved club=%s", club_id)
-            players = PlayerGeneratorService(GameConfig.from_rules(rules), str(club_id)).squad(
-                club_id, data.country_id
-            )
-            repo.insert_many("players", players)
-            starters = []
-            for position, count in {"GOL": 1, **rules["formations"]["4-4-2"]}.items():
-                starters.extend(
-                    p["_id"]
-                    for p in [p for p in players if legacy_position(p["position"]) == position][
-                        :count
-                    ]
-                )
-            repo.insert(
-                "lineups",
                 {
-                    "_id": club_id,
-                    "formation": "4-4-2",
-                    "starters": starters,
-                    "reserves": [p["_id"] for p in players if p["_id"] not in starters],
+                    "$set": {
+                        "owner_user_id": ObjectId(user.id),
+                        "is_bot": False,
+                        "name": data.name,
+                        "country_id": data.country_id,
+                        "badge_id": data.badge_id,
+                        "country": public(country),
+                        "badge": public(badge),
+                        "claimed_at": now,
+                    }
                 },
             )
-
-            TacticsService.persist(
-                repo,
-                club_id,
-                {
-                    "formation": "4-4-2",
-                    "play_style": "balanced",
-                    "marking": "light",
-                    "attack_focus": "normal",
-                },
+            if not club:
+                raise HTTPException(409, "O clube foi assumido por outro técnico. Tente novamente.")
+            repo.update("season_clubs", {"_id": slot["_id"]}, {"$set": {"is_bot": False}})
+            repo.update(
+                "standings",
+                {"_id": slot["_id"]},
+                {"$set": {"is_bot": False, "club_name": data.name}},
             )
-            repo.insert(
-                "stadiums",
-                {
-                    "_id": club_id,
-                    "name": data.stadium_name
-                    or (repo.find("users", {"_id": ObjectId(user.id)}) or {}).get("stadium_name")
-                    or f"Estádio {data.name}",
-                    "capacity": rules["initial_capacity"],
-                    "ticket_price": rules["ticket_price"],
-                    "facilities": dict(DEFAULT_FACILITIES),
-                },
-            )
-            repo.insert("club_finances", {"_id": club_id, "balance": 0})
-            MonthlyFinanceService.initialize(repo, club_id, now)
-            FanBaseService.initialize(repo, club_id)
-            ChemistryService().save(repo, club_id, {})
-            ContractService.initial(repo, players, GameConfig.from_rules(rules), now)
-            logger.info("club_creation event=roster_and_finances_ready club=%s", club_id)
-            season = competition.current(repo)
-            competition.generate_youth(repo, club, season, competition.season_config(season))
-            ClubRankingService.refresh(repo, season["_id"])
-            logger.info("club_creation event=ranking_ready club=%s", club_id)
-            MarketValueService().recalculate(repo, players, "initial", now=now)
-            logger.info("club_creation event=ready_to_commit club=%s", club_id)
-            return self.response(repo.find("clubs", {"_id": club_id}))
+            if data.stadium_name:
+                repo.update("stadiums", {"_id": club_id}, {"$set": {"name": data.stadium_name}})
+            logger.info("club_creation event=bot_claimed club=%s", club_id)
+            return self.response(club)
 
         try:
             # Bound lock contention and transaction retries within the request budget.
             with timeout(45):
                 result = self.repo.transaction(operation)
+            if result is None:
+                raise HTTPException(
+                    503, "Uma nova divisão está sendo preparada. Tente novamente em instantes."
+                )
             logger.info(
                 "club_creation event=committed club=%s elapsed_ms=%d",
                 result["id"],
@@ -249,6 +250,30 @@ class ClubService:
                     "A criação do clube demorou além do esperado. Tente novamente em instantes.",
                 ) from exc
             raise
+
+    def complete_pending_creations(self):
+        """Prepare available bot slots off the request path; retry on the next tick."""
+        pending = self.repo.many(
+            "seasons", {"status": "active", "open_division_pending": True}, limit=1
+        )
+        if not pending:
+            return
+        CompetitionService.ensure_lock(self.repo)
+
+        def operation(repo):
+            CompetitionService.lock(repo)
+            season = repo.find(
+                "seasons",
+                {"_id": pending[0]["_id"], "status": "active", "open_division_pending": True},
+            )
+            if not season:
+                return
+            CompetitionService.ensure_open_division(repo, season)
+            repo.update(
+                "seasons", {"_id": season["_id"]}, {"$unset": {"open_division_pending": ""}}
+            )
+
+        self.repo.transaction(operation)
 
 
 class SquadService:
@@ -1355,6 +1380,10 @@ class MarketService:
 
 def process_due(repository):
     now = utcnow()
+    try:
+        ClubService(repository).complete_pending_creations()
+    except Exception:
+        logger.exception("club_creation event=background_preparation_failed")
     CompetitionService(repository).process_due(now)
     MonthlyFinanceService.process_due(repository, now)
     ContractService(repository).process_due(now)

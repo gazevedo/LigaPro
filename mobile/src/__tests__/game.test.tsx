@@ -319,3 +319,47 @@ test('club ranking opens general ranking and reputation and confidence cards ope
   await fireEvent.press(screen.getByRole('button', { name: 'Informações sobre confiança da torcida' }));
   expect(screen.getByText(/A confiança mostra/)).toBeTruthy();
 });
+
+
+test('creation popup rotates messages, allows editing and closes on success', async () => {
+  jest.useFakeTimers();
+  let finish!: (value: typeof club) => void;
+  jest.mocked(clubService.create).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  try {
+    await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+    await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+    await fireEvent.press(screen.getByText('Criar clube'));
+    expect(screen.getByLabelText('Criação do clube em andamento')).toBeTruthy();
+    expect(screen.getByText('Conferindo os dados do clube…')).toBeTruthy();
+    await act(async () => { jest.advanceTimersByTime(1800); });
+    expect(screen.getByText('Buscando um clube disponível na liga…')).toBeTruthy();
+    await act(async () => { jest.advanceTimersByTime(1800); });
+    expect(screen.getByText('Aplicando o nome e o escudo escolhidos…')).toBeTruthy();
+    await act(async () => { jest.advanceTimersByTime(1800); });
+    expect(screen.getByText('Preparando sua entrada no jogo…')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Fechar e continuar editando'));
+    expect(screen.queryByLabelText('Criação do clube em andamento')).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Outro nome');
+    expect(screen.getByLabelText('Nome do clube').props.value).toBe('Outro nome');
+    await fireEvent.press(screen.getByText('Ver andamento'));
+    expect(screen.getByLabelText('Criação do clube em andamento')).toBeTruthy();
+    await act(async () => { finish(club); });
+    expect(screen.queryByLabelText('Criação do clube em andamento')).toBeNull();
+    expect(useClubStore.getState().data?.club?.id).toBe(club.id);
+    expect(clubService.create).toHaveBeenCalledTimes(1);
+  } finally { jest.useRealTimers(); }
+});
+
+test('creation failure dismisses popup and preserves form for retry', async () => {
+  let fail!: (reason: Error) => void;
+  jest.mocked(clubService.create).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
+  await fireEvent.press(screen.getByText('Criar clube'));
+  expect(screen.getByLabelText('Criação do clube em andamento')).toBeTruthy();
+  await act(async () => { fail(new Error('Tente novamente em instantes.')); });
+  expect(screen.queryByLabelText('Criação do clube em andamento')).toBeNull();
+  expect(screen.getByText('Tente novamente em instantes.')).toBeTruthy();
+  expect(screen.getByLabelText('Nome do clube').props.value).toBe('Clube teste');
+  expect(screen.getByRole('button', { name: 'Criar clube' })).toBeEnabled();
+});

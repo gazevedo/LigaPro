@@ -84,3 +84,165 @@ def test_only_duplicate_owner_is_reported_as_already_having_a_club(owner_conflic
         assert caught.value.status_code == 409
     else:
         assert caught.value is error
+
+
+@pytest.fixture
+def takeover_repo():
+    from copy import deepcopy
+
+    from bson import ObjectId
+
+    from app.config.game import GameConfig
+
+    club_id, season_id, division_id, slot_id = (ObjectId() for _ in range(4))
+    club = {
+        "_id": club_id,
+        "name": "Bot original",
+        "is_bot": True,
+        "created_at": "original",
+        "supporters": 2345,
+        "ranking": 77,
+        "trophies": ["taça"],
+        "reputation": 20,
+    }
+    season = {"_id": season_id, "status": "active", "config": GameConfig().snapshot()}
+    slot = {"_id": slot_id, "club_id": club_id, "points": 18, "position": 7}
+    repo = Mock()
+    repo.transaction.side_effect = lambda callback: callback(repo)
+
+    def find(collection, query, *args):
+        if collection == "seasons":
+            return season
+        if collection == "countries":
+            return {"_id": "BR", "name": "Brasil"}
+        if collection == "club_badges":
+            return {"_id": "blue", "name": "Azul"}
+        return None
+
+    def many(collection, query, **kwargs):
+        if collection == "divisions":
+            return [{"_id": division_id, "tier": 2}]
+        if collection == "standings":
+            assert query["division_id"] == division_id
+            assert query["bot_takeover"] == {"$ne": True}
+            return [slot]
+        return []
+
+    def update(collection, query, changes):
+        if collection == "seasons":
+            season.update(changes.get("$set", {}))
+            for key in changes.get("$unset", {}):
+                season.pop(key, None)
+            return season
+        if collection == "clubs":
+            assert query["is_bot"] is True and query["owner_user_id"] is None
+            club.update(changes["$set"])
+            return deepcopy(club)
+        return None
+
+    repo.find.side_effect, repo.many.side_effect, repo.update.side_effect = find, many, update
+    return repo, club, season, slot
+
+
+@pytest.mark.parametrize("stadium_name", [None, "Minha arena"])
+def test_takeover_preserves_bot_identity_and_assets_without_generation(takeover_repo, stadium_name):
+    from bson import ObjectId
+
+    repo, bot, season, slot = takeover_repo
+    original_id = bot["_id"]
+    user = Mock(id=str(ObjectId()))
+    with patch("app.services.player_development.PlayerGeneratorService.squad") as generate:
+        result = ClubService(repo).create(
+            user,
+            ClubInput(
+                name="Meu clube", country_id="BR", badge_id="blue", stadium_name=stadium_name
+            ),
+        )
+    assert result["id"] == str(original_id)
+    assert result["name"] == "Meu clube"
+    assert result["created_at"] == "original"
+    assert result["supporters"] == 2345 and result["ranking"] == 77
+    assert result["trophies"] == ["taça"] and result["reputation"] == 20
+    assert bot["owner_user_id"] == ObjectId(user.id) and bot["is_bot"] is False
+    assert season["open_division_pending"] is True
+    generate.assert_not_called()
+    repo.insert.assert_not_called()
+    repo.insert_many.assert_not_called()
+    repo.update_many.assert_not_called()
+    writes = [call.args[0] for call in repo.update.call_args_list]
+    assert set(writes) == {"seasons", "clubs", "season_clubs", "standings"} | (
+        {"stadiums"} if stadium_name else set()
+    )
+    repo.update.assert_any_call(
+        "standings", {"_id": slot["_id"]}, {"$set": {"is_bot": False, "club_name": "Meu clube"}}
+    )
+
+
+def test_no_slot_commits_background_preparation_without_generating_club(takeover_repo):
+    from bson import ObjectId
+
+    repo, _, season, _ = takeover_repo
+    repo.many.return_value = []
+    repo.many.side_effect = None
+    with pytest.raises(HTTPException) as error:
+        ClubService(repo).create(
+            Mock(id=str(ObjectId())), ClubInput(name="Meu clube", country_id="BR", badge_id="blue")
+        )
+    assert error.value.status_code == 503
+    assert season["open_division_pending"] is True
+    assert all(call.args[0] == "seasons" for call in repo.update.call_args_list)
+    repo.insert_many.assert_not_called()
+
+
+def test_background_preparation_clears_pending_only_after_success(takeover_repo):
+    repo, _, season, _ = takeover_repo
+    season["open_division_pending"] = True
+    repo.many.side_effect = None
+    repo.many.return_value = [season]
+    with patch(
+        "app.services.game.CompetitionService.ensure_open_division",
+        side_effect=RuntimeError("retry"),
+    ):
+        with pytest.raises(RuntimeError):
+            ClubService(repo).complete_pending_creations()
+    assert season["open_division_pending"] is True
+    with patch("app.services.game.CompetitionService.ensure_open_division") as prepare:
+        ClubService(repo).complete_pending_creations()
+    prepare.assert_called_once_with(repo, season)
+    assert "open_division_pending" not in season
+
+
+def test_background_preparation_does_nothing_without_pending_jobs():
+    repo = Mock()
+    repo.many.return_value = []
+    ClubService(repo).complete_pending_creations()
+    repo.transaction.assert_not_called()
+
+
+def test_takeover_rejects_a_club_that_is_no_longer_available(takeover_repo):
+    from bson import ObjectId
+
+    repo, _, _, _ = takeover_repo
+    original_update = repo.update.side_effect
+    repo.update.side_effect = lambda collection, query, changes: (
+        None if collection == "clubs" else original_update(collection, query, changes)
+    )
+    with pytest.raises(HTTPException) as error:
+        ClubService(repo).create(
+            Mock(id=str(ObjectId())), ClubInput(name="Meu clube", country_id="BR", badge_id="blue")
+        )
+    assert error.value.status_code == 409
+    assert not any(call.args[0] == "standings" for call in repo.update.call_args_list)
+
+
+def test_takeover_rejects_existing_owner_before_claiming_a_bot(takeover_repo):
+    from bson import ObjectId
+
+    repo, bot, _, _ = takeover_repo
+    repo.find.side_effect = lambda collection, query: bot if collection == "clubs" else None
+    with pytest.raises(HTTPException) as error:
+        ClubService(repo).create(
+            Mock(id=str(ObjectId())), ClubInput(name="Meu clube", country_id="BR", badge_id="blue")
+        )
+    assert error.value.status_code == 409
+    repo.update.assert_not_called()
