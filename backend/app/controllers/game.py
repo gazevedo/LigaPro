@@ -230,16 +230,12 @@ def cancel_offer(identity: str, user: User, repo: Repo):
 
 @router.get("/competition")
 def competition(user: User, repo: Repo):
-    service = CompetitionService(repo)
-    service.process_due(max_matches=10)
-    return service.table(user)
+    return CompetitionService(repo).table(user)
 
 
 @router.get("/competition/matches")
 def competition_matches(user: User, repo: Repo):
-    service = CompetitionService(repo)
-    service.process_due(max_matches=10)
-    return service.matches(user)
+    return CompetitionService(repo).matches(user)
 
 
 @router.get("/training")

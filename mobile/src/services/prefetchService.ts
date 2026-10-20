@@ -22,9 +22,9 @@ export async function prefetchGameData(clubId: string, isCurrent: () => boolean,
   preparedClub = clubId;
   const jobs = [
     () => screens.useCompetitionMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
+    () => screens.useCompetitionStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useUpcomingMatchesStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => useInboxStore.getState()[fresh ? 'refresh' : 'ensure'](),
-    () => screens.useCompetitionStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useClubRankingStore.getState()[fresh ? 'refresh' : 'ensure'](),
     () => screens.useClubDetailsStore.getState()[fresh ? 'refresh' : 'ensure'](clubId),
     () => useSquadStore.getState()[fresh ? 'refresh' : 'ensure'](),
@@ -64,43 +64,32 @@ export async function refreshGameData(isCurrent: () => boolean) {
   }));
 }
 export function startGameDataRefresh(clubId: string, isCurrent: () => boolean) {
-  let active = true, pending = false, prepared = false;
-  let catchUpTimer: ReturnType<typeof setTimeout> | undefined;
+  let active = true, pending = false, prepared = false, retrying = false;
   const current = () => active && isCurrent();
   const visible = () => AppState.currentState !== 'background' && AppState.currentState !== 'inactive' &&
     (typeof document === 'undefined' || document.visibilityState !== 'hidden') &&
     (typeof navigator === 'undefined' || navigator.onLine !== false);
-  function hasOverdueMatches() {
-    const matches = screens.useCompetitionMatchesStore.getState().data;
-    return Array.isArray(matches) && matches.some(match =>
-      match.status === 'scheduled' && new Date(match.date).getTime() <= Date.now());
+  async function retryCompetitionData() {
+    const table = screens.useCompetitionStore.getState(), matches = screens.useCompetitionMatchesStore.getState();
+    if (retrying || !current() || !visible() || (table.data !== null && matches.data !== null && !table.error && !matches.error)) return;
+    retrying = true;
+    try {
+      // Retry only missing/failed reads, even while other screens are still loading.
+      await Promise.allSettled([
+        table.data === null || table.error ? table.refresh() : Promise.resolve(),
+        matches.data === null || matches.error ? matches.refresh() : Promise.resolve(),
+      ]);
+    } finally { retrying = false; }
   }
-  async function run(initial: boolean, catchUp = false) {
+  async function run(initial: boolean) {
     if (pending || !current() || !visible()) return;
-    clearTimeout(catchUpTimer);
     pending = true;
     try {
       if (initial || !prepared) {
         await prefetchGameData(clubId, current, true);
         prepared = true;
-      } else if (catchUp) {
-        await screens.useCompetitionMatchesStore.getState().refresh();
-        if (!current()) return;
-        await screens.useCompetitionStore.getState().refresh();
-        if (!current()) return;
-        await Promise.allSettled([
-          useCalendarStore.getState().refreshCurrent(),
-          useFinanceStore.getState().refreshCurrent(),
-          screens.useUpcomingMatchesStore.getState().refresh(),
-        ]);
-      }
-      else await refreshGameData(current);
-    } finally {
-      pending = false;
-      if (current() && visible() && hasOverdueMatches()) {
-        catchUpTimer = setTimeout(() => { void run(false, true); }, 3000);
-      }
-    }
+      } else await refreshGameData(current);
+    } finally { pending = false; }
   }
   const resume = () => { void run(false); };
   const appState = AppState.addEventListener('change', resume);
@@ -109,8 +98,9 @@ export function startGameDataRefresh(clubId: string, isCurrent: () => boolean) {
   if (browserEvents) { window.addEventListener('focus', resume); window.addEventListener('online', resume); }
   void run(true);
   const timer = setInterval(() => { void run(false); }, 60000);
+  const retryTimer = setInterval(() => { void retryCompetitionData(); }, 3000);
   return () => {
-    active = false; clearInterval(timer); clearTimeout(catchUpTimer); appState.remove();
+    active = false; clearInterval(timer); clearInterval(retryTimer); appState.remove();
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', resume);
     if (browserEvents) { window.removeEventListener('focus', resume); window.removeEventListener('online', resume); }
   };

@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import os
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -65,7 +66,7 @@ def application(main):
     return app
 
 
-def test_authenticated_competition_reads_finish_batch_before_reading_results():
+def test_competition_reads_return_saved_data_without_simulating_matches():
     main = module()
     app = application(main)
     user, repo = Mock(), Mock()
@@ -79,7 +80,6 @@ def test_authenticated_competition_reads_finish_batch_before_reading_results():
         events.append("processed")
 
     def read(_user):
-        assert events[-1] == "processed"
         events.append("read")
         return {"games": 4}
 
@@ -92,7 +92,8 @@ def test_authenticated_competition_reads_finish_batch_before_reading_results():
             response = client.get(path)
             assert response.status_code == 200
             assert response.json() == {"games": 4}
-    assert events == ["processed", "read", "processed", "read"]
+    assert events == ["read", "read"]
+    competition.return_value.process_due.assert_not_called()
     app.state.request_game_tick.assert_not_awaited()
 
 
@@ -106,58 +107,40 @@ def test_unauthenticated_reads_do_not_process_matches():
     competition.assert_not_called()
 
 
-def test_async_maintenance_runs_after_response_body_and_finishes_before_request_ends():
+def test_screen_reads_do_not_trigger_scheduled_maintenance():
     main = module()
     app = application(main)
-    events = []
-
-    class ObserveResponse:
-        def __init__(self, app):
-            self.app = app
-
-        async def __call__(self, scope, receive, send):
-            async def observed_send(message):
-                if message["type"] == "http.response.body" and not message.get("more_body"):
-                    events.append("body")
-                await send(message)
-
-            await self.app(scope, receive, observed_send)
-
-    async def maintenance():
-        assert events == ["body"]
-        await asyncio.sleep(0)
-        events.append("maintenance_finished")
-
-    app.add_middleware(ObserveResponse)
-    app.state.request_game_tick = maintenance
-    app.dependency_overrides[get_auth_service] = lambda: Mock()
-    TestClient(app).get("/api/game/status")
-    assert events == ["body", "maintenance_finished"]
+    app.state.request_game_tick = AsyncMock()
+    app.dependency_overrides[get_current_user] = lambda: Mock()
+    app.dependency_overrides[main.game.repository] = lambda: Mock()
+    with patch.object(main.game, "ClubService") as club:
+        club.return_value.status.return_value = {"club": None}
+        assert TestClient(app).get("/api/game/status").status_code == 200
+    app.state.request_game_tick.assert_not_awaited()
 
 
-def test_timer_and_requests_share_maintenance_and_throttle_following_reads():
+def test_api_timer_runs_maintenance_without_screen_requests():
     main = module()
     app = application(main)
-    app.dependency_overrides[get_auth_service] = lambda: Mock()
     manager = Mock(recover=AsyncMock(), close=AsyncMock())
     config = SimpleNamespace(mongodb_database_name="test")
+    ran = Event()
+
+    async def maintenance(*args):
+        ran.set()
+
     with (
         patch.object(main, "get_settings", return_value=config),
         patch.object(main, "create_client", return_value=MagicMock()),
         patch("mock_database.import_database"),
         patch.object(main, "GameRepository", return_value=Mock()),
         patch("app.services.live_match.MatchRoomManager", return_value=manager),
-        patch.object(main, "run_game_maintenance", new_callable=AsyncMock) as maintenance,
-        patch.object(main, "monotonic", return_value=100) as clock,
+        patch.object(main, "next_game_delay", return_value=30),
+        patch.object(main, "run_game_maintenance", side_effect=maintenance) as task,
     ):
-        with TestClient(app) as client:
-            client.get("/api/game/status")
-            maintenance.assert_awaited_once()
-            client.get("/api/matches/upcoming")
-            maintenance.assert_awaited_once()
-            clock.return_value = 131
-            client.get("/api/game/status")
-            assert maintenance.await_count == 2
+        with TestClient(app):
+            assert ran.wait(2)
+            task.assert_awaited_once()
     manager.close.assert_awaited_once()
 
 
@@ -182,3 +165,16 @@ def test_serverless_maintenance_waits_until_initial_league_is_ready():
         "game_state", {"_id": "initial_universe", "status": "ready"}
     )
     manager.start_due.assert_not_awaited()
+
+
+def test_external_worker_mode_does_not_run_offline_simulation_from_api():
+    main = module()
+    manager = Mock(start_due=AsyncMock())
+    with (
+        patch.dict(os.environ, {"GAME_SCHEDULER_MODE": "external"}),
+        patch.object(main, "process_due") as games,
+        patch.object(main, "send_match_reminders"),
+    ):
+        asyncio.run(main.run_game_maintenance(manager, Mock(), Mock()))
+    games.assert_not_called()
+    manager.start_due.assert_awaited_once()

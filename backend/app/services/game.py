@@ -748,11 +748,6 @@ class CalendarService:
         self.repo = repository
 
     def get(self, user, filters):
-        from app.services.competition import CompetitionService
-
-        season = CompetitionService.current(self.repo)
-        if CompetitionService.needs_schedule_update(self.repo, season):
-            self.repo.transaction(CompetitionService.update_league_interval)
         club_id = self.repo.owned(user.id)["_id"]
         match_types = ("match", "league_match", "cup_match", "friendly")
         query = {

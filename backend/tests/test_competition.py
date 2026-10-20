@@ -541,7 +541,7 @@ def test_existing_club_bootstrap_preserves_administrative_data(client):
     assert db.matches.count_documents({}) == 380
 
 
-def test_incomplete_league_is_repaired_and_daily_frequency_reconfigures_pending_games(
+def test_background_job_repairs_league_and_reconfigures_frequency(
     authenticated_client,
 ):
     from datetime import timedelta
@@ -569,6 +569,7 @@ def test_incomplete_league_is_repaired_and_daily_frequency_reconfigures_pending_
         {"$set": {"league_schedule_revision": 2, "starts_at": utcnow() - timedelta(days=3)}},
     )
     completed = list(database.matches.find({**query, "status": "completed"}))
+    CompetitionService(GameRepository(database)).process_due(max_matches=0)
     assert client.get("/api/calendar").status_code == 200
     assert database.matches.count_documents(query) == 380
     assert list(database.matches.find({**query, "status": "completed"})) == completed
@@ -590,6 +591,7 @@ def test_incomplete_league_is_repaired_and_daily_frequency_reconfigures_pending_
     database.app_settings.update_one(
         {"key": "game_rules"}, {"$set": {"value.MATCHES_PER_DAY": 12}}, upsert=True
     )
+    CompetitionService(GameRepository(database)).process_due(max_matches=0)
     assert client.get("/api/calendar").status_code == 200
     adjusted = sorted(
         {match["date"] for match in database.matches.find({**query, "status": "scheduled"})}

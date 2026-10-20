@@ -70,6 +70,21 @@ Verificação da base: `GET /api/health` apenas consulta conexão e progresso pe
 
 
 
+### Job de partidas em segundo plano
+
+O job consulta a próxima partida agendada da liga, copa e amistosos e aguarda até o horário dela. A cada no máximo 30 segundos também verifica novas partidas. Ele usa as mesmas transações e regras de liquidação existentes, retoma após falhas e registra `game_job event=running/waiting/failed`. Tabela e jogos apenas leem o estado salvo; abrir uma tela não simula partidas.
+
+Para execução independente dos acessos, mantenha **uma réplica** do worker em um serviço continuamente ativo, com as mesmas variáveis do backend:
+
+```bash
+cd backend
+python -m app.worker
+```
+
+O Dockerfile do backend também permite executar `python -m app.worker` como comando do container, com política de reinício do serviço. Na API, configure `GAME_SCHEDULER_MODE=external` após ativar o worker para delegar a simulação agendada ao processo separado. Sem essa configuração, o processo da API também mantém o agendador enquanto estiver ativo. A Vercel Hobby suspende funções ociosas e só permite cron diário; um deploy nela sozinho não mantém o worker rodando continuamente. O worker precisa ser hospedado e iniciado em um serviço persistente para executar jogos com o aplicativo fechado.
+
+O aplicativo carrega tabela e jogos primeiro, junto com os próximos confrontos, e prepara os demais dados em segundo plano. Consultas que falham são repetidas sem bloquear a navegação nem esperar pelo carregamento de mercado e outras telas.
+
 ### Instalar o app web no Android e iPhone
 
 Abra o frontend publicado em HTTPS (`https://ligapro-mobile.vercel.app/`). No Android, use Chrome → menu ⋮ → **Instalar aplicativo** ou **Adicionar à tela inicial**. No iPhone, use Safari → Compartilhar → **Adicionar à Tela de Início**; mantenha **Abrir como App** ativado se essa opção aparecer. Abra pelo ícone LigaPro para usar a janela sem a barra do navegador.

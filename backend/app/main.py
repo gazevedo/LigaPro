@@ -3,7 +3,6 @@ import logging
 from contextlib import asynccontextmanager
 from os import getenv
 from threading import Lock
-from time import monotonic
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pymongo import timeout
 from pymongo.errors import PyMongoError
-from starlette.background import BackgroundTasks
 
 from app.config.settings import get_settings
 from app.controllers import auth, game, health, live, push, settings
@@ -19,6 +17,7 @@ from app.core.logging import configure_logging
 from app.database.mongo import create_client
 from app.repositories.game import GameRepository
 from app.services.game import process_due
+from app.services.game_scheduler import next_game_delay
 from app.services.push_notifications import send_match_reminders
 
 configure_logging()
@@ -39,8 +38,7 @@ def is_serverless_runtime():
 async def run_game_maintenance(manager, repository, config):
     if (
         is_serverless_runtime()
-        and repository.find("game_state", {"_id": "initial_universe", "status": "ready"})
-        is None
+        and repository.find("game_state", {"_id": "initial_universe", "status": "ready"}) is None
     ):
         return
     for name, operation in (
@@ -48,6 +46,8 @@ async def run_game_maintenance(manager, repository, config):
         ("scheduled", lambda: asyncio.to_thread(process_due, repository)),
         ("reminders", lambda: asyncio.to_thread(send_match_reminders, repository, config)),
     ):
+        if name == "scheduled" and getenv("GAME_SCHEDULER_MODE") == "external":
+            continue
         try:
             await operation()
         except Exception:
@@ -70,9 +70,7 @@ async def lifespan(app: FastAPI):
     client = create_client(config)
     app.state.database = client[config.mongodb_database_name]
     try:
-        await asyncio.to_thread(
-            initialize_database, app.state.database, prepare_universe=True
-        )
+        await asyncio.to_thread(initialize_database, app.state.database, prepare_universe=True)
         app.state.database_ready = True
         app.state.database_schema_ready = True
         repository = GameRepository(app.state.database)
@@ -82,30 +80,25 @@ async def lifespan(app: FastAPI):
         app.state.match_rooms = MatchRoomManager(repository)
         await app.state.match_rooms.recover()
 
-        tick_lock = asyncio.Lock()
-        last_attempt = float("-inf")
-
-        async def tick():
-            nonlocal last_attempt
-            async with tick_lock:
-                if monotonic() - last_attempt < 30:
-                    return
-                last_attempt = monotonic()
-                await run_game_maintenance(app.state.match_rooms, repository, config)
-
-        app.state.request_game_tick = tick
-
         async def maintenance():
             while True:
-                await tick()
-                await asyncio.sleep(30)
+                await run_game_maintenance(app.state.match_rooms, repository, config)
+                try:
+                    delay = (
+                        30
+                        if getenv("GAME_SCHEDULER_MODE") == "external"
+                        else await asyncio.to_thread(next_game_delay, repository)
+                    )
+                except Exception:
+                    logger.exception("Could not read next scheduled match")
+                    delay = 5
+                await asyncio.sleep(delay)
 
         task = asyncio.create_task(maintenance())
         logger.info("MongoDB connected; mock database ready")
         try:
             yield
         finally:
-            app.state.request_game_tick = lambda: None
             await app.state.match_rooms.close()
             task.cancel()
             try:
@@ -120,25 +113,6 @@ def create_app() -> FastAPI:
     config = get_settings()
     app = FastAPI(title="LigaPro API", version="0.1.0", lifespan=lifespan)
     app.state.database_lock = Lock()
-
-    @app.middleware("http")
-    async def refresh_due_games(request: Request, call_next):
-        response = await call_next(request)
-        if request.url.path in {
-            "/api/calendar",
-            "/api/matches/upcoming",
-            "/api/game/status",
-        }:
-            kick = getattr(app.state, "request_game_tick", None)
-            if kick:
-                # Send the screen data first, then await maintenance as part of
-                # the response lifecycle instead of detaching a cancellable task.
-                background = BackgroundTasks()
-                if response.background:
-                    background.add_task(response.background)
-                background.add_task(kick)
-                response.background = background
-        return response
 
     app.add_middleware(
         CORSMiddleware,

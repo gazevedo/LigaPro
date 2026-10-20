@@ -30,7 +30,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   const clubId = useClubStore(state => state.data?.club?.id);
   const loading = kind === 'league' ? table.loading || games.loading : cupStore.loading;
   const error = kind === 'league' ? table.error || games.error : cupStore.error;
-  useScreenRefresh(() => Promise.all([table.ensure(), games.refresh()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
+  useScreenRefresh(() => Promise.all([table.ensure(), games.ensure()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
   const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
   return <GamePage loading={loading} error={error}>
@@ -51,7 +51,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
         </View>
         {match.status === 'completed' ? <ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: match.id })} /> : match.status === 'live' || match.status === 'in_progress' ? <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: match.id })} /> : <Text style={{ color: palette.muted }}>Agendada</Text>}
       </View>)}
-      {!matches.length && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}
+      {!matches.length && games.data !== null && !loading && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}
     </View>}
     {tab === 'Artilheiros' && <CompetitionStatistics key={kind} kind={kind} openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
   </GamePage>;

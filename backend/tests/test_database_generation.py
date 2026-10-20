@@ -112,3 +112,25 @@ def test_parallel_cold_instances_import_only_one_universe(client):
     assert database.players.count_documents({}) == 500
     assert database.matches.count_documents({}) == 380
     assert database.game_state.find_one({"_id": SEED_MARKER})["status"] == "ready"
+
+
+def test_new_club_table_and_fixtures_are_available_without_processing_games(client):
+    from test_game import account, create
+
+    from app.services.competition import CompetitionService
+
+    database = app.state.database
+    import_database(database)
+    headers = account(client, 988)
+    club = create(client, headers)
+    with patch.object(
+        CompetitionService, "process_due", side_effect=AssertionError("screen simulation")
+    ):
+        table = client.get("/api/competition", headers=headers)
+        games = client.get("/api/competition/matches", headers=headers)
+    assert table.status_code == 200, table.text
+    assert games.status_code == 200, games.text
+    assert len(table.json()["standings"]) == 20
+    assert any(row["club_id"] == club["id"] for row in table.json()["standings"])
+    assert len(games.json()) == 38
+    assert all(club["id"] in (row["home_club_id"], row["away_club_id"]) for row in games.json())

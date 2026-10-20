@@ -993,8 +993,6 @@ class CompetitionService:
     def matches(self, user):
         club = self.repo.owned(user.id)
         season = self.current(self.repo)
-        if self.needs_schedule_update(self.repo, season):
-            self.repo.transaction(self.update_league_interval)
         slot = self.repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
         rows = self.repo.many(
             "matches",

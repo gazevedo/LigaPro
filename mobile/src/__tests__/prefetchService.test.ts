@@ -16,7 +16,7 @@ beforeEach(() => { jest.clearAllMocks(); jest.mocked(AppState.addEventListener).
 test('all dashboard destinations preload before they are opened and reuse their data', async () => {
   await prefetchGameData('club', () => true);
   const paths = jest.mocked(apiRequest).mock.calls.map(([path]) => path);
-  expect(paths[0]).toBe('/competition/matches');
+  expect(paths.slice(0, 2)).toEqual(['/competition/matches', '/competition']);
   expect(paths).toEqual(expect.arrayContaining(['/clubs/club', '/competition', '/competition/matches', '/competition/cup', '/squad', '/tactics', '/stadium', '/finance', '/finance/bank', '/finance/tickets', '/finance/sponsors', '/training', '/youth', '/history', '/game/catalog', '/market/players?sort=value_asc', '/market/mine', '/settings', '/market/players?sort=value_asc&type=sale', '/market/players?sort=value_asc&type=loan', '/market/players?sort=value_asc&status=free_agent']));
   expect(paths.filter(path => path.startsWith('/competition/statistics?'))).toHaveLength(2);
   expect(paths.filter(path => path.startsWith('/calendar?'))).toHaveLength(2);
@@ -103,32 +103,29 @@ test('minute ticks do not overlap a slow initial load', async () => {
   } finally { stop(); jest.useRealTimers(); }
 });
 
-test('overdue games keep updating in background until completed without reloading the market', async () => {
+test('failed league data retries in background without reloading other screens', async () => {
   jest.useFakeTimers();
-  let matchReads = 0;
-  const match = { id: 'late', date: new Date(Date.now() - 86400000).toISOString(), status: 'scheduled' };
+  let tableReads = 0;
   jest.mocked(apiRequest).mockImplementation(async path => {
-    if (path === '/competition/matches') {
-      matchReads++;
-      return [{ ...match, status: matchReads < 3 ? 'scheduled' : 'completed' }];
+    if (path === '/competition') {
+      tableReads++;
+      if (tableReads === 1) throw new Error('Falha temporária');
+      return { standings: [{ club_id: 'club' }] };
     }
+    if (path === '/competition/matches') return [{ id: 'game', status: 'scheduled', date: new Date().toISOString() }];
     return path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {};
   });
   const stop = startGameDataRefresh('club', () => true);
   try {
     await jest.advanceTimersByTimeAsync(0);
-    expect(matchReads).toBe(1);
-    const marketReads = jest.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/market/')).length;
-    await jest.advanceTimersByTimeAsync(2999);
-    expect(matchReads).toBe(1);
-    await jest.advanceTimersByTimeAsync(1);
-    expect(matchReads).toBe(2);
+    expect(tableReads).toBe(1);
+    const initial = jest.mocked(apiRequest).mock.calls.length;
     await jest.advanceTimersByTimeAsync(3000);
-    expect(matchReads).toBe(3);
+    expect(tableReads).toBe(2);
+    expect(jest.mocked(apiRequest).mock.calls.length).toBe(initial + 1);
+    expect(screens.useCompetitionStore.getState().data?.standings).toHaveLength(1);
     await jest.advanceTimersByTimeAsync(9000);
-    expect(matchReads).toBe(3);
-    expect(jest.mocked(apiRequest).mock.calls.filter(([path]) => path.startsWith('/market/'))).toHaveLength(marketReads);
-    expect(screens.useCompetitionMatchesStore.getState().data?.[0].status).toBe('completed');
+    expect(jest.mocked(apiRequest).mock.calls.length).toBe(initial + 1);
   } finally { stop(); jest.useRealTimers(); }
 });
 
@@ -170,4 +167,34 @@ test('future scheduled games do not trigger catch-up polling', async () => {
     await jest.advanceTimersByTimeAsync(15000);
     expect(apiRequest).not.toHaveBeenCalled();
   } finally { stop(); jest.useRealTimers(); }
+});
+
+
+test('league recovers while secondary screens are still loading in background', async () => {
+  jest.useFakeTimers();
+  let tableReads = 0;
+  const finishMarket: (() => void)[] = [];
+  jest.mocked(apiRequest).mockImplementation(async path => {
+    if (path === '/competition') {
+      tableReads++;
+      if (tableReads === 1) throw new Error('Falha temporária');
+      return { standings: [] };
+    }
+    if (path.startsWith('/market/players')) return new Promise(resolve => { finishMarket.push(() => resolve([])); });
+    return path.startsWith('/calendar?') || path === '/matches/upcoming' ? [] : {};
+  });
+  const stop = startGameDataRefresh('club', () => true);
+  try {
+    await jest.advanceTimersByTimeAsync(0);
+    expect(tableReads).toBe(1);
+    expect(finishMarket.length).toBeGreaterThan(0);
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(tableReads).toBe(2);
+    expect(screens.useCompetitionStore.getState().data).not.toBeNull();
+  } finally {
+    stop();
+    for (const finish of finishMarket) finish();
+    await jest.advanceTimersByTimeAsync(0);
+    jest.useRealTimers();
+  }
 });
