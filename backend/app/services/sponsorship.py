@@ -146,6 +146,40 @@ class SponsorshipService:
         repo.event(club["_id"], "sponsor", "Novo patrocinador principal", now, contract["_id"])
         return public(contract)
 
+    @staticmethod
+    def can_terminate(club, contract):
+        return bool(
+            contract.get("status") == "active"
+            and club.get("claimed_at")
+            and contract.get("starts_at")
+            and contract["starts_at"] <= club["claimed_at"]
+        )
+
+    @classmethod
+    def terminate(cls, repo, club, identity, now=None):
+        now = now or utcnow()
+        repo.update("clubs", {"_id": club["_id"]}, {"$inc": {"sponsor_revision": 1}})
+        contract = repo.document("sponsor_contracts", identity)
+        if contract["club_id"] != club["_id"]:
+            raise HTTPException(403, "Contrato de outro clube.")
+        if not cls.can_terminate(club, contract):
+            raise HTTPException(
+                409, "Somente o patrocínio herdado do bot pode ser encerrado antecipadamente."
+            )
+        return public(
+            repo.update(
+                "sponsor_contracts",
+                {"_id": contract["_id"]},
+                {
+                    "$set": {
+                        "status": "terminated",
+                        "ends_at": min(now, contract["ends_at"]),
+                        "terminated_at": now,
+                    }
+                },
+            )
+        )
+
     @classmethod
     def monthly_income(cls, repo, club_id, start, end):
         # Existing contracts retain the R$5k reference; negotiated replacements are prorated.

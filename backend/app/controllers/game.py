@@ -143,8 +143,8 @@ def bank_contract(
 
 
 @router.post("/finance/contracts/{identity}/settle")
-def settle(identity: str, user: User, repo: Repo):
-    return FinanceService(repo).settle(user, identity)
+def settle(identity: str, user: User, repo: Repo, data: MoneyInput | None = None):
+    return FinanceService(repo).settle(user, identity, data.amount if data else None)
 
 
 @router.get("/finance/tickets")
@@ -445,11 +445,13 @@ def loan_contract(
 
 
 @router.post("/finance/loans/{identity}/settle")
-def loan_settle(identity: str, user: User, repo: Repo):
+def loan_settle(identity: str, user: User, repo: Repo, data: MoneyInput | None = None):
     from app.services.bank_loans import BankLoanService
 
     return repo.transaction(
-        lambda tx: BankLoanService.settle(tx, tx.owned(user.id)["_id"], identity)
+        lambda tx: BankLoanService.settle(
+            tx, tx.owned(user.id)["_id"], identity, data.amount if data else None
+        )
     )
 
 
@@ -504,3 +506,12 @@ def upcoming_matches(user: User, repo: Repo):
         )
     ]
     return public(sorted(rows, key=lambda m: m["date"])[:5])
+
+
+@router.post("/finance/sponsors/{identity}/terminate")
+def terminate_sponsor(identity: str, user: User, repo: Repo):
+    from app.services.sponsorship import SponsorshipService
+
+    return repo.transaction(
+        lambda tx: SponsorshipService.terminate(tx, tx.owned(user.id), identity)
+    )

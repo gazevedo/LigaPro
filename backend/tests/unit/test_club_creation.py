@@ -206,8 +206,12 @@ def test_background_preparation_clears_pending_only_after_success(takeover_repo)
         with pytest.raises(RuntimeError):
             ClubService(repo).complete_pending_creations()
     assert season["open_division_pending"] is True
-    with patch("app.services.game.CompetitionService.ensure_open_division") as prepare:
+    with (
+        patch("app.services.game.CompetitionService.ensure_open_division") as prepare,
+        patch("app.services.game.ClubRankingService.refresh") as ranking,
+    ):
         ClubService(repo).complete_pending_creations()
+    ranking.assert_called_once_with(repo, season["_id"])
     prepare.assert_called_once_with(repo, season)
     assert "open_division_pending" not in season
 
@@ -215,6 +219,7 @@ def test_background_preparation_clears_pending_only_after_success(takeover_repo)
 def test_background_preparation_does_nothing_without_pending_jobs():
     repo = Mock()
     repo.many.return_value = []
+    repo.find.return_value = None
     ClubService(repo).complete_pending_creations()
     repo.transaction.assert_not_called()
 
@@ -246,3 +251,18 @@ def test_takeover_rejects_existing_owner_before_claiming_a_bot(takeover_repo):
         )
     assert error.value.status_code == 409
     repo.update.assert_not_called()
+
+
+def test_background_repairs_initial_zero_ranking_without_a_creation_job(takeover_repo):
+    repo, _, season, _ = takeover_repo
+    repo.many.side_effect = None
+    repo.many.return_value = []
+    repo.find.side_effect = None
+    repo.find.return_value = season
+    with (
+        patch("app.services.game.ClubRankingService.refresh") as ranking,
+        patch("app.services.game.CompetitionService.ensure_open_division") as prepare,
+    ):
+        ClubService(repo).complete_pending_creations()
+    ranking.assert_called_once_with(repo, season["_id"])
+    prepare.assert_not_called()

@@ -1,18 +1,32 @@
+import { Text, View } from 'react-native';
 import { useScreenRefresh } from '../components/useScreenRefresh';
 import { useTicketingStore } from '../stores/screenStores';
-import { useState } from 'react';
-import { Text } from 'react-native';
-import { financeService } from '../services/financeService';
-import { ActionButton as Button, Field, GamePage, cents, money, useAction } from '../components/GameUI';
+import { Card, GamePage, money, palette } from '../components/GameUI';
+import { TicketMatch } from '../types/game';
+const statusNames: Record<string, string> = { completed: 'Encerrado', finished: 'Encerrado', live: 'Em andamento', scheduled: 'Agendado' };
+function MatchInfo({ match }: { match?: TicketMatch | null }) {
+  if (!match) return null;
+  return <View style={{ gap: 6 }}><Text style={{ fontWeight: '700' }}>{match.home_name} × {match.away_name}</Text>
+    <Text>{new Date(match.date).toLocaleString('pt-BR')} · {statusNames[match.status] ?? match.status}</Text>
+    {match.home_goals != null && match.away_goals != null && <Text>Placar: {match.home_goals} × {match.away_goals}</Text>}
+  </View>;
+}
 export function TicketingScreen() {
-  const store = useTicketingStore(), { data, loading, error, ensure } = store;
-  const [price, setPrice] = useState<string | null>(() => data ? String(data.price / 100) : null);
-  const action = useAction();
-  async function load() { await store.load(); const result = useTicketingStore.getState().data; if (result) setPrice(String(result.price / 100)); }
-  useScreenRefresh(ensure, store.refresh);
-  const displayedPrice = price ?? (data ? String(data.price / 100) : '');
-  const entered = Number(displayedPrice.replace(',', '.')) * 100;
-  const estimate = data ? Math.max(0, Math.min(data.capacity, Math.round((data.supporters ?? 1000) * (data.attendance_share ?? .1) * (.4 + .8 * (data.fan_confidence ?? data.fan_satisfaction ?? 50) / 100) * (1 + (data.reputation ?? 10) / 200) * Math.min(1.5, 2000 / Math.max(500, entered))))) : 0;
-  const preview = data?.estimated_attendance !== undefined && entered === data.price ? data.estimated_attendance : estimate;
-  return <GamePage loading={loading || action.busy} error={action.error || error}><Text>Capacidade: {data?.capacity} · Renda: {money(data?.income ?? 0)}</Text><Field label="Preço do ingresso (R$)" value={displayedPrice} onChange={setPrice} numeric /><Text>Público estimado com este preço: {Number.isFinite(preview) ? preview : 0} pessoas</Text><Text>Preços mais altos reduzem a procura. A capacidade limita o público.</Text><Text>Configure preços por setor na tela Estádio. Ao salvar aqui, o valor será aplicado a todos os setores.</Text><Button title="Salvar preço" disabled={action.busy} onPress={() => void action.run(async () => { await financeService.price(cents(displayedPrice)); await load(); })} /><Text>Histórico de público</Text>{!data?.history.length && <Text>Nenhuma partida disputada.</Text>}{data?.history.map(h => <Text key={h.id}>{h.attendance} pessoas · {money(h.income)}</Text>)}</GamePage>;
+  const { data, loading, error, ensure, refresh } = useTicketingStore();
+  useScreenRefresh(ensure, refresh);
+  const last = data?.last_match ?? data?.history[0];
+  return <GamePage loading={loading} error={error}>
+    <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Último jogo em casa</Text>
+      {last ? <><MatchInfo match={last.match} /><Text>Público: {last.attendance} pessoas</Text><Text>Faturamento: {money(last.income)}</Text></> : <Text>Nenhuma partida com bilheteria registrada.</Text>}
+    </Card>
+    <Card><Text style={{ fontSize: 20, fontWeight: '700', color: palette.ink }}>Projeção para o próximo jogo em casa</Text>
+      {data?.next_match ? <><MatchInfo match={data.next_match} /><Text>Público estimado: {data.estimated_attendance ?? 0} pessoas</Text><Text>Faturamento estimado: {money(data.estimated_income ?? 0)}</Text></> : <Text>Nenhum jogo em casa agendado.</Text>}
+      <Text>Capacidade: {data?.capacity ?? 0} pessoas</Text><Text style={{ color: palette.muted }}>A projeção usa os preços configurados no estádio.</Text>
+    </Card>
+    <Card><Text style={{ fontSize: 20, fontWeight: '700', color: palette.ink }}>Histórico de público e faturamento</Text>
+      <Text>Faturamento acumulado: {money(data?.income ?? 0)}</Text>
+      {!data?.history.length && <Text>Nenhuma partida disputada.</Text>}
+      {data?.history.map(row => <View key={row.id} style={{ gap: 8, borderTopWidth: 1, borderColor: palette.border, paddingTop: 12 }}><MatchInfo match={row.match} />{!row.match && row.created_at && <Text>{new Date(row.created_at).toLocaleDateString('pt-BR')}</Text>}<Text>{row.attendance} pessoas · {money(row.income)}</Text></View>)}
+    </Card>
+  </GamePage>;
 }

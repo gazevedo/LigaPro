@@ -29,7 +29,7 @@ class BankLoanService:
             limit=None,
         )
         debt = sum(loan["remaining_balance"] for loan in loans) + sum(
-            loan["amount"] + loan["interest"] for loan in legacy
+            loan.get("remaining_balance", loan["amount"] + loan["interest"]) for loan in legacy
         )
         revenue = max(
             0, finance.get("monthly_fixed_revenue", 1500000), finance.get("monthly_income", 0)
@@ -102,24 +102,12 @@ class BankLoanService:
             limit=None,
         ):
             amount = min(loan["installment_value"], loan["remaining_balance"])
-            balance = repo.find("club_finances", {"_id": club_id})["balance"]
-            if balance < amount:
-                repo.update(
-                    "club_loans",
-                    {"_id": loan["_id"]},
-                    {"$set": {"status": "overdue", "missed_at": end}},
-                )
-                repo.update(
-                    "club_finances",
-                    {"_id": club_id},
-                    {"$set": {"financial_risk": "high", "credit_blocked": True}},
-                )
-                continue
             repo.money(
                 club_id,
                 -amount,
                 "loan_installment",
                 f"{loan['_id']}:{loan['paid_installments']}",
+                allow_overdraft=True,
                 effective_at=end - timedelta(microseconds=1),
             )
             remaining = loan["remaining_balance"] - amount
@@ -138,17 +126,33 @@ class BankLoanService:
         repo.update("club_finances", {"_id": club_id}, {"$set": cls.credit(repo, club_id)})
 
     @classmethod
-    def settle(cls, repo, club_id, identity):
+    def settle(cls, repo, club_id, identity, amount=None):
         loan = repo.document("club_loans", identity)
         if loan["club_id"] != club_id:
             raise HTTPException(403, "Empréstimo de outro clube.")
         if loan["status"] not in {"active", "overdue"}:
             raise HTTPException(409, "Empréstimo já quitado.")
-        repo.money(club_id, -loan["remaining_balance"], "loan_settlement", loan["_id"])
+        payment = loan["remaining_balance"] if amount is None else amount
+        if payment <= 0 or payment > loan["remaining_balance"]:
+            raise HTTPException(422, "Informe um valor entre zero e o saldo devedor.")
+        remaining = loan["remaining_balance"] - payment
+        repo.money(
+            club_id,
+            -payment,
+            "loan_settlement",
+            f"{loan['_id']}:advance:{loan['remaining_balance']}",
+            allow_overdraft=True,
+        )
         repo.update(
             "club_loans",
             {"_id": loan["_id"]},
-            {"$set": {"remaining_balance": 0, "status": "settled", "settled_at": utcnow()}},
+            {
+                "$set": {
+                    "remaining_balance": remaining,
+                    "status": "settled" if remaining == 0 else loan["status"],
+                    **({"settled_at": utcnow()} if remaining == 0 else {}),
+                }
+            },
         )
         repo.update("club_finances", {"_id": club_id}, {"$set": cls.credit(repo, club_id)})
         return public(repo.find("club_loans", {"_id": loan["_id"]}))

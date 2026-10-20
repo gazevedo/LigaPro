@@ -24,6 +24,7 @@ from app.models.game import FACILITIES, public, utcnow
 from app.models.player import choose_shirt_number, player_public
 from app.services.bank_loans import PRODUCTS, BankLoanService
 from app.services.chemistry import ChemistryService
+from app.services.club_prestige import ClubRankingService
 from app.services.competition import CompetitionService
 from app.services.fan_base import FanBaseService
 from app.services.market_value import MarketValueService
@@ -257,18 +258,29 @@ class ClubService:
             "seasons", {"status": "active", "open_division_pending": True}, limit=1
         )
         if not pending:
-            return
+            season = CompetitionService.current(self.repo)
+            if not season or not self.repo.find(
+                "clubs",
+                {
+                    "active": {"$ne": False},
+                    "$or": [{"ranking_position": 0}, {"ranking_position": {"$exists": False}}],
+                },
+            ):
+                return
+            pending = [season]
         CompetitionService.ensure_lock(self.repo)
 
         def operation(repo):
             CompetitionService.lock(repo)
             season = repo.find(
                 "seasons",
-                {"_id": pending[0]["_id"], "status": "active", "open_division_pending": True},
+                {"_id": pending[0]["_id"], "status": "active"},
             )
             if not season:
                 return
-            CompetitionService.ensure_open_division(repo, season)
+            if season.get("open_division_pending"):
+                CompetitionService.ensure_open_division(repo, season)
+            ClubRankingService.refresh(repo, season["_id"])
             repo.update(
                 "seasons", {"_id": season["_id"]}, {"$unset": {"open_division_pending": ""}}
             )
@@ -685,7 +697,7 @@ class FinanceService:
 
         return self.repo.transaction(operation)
 
-    def settle(self, user, identity):
+    def settle(self, user, identity, payment=None):
         def operation(repo):
             club, contract = repo.owned(user.id), repo.document("bank_contracts", identity)
             if contract["club_id"] != club["_id"]:
@@ -694,18 +706,31 @@ class FinanceService:
                 raise HTTPException(409, "Contrato já encerrado.")
             if contract["type"] == "investment" and contract["ends_at"] > utcnow():
                 raise HTTPException(409, "Investimento ainda não venceu.")
-            amount = contract["amount"] + contract["interest"]
+            debt = contract.get("remaining_balance", contract["amount"] + contract["interest"])
+            amount = debt if payment is None else payment
+            if (
+                amount <= 0
+                or amount > debt
+                or (contract["type"] == "investment" and amount != debt)
+            ):
+                raise HTTPException(422, "Valor de quitação inválido.")
             repo.money(
                 club["_id"],
                 amount if contract["type"] == "investment" else -amount,
                 "bank_settlement",
                 contract["_id"],
+                allow_overdraft=contract["type"] == "bank_loan",
             )
             return public(
                 repo.update(
                     "bank_contracts",
                     {"_id": contract["_id"], "status": "active"},
-                    {"$set": {"status": "settled"}},
+                    {
+                        "$set": {
+                            "status": "settled" if amount == debt else "active",
+                            "remaining_balance": debt - amount,
+                        }
+                    },
                 )
             )
 
@@ -714,14 +739,81 @@ class FinanceService:
     def tickets(self, user):
         club = self.repo.owned(user.id)
         stadium = self.repo.find("stadiums", {"_id": club["_id"]})
-        sector_rows = FanBaseService.sector_ticketing(club, stadium)
+        history = self.repo.many(
+            "ticket_history", {"club_id": club["_id"]}, sort=[("created_at", -1)], limit=200
+        )
+        identities = [row["match_id"] for row in history]
+        matches, upcoming = {}, []
+        match_fields = {
+            key: 1
+            for key in (
+                "date",
+                "status",
+                "home_club_id",
+                "away_club_id",
+                "home_goals",
+                "away_goals",
+            )
+        }
+        for collection in ("matches", "competition_matches", "friendly_matches"):
+            for match in self.repo.many(
+                collection, {"_id": {"$in": identities}}, limit=None, projection=match_fields
+            ):
+                matches[match["_id"]] = match
+            upcoming.extend(
+                self.repo.many(
+                    collection,
+                    {"home_club_id": club["_id"], "status": {"$in": ["scheduled", "live"]}},
+                    sort=[("date", 1)],
+                    limit=1,
+                    projection=match_fields,
+                )
+            )
+        next_match = min(upcoming, key=lambda match: match["date"]) if upcoming else None
+        team_ids = {
+            team
+            for match in list(matches.values()) + upcoming
+            for team in (match["home_club_id"], match["away_club_id"])
+        }
+        teams = (
+            {
+                team["_id"]: team
+                for team in self.repo.many(
+                    "clubs",
+                    {"_id": {"$in": list(team_ids)}},
+                    limit=None,
+                    projection={"name": 1, "supporters": 1, "reputation": 1},
+                )
+            }
+            if team_ids
+            else {}
+        )
+
+        def describe(match):
+            if not match:
+                return None
+            return {
+                key: match.get(key) for key in ("_id", "date", "status", "home_goals", "away_goals")
+            } | {
+                "home_name": teams.get(match["home_club_id"], {}).get("name", club["name"]),
+                "away_name": teams.get(match["away_club_id"], {}).get("name", "Adversário"),
+            }
+
+        rows = [dict(row, match=describe(matches.get(row["match_id"]))) for row in history]
+        opponent = teams.get(next_match["away_club_id"]) if next_match else None
+        sector_rows = FanBaseService.sector_ticketing(club, stadium, opponent=opponent)
         return public(
             {
                 "price": stadium["ticket_price"],
                 "capacity": stadium["capacity"],
-                "history": self.repo.many("ticket_history", {"club_id": club["_id"]}),
+                "history": rows,
+                "last_match": rows[0] if rows else None,
+                "next_match": describe(next_match),
                 "income": self.repo.ticket_income(club["_id"]),
-                "estimated_attendance": sum(row["attendance"] for row in sector_rows),
+                "estimated_attendance": sum(row["attendance"] for row in sector_rows)
+                if next_match
+                else 0,
+                "estimated_income": sum(row["income"] for row in sector_rows) if next_match else 0,
                 "sectors": sector_rows,
                 "attendance_share": FanBaseService.ATTENDANCE_SHARE,
                 "supporters": club.get("supporters", 1000),
@@ -753,7 +845,12 @@ class FinanceService:
             club = repo.owned(user.id)
             return public(
                 {
-                    "contracts": repo.many("sponsor_contracts", {"club_id": club["_id"]}),
+                    "contracts": [
+                        dict(
+                            contract, can_terminate=SponsorshipService.can_terminate(club, contract)
+                        )
+                        for contract in repo.many("sponsor_contracts", {"club_id": club["_id"]})
+                    ],
                     "offers": SponsorshipService.offers(repo, club),
                 }
             )
@@ -1402,20 +1499,20 @@ def process_due(repository):
             current = repo.find("bank_contracts", {"_id": identity, "status": "active"})
             if not current:
                 return
-            amount = current["amount"] + current["interest"]
-            if (
-                current["type"] == "bank_loan"
-                and repo.find("club_finances", {"_id": current["club_id"]})["balance"] < amount
-            ):
-                repo.update("bank_contracts", {"_id": identity}, {"$set": {"overdue": True}})
-                return
+            amount = current.get("remaining_balance", current["amount"] + current["interest"])
             repo.money(
                 current["club_id"],
                 amount if current["type"] == "investment" else -amount,
                 "bank_settlement",
                 identity,
+                allow_overdraft=True,
+                effective_at=current["ends_at"],
             )
-            repo.update("bank_contracts", {"_id": identity}, {"$set": {"status": "settled"}})
+            repo.update(
+                "bank_contracts",
+                {"_id": identity},
+                {"$set": {"status": "settled", "remaining_balance": 0}},
+            )
 
         repository.transaction(settle)
     repository.update_many(
