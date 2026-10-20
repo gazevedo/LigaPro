@@ -217,3 +217,37 @@ def test_legacy_due_payment_is_debited_on_due_date_even_without_cash():
         allow_overdraft=True,
         effective_at=now,
     )
+
+
+def test_payroll_associates_position_and_shirt_number_with_the_correct_player():
+    from app.services.player_contracts import ContractService
+
+    now = utcnow()
+    contracts = [
+        {
+            "player_id": identity,
+            "salary": 100,
+            "expires_at": now + timedelta(days=1),
+            "paid_until": now,
+            "salary_period_seconds": 86400,
+            "status": "active",
+        }
+        for identity in ("first", "second")
+    ]
+    players = [
+        {"_id": "second", "name": "Atacante", "position": "ATT", "shirt_number": 9},
+        {"_id": "first", "name": "Goleiro", "position": "GK", "shirt_number": 1},
+    ]
+    repo = Mock()
+    repo.many.side_effect = lambda collection, *args, **kwargs: (
+        contracts
+        if collection == "player_contracts"
+        else players
+        if collection == "players"
+        else []
+    )
+    rows = ContractService(repo).finance("club")["salary_costs"]
+    assert [(row["name"], row["position"], row["shirt_number"]) for row in rows] == [
+        ("Goleiro", "GK", 1),
+        ("Atacante", "ATT", 9),
+    ]

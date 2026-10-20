@@ -330,8 +330,33 @@ def cup(user: User, repo: Repo):
 
 
 @router.get("/clubs/ranking/current")
-def club_ranking(repo: Repo):
+def club_ranking(
+    repo: Repo,
+    page: Annotated[int | None, Query(ge=1)] = None,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+):
     from app.models.game import public
+
+    if page is not None:
+        query = {"active": {"$ne": False}}
+        total = repo.database.clubs.count_documents(query, session=repo.session)
+        items = repo.many(
+            "clubs",
+            query,
+            limit=page_size,
+            skip=(page - 1) * page_size,
+            sort=[("ranking_points", -1), ("_id", 1)],
+            projection={"name": 1, "ranking_points": 1, "ranking_position": 1, "reputation": 1},
+        )
+        return public(
+            {
+                "items": items,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "pages": max(1, (total + page_size - 1) // page_size),
+            }
+        )
 
     return public(
         repo.many(

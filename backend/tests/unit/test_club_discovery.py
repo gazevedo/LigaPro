@@ -34,3 +34,27 @@ def test_opponent_roster_uses_current_club_and_hides_private_player_fields():
         "current_club_id": identity,
         "status": {"$ne": "retired"},
     }
+
+
+def test_paginated_ranking_counts_all_active_clubs_and_requests_only_one_page():
+    repo = Mock()
+    repo.session = None
+    repo.database.clubs.count_documents.return_value = 45
+    repo.many.return_value = [{"_id": "club", "name": "Novo", "ranking_position": 0}]
+    result = club_ranking(repo, page=2, page_size=20)
+    assert result["total"] == 45 and result["pages"] == 3 and result["page"] == 2
+    assert result["items"][0]["name"] == "Novo"
+    repo.database.clubs.count_documents.assert_called_once_with(
+        {"active": {"$ne": False}}, session=None
+    )
+    assert repo.many.call_args.kwargs["skip"] == 20
+    assert repo.many.call_args.kwargs["limit"] == 20
+    assert repo.many.call_args.kwargs["sort"] == [("ranking_points", -1), ("_id", 1)]
+
+
+def test_empty_paginated_ranking_has_one_empty_page():
+    repo = Mock()
+    repo.database.clubs.count_documents.return_value = 0
+    repo.many.return_value = []
+    result = club_ranking(repo, page=1, page_size=20)
+    assert result["items"] == [] and result["pages"] == 1

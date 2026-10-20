@@ -16,7 +16,7 @@ export function MatchReportScreen({ route, navigation }: NativeStackScreenProps<
     <Button title="Atualizar relatório" onPress={() => void load(route.params.id)} />
     {report && <>
       <Text style={{ fontSize: 22 }}>{report.home_name} {report.match.home_goals} × {report.match.away_goals} {report.away_name}</Text>
-      <Text>{report.match.phase ? `Copa Nacional · ${report.match.phase}` : report.match.round ? `Rodada ${report.match.round}` : 'Amistoso'} · {new Date(report.match.date).toLocaleString('pt-BR')}</Text>
+      <Text>{report.match.phase ? `Copa Nacional · ${report.match.phase}` : report.match.round ? `Rodada ${report.match.round}` : 'Amistoso'} · {new Date(report.match.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</Text>
       {report.match.extra_time && <Text>Partida com prorrogação · 120 minutos</Text>}{report.match.shootout_score && <Text>Pênaltis: {report.match.shootout_score[report.match.home_club_id]} × {report.match.shootout_score[report.match.away_club_id]}</Text>}{report.match.winner_club_id && <Text>Classificado: {report.match.winner_club_id === report.match.home_club_id ? report.home_name : report.away_name}</Text>}
       <Text>{report.competition}</Text>
       <Text>Estatísticas: mandante × visitante</Text>

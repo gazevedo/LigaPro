@@ -58,10 +58,12 @@ test('ticketing refresh updates revenue and keeps empty state informative', asyn
 test('payroll lists monthly salaries and opens the player contract', async () => {
   const navigate = jest.fn();
   const navigation = { navigate, isFocused: () => true, addListener: () => () => {} } as unknown as NavigationProp<ParamListBase>;
-  jest.mocked(financeService.get).mockResolvedValue({ balance: 0, transactions: [], monthly_payroll: 120000, salary_costs: [{ player_id: 'player', name: 'João', salary: 120000, expires_at: '2027-01-01', status: 'active' }] });
+  jest.mocked(financeService.get).mockResolvedValue({ balance: 0, transactions: [], monthly_payroll: 120000, salary_costs: [{ player_id: 'player', name: 'João', position: 'ATT', shirt_number: 9, salary: 120000, expires_at: '2027-01-01', status: 'active' }] });
   await render(<NavigationContext.Provider value={navigation}><FinanceScreen /></NavigationContext.Provider>);
   await fireEvent.press(screen.getByRole('tab', { name: 'Folha de pagamento' }));
   await screen.findByText('João');
+  expect(screen.getByLabelText('Camisa de João')).toHaveTextContent('9');
+  expect(screen.getByLabelText('Posição de João')).toHaveTextContent('ATA');
   expect(screen.getByText(/Folha mensal:/)).toHaveTextContent(/1\.200/);
   await fireEvent.press(screen.getByRole('button', { name: 'Abrir contrato de João' }));
   expect(navigate).toHaveBeenCalledWith('PlayerNegotiation', { id: 'player' });

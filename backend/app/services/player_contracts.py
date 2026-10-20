@@ -583,6 +583,8 @@ class ContractService:
                 {
                     "player_id": str(c["player_id"]),
                     "name": players.get(c["player_id"], {}).get("name", "Jogador"),
+                    "position": players.get(c["player_id"], {}).get("position"),
+                    "shirt_number": players.get(c["player_id"], {}).get("shirt_number"),
                     "salary": c["salary"],
                     "expires_at": c["expires_at"],
                     "status": c["status"],

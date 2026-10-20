@@ -10,7 +10,7 @@ import { useNotificationStore } from '../stores/notificationStore';
 import { squadService } from '../services/squadService';
 import { ActionButton, Card, GamePage, NotificationBubble, palette } from '../components/GameUI';
 import { PlayerPopup } from '../components/PlayerPopup';
-import { PlayerStars } from '../components/PlayerStars';
+import { PlayerRosterCells, PlayerRosterHeader } from '../components/PlayerRosterColumns';
 export function SquadScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Squad'>) {
   const compact = useWindowDimensions().width < 600;
   const { data, loading, error, ensure } = useSquadStore();
@@ -52,10 +52,10 @@ export function SquadScreen({ navigation }: NativeStackScreenProps<RootStackPara
     });
   }
   return <GamePage loading={loading} error={error}><Card><View style={{ width: '100%', minWidth: 0 }}>
-    <View style={{ flexDirection: 'row', gap: 6 }}><Text style={{ width: 42, fontSize: 12 }}>Camisa</Text><Text style={{ width: 28, fontSize: 12 }}>Pos.</Text><Text style={{ flex: 1, minWidth: 0, fontWeight: '700' }}>Nome</Text>{!compact && <><Text style={{ width: 36 }}>Idade</Text><Text style={{ width: 40 }}>Força</Text><Text style={{ width: 65 }}>Estrelas</Text></>}<Text style={{ width: 56, fontSize: 12 }}>Contrato</Text></View>
+    <PlayerRosterHeader compact={compact} trailing="Contrato" />
     {players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Detalhes de ${player.name}`} onPress={() => setSelected(player.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, borderTopWidth: 1, borderColor: palette.border }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Editar camisa de ${player.name}`} onPress={event => { event.stopPropagation(); setInput(String(numberOf(player.id) ?? '')); setValidation(null); setEditor(player.id); }} style={{ width: 42, paddingVertical: 8 }}><Text style={{ fontWeight: '700', color: duplicates.has(numberOf(player.id)) ? '#dc2626' : palette.ink }}>{numberOf(player.id) ?? '—'}</Text></Pressable>
-      <Text style={{ width: 28, fontSize: 12 }}>{({ GK: 'GOL', CB: 'ZAG', FB: 'LAT', MID: 'MED', ATT: 'ATA' } as Record<string, string>)[player.position] ?? player.position}</Text><View style={{ flex: 1, minWidth: 0, gap: 4 }}><Text numberOfLines={2} style={{ color: palette.ink, fontWeight: '600' }}>{player.name}</Text>{compact && <Text style={{ color: palette.muted, fontSize: 11 }}>{player.age} anos · Força {player.strength ?? player.overall} · ★ {player.stars ?? 0}</Text>}</View>{!compact && <><Text style={{ width: 36 }}>{player.age}</Text><Text style={{ width: 40 }}>{player.strength ?? player.overall}</Text><View style={{ width: 65 }}><PlayerStars count={player.stars} /></View></>}<Pressable accessibilityRole="button" accessibilityLabel={`Contrato de ${player.name}`} onPress={event => { event.stopPropagation(); navigation.navigate('PlayerNegotiation', { id: player.id }); }} style={{ width: 56, paddingVertical: 8, alignItems: 'center' }}><Text>📄</Text></Pressable>
+      <PlayerRosterCells player={player} compact={compact} /><Pressable accessibilityRole="button" accessibilityLabel={`Contrato de ${player.name}`} onPress={event => { event.stopPropagation(); navigation.navigate('PlayerNegotiation', { id: player.id }); }} style={{ width: 56, paddingVertical: 8, alignItems: 'center' }}><Text>📄</Text></Pressable>
     </Pressable>)}
     </View>
   </Card><PlayerPopup id={selected} onClose={() => setSelected(null)} navigation={navigation} />

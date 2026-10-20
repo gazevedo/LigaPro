@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from pymongo import UpdateOne
 
 from app.config.game import GameConfig
-from app.models.game import public, utcnow
+from app.models.game import public, round_match_time, utcnow
 
 
 class SeasonCalendarService:
@@ -88,17 +88,14 @@ class FriendlyService:
             from app.services.competition import CompetitionService
 
             CompetitionService.lock(repo)
+            date = round_match_time(data.date)
             club, rival = repo.owned(user.id), repo.document("clubs", data.opponent_club_id)
             season = CompetitionService.current(repo)
             if rival["_id"] == club["_id"] or rival.get("active") is False:
                 raise HTTPException(409, "Adversário indisponível.")
-            if (
-                not season
-                or data.date.tzinfo is None
-                or not utcnow() < data.date < season["ends_at"]
-            ):
+            if not season or date.tzinfo is None or not utcnow() < date < season["ends_at"]:
                 raise HTTPException(422, "Escolha um horário futuro nesta temporada.")
-            SeasonCalendarService.free(repo, [club["_id"], rival["_id"]], data.date)
+            SeasonCalendarService.free(repo, [club["_id"], rival["_id"]], date)
             match = repo.insert(
                 "friendly_matches",
                 {
@@ -106,7 +103,7 @@ class FriendlyService:
                     "season_id": season["_id"],
                     "home_club_id": club["_id"],
                     "away_club_id": rival["_id"],
-                    "date": data.date,
+                    "date": date,
                     "seed": str(ObjectId()),
                     "status": "scheduled" if rival.get("is_bot") else "pending",
                     "created_at": utcnow(),

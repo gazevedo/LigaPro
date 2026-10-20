@@ -4,7 +4,7 @@ import { YouthAcademyScreen } from '../screens/YouthAcademyScreen';
 import { developmentService } from '../services/developmentService';
 import { useAuthStore } from '../stores/authStore';
 jest.mock('../services/developmentService', () => ({ developmentService: {
-  training: jest.fn(), youth: jest.fn(), train: jest.fn(), promote: jest.fn(),
+  training: jest.fn(), youth: jest.fn(), train: jest.fn(), promote: jest.fn(), selectYouth: jest.fn(), release: jest.fn(),
 } }));
 const player = { id: 'p1', name: 'Pedro Silva', age: 21, position: 'MID', strength: 50,
   overall: 50, training_progress: 99, country_id: 'BR', value: 100000,
@@ -38,7 +38,9 @@ test('youth permits promotion at eighteen and reloads the academy', async () => 
     .mockResolvedValueOnce([underage]);
   jest.mocked(developmentService.promote).mockResolvedValue(player);
   await render(<YouthAcademyScreen />);
-  expect(await screen.findByRole('button', { name: 'Promover Lucas Alves' })).toBeDisabled();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Detalhes de Lucas Alves' }));
+  expect(screen.getByRole('button', { name: 'Promover Lucas Alves' })).toBeDisabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Detalhes de Pedro Silva' }));
   await fireEvent.press(screen.getByText('Promover Pedro Silva'));
   await waitFor(() => expect(developmentService.promote).toHaveBeenCalledWith('p1'));
   await waitFor(() => expect(screen.queryByText('Promover Pedro Silva')).toBeNull());
@@ -49,4 +51,19 @@ test('training hides exact potential and disables players at their ceiling', asy
   await render(<TrainingScreen />);
   expect(await screen.findByRole('button', { name: 'Treinar Pedro Silva' })).toBeDisabled();
   await screen.findByText('Jogador indisponível ou no limite de desenvolvimento.');
+});
+
+test('youth uses squad columns and keeps candidate selection available', async () => {
+  const candidate = { ...player, id: 'candidate', name: 'João Jovem', age: 16, shirt_number: 8, status: 'candidate', position: 'CB', stars: 2 };
+  jest.mocked(developmentService.youth).mockResolvedValueOnce([candidate]).mockResolvedValueOnce([]);
+  jest.mocked(developmentService.selectYouth).mockResolvedValue(candidate);
+  await render(<YouthAcademyScreen />);
+  await screen.findByText('João Jovem');
+  expect(screen.getByText('Camisa')).toBeTruthy();
+  expect(screen.getByText('Pos.')).toBeTruthy();
+  expect(screen.getByText('8')).toBeTruthy();
+  expect(screen.getByText('ZAG')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'Detalhes de João Jovem' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Escolher João Jovem' }));
+  await waitFor(() => expect(developmentService.selectYouth).toHaveBeenCalledWith('candidate'));
 });

@@ -12,7 +12,7 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 from app.config.economy import EconomyConfig
 from app.config.game import GameConfig
 from app.config.names import club_name
-from app.models.game import public, utcnow
+from app.models.game import public, round_match_time, utcnow
 from app.services.chemistry import ChemistryService
 from app.services.club_prestige import ClubRankingService, ClubReputationService
 from app.services.cup import CupService
@@ -154,7 +154,7 @@ class CompetitionService:
             "config": config.snapshot(),
             "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
             "league_games_per_day": config.MATCHES_PER_DAY,
-            "league_schedule_revision": 3,
+            "league_schedule_revision": 4,
         }
         repo.insert("seasons", season)
         return season
@@ -282,10 +282,11 @@ class CompetitionService:
             if len(set(inferred)) == 20 and set(inferred) == set(by_id):
                 order = inferred
         fixtures, events = [], []
+        kickoff_base = round_match_time(season["starts_at"] + timedelta(minutes=15))
         for number, (pairs, offset) in enumerate(
             zip(round_robin(order), config.round_offsets()), 1
         ):
-            date = season["starts_at"] + timedelta(days=offset)
+            date = round_match_time(kickoff_base + timedelta(days=offset))
             for home, away in pairs:
                 if (home, away) in occupied:
                     continue
@@ -519,7 +520,7 @@ class CompetitionService:
     @staticmethod
     def needs_schedule_update(repo, season):
         return bool(season) and (
-            season.get("league_schedule_revision") != 3
+            season.get("league_schedule_revision") != 4
             or season.get("league_games_per_day") != repo.rules().get("MATCHES_PER_DAY", 24)
         )
 
@@ -557,10 +558,20 @@ class CompetitionService:
         dates = {}
         for number in rounds:
             day = config.playing_day(day)
-            dates[number] = starts_at + timedelta(days=day)
+            dates[number] = round_match_time(starts_at + timedelta(days=day))
             day += 1 / config.MATCHES_PER_DAY
         for match in matches:
-            date = dates[match["round"]]
+            original = match.get("date")
+            # A clock-format migration must not postpone overdue games or reset
+            # a healthy schedule each time the application restarts.
+            keep_date = original and (
+                original <= now
+                or season.get(
+                    "league_games_per_day", season.get("config", {}).get("MATCHES_PER_DAY")
+                )
+                == config.MATCHES_PER_DAY
+            )
+            date = round_match_time(original) if keep_date else dates[match["round"]]
             repo.update(
                 "matches", {"_id": match["_id"], "status": "scheduled"}, {"$set": {"date": date}}
             )
@@ -574,7 +585,7 @@ class CompetitionService:
                 "$set": {
                     "league_interval_minutes": config.MATCH_INTERVAL_MINUTES,
                     "league_games_per_day": config.MATCHES_PER_DAY,
-                    "league_schedule_revision": 3,
+                    "league_schedule_revision": 4,
                     "config.MATCHES_PER_DAY": config.MATCHES_PER_DAY,
                     "config.MATCH_INTERVAL_MINUTES": config.MATCH_INTERVAL_MINUTES,
                     "config.ROUND_OFFSETS_DAYS": [],

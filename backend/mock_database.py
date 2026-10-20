@@ -2,13 +2,13 @@
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from bson.json_util import JSONOptions, loads
 from pymongo import MongoClient, UpdateOne
 
-from app.models.game import utcnow
+from app.models.game import round_match_time, utcnow
 from app.repositories.game import GameRepository
 
 logger = logging.getLogger(__name__)
@@ -55,10 +55,27 @@ def import_database(database):
         upsert=True,
     )
     offset = seed["started_at"] - payload["anchor"]
+    kickoff_offset = (
+        round_match_time(seed["started_at"] + timedelta(minutes=15)) - seed["started_at"]
+    )
+    match_dates = {
+        document["_id"]: round_match_time(document["date"] + offset + kickoff_offset)
+        for collection in ("matches", "competition_matches", "friendly_matches")
+        for document in payload["collections"].get(collection, [])
+        if document.get("status") in {"scheduled", "pending"}
+    }
     repo.initialize()
     universe_marker = None
     for collection, documents in payload["collections"].items():
         documents = shift_dates(documents, offset)
+        for document in documents:
+            if (
+                collection in ("matches", "competition_matches", "friendly_matches")
+                and document["_id"] in match_dates
+            ):
+                document["date"] = match_dates[document["_id"]]
+            elif collection == "calendar_events" and document.get("reference_id") in match_dates:
+                document["date"] = match_dates[document["reference_id"]]
         if collection == "game_state":
             universe_marker = next(doc for doc in documents if doc["_id"] == "initial_universe")
             documents = [doc for doc in documents if doc["_id"] != "initial_universe"]

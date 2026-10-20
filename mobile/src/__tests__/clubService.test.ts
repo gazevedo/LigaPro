@@ -14,3 +14,9 @@ test.each([new ApiTimeoutError(), new ApiError(401, 'Sessão expirada'), new Api
   await expect(clubService.create({ name: 'Clube', country_id: 'BR', badge_id: 'blue' })).rejects.toBe(error);
   expect(request).toHaveBeenCalledTimes(1);
 });
+
+test('ranking requests only the selected page', async () => {
+  request.mockResolvedValueOnce({ items: [], page: 3, page_size: 20, total: 45, pages: 3 });
+  await expect(clubService.ranking(3)).resolves.toMatchObject({ page: 3, pages: 3 });
+  expect(request).toHaveBeenCalledWith('/clubs/ranking/current?page=3&page_size=20');
+});

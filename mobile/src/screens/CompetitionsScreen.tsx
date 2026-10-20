@@ -45,7 +45,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
       <Text style={{ fontSize: 20, fontWeight: '800', color: palette.ink, paddingVertical: 12 }}>Jogos do clube</Text>
       {matches.map(match => <View key={match.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderTopWidth: 1, borderColor: palette.border }}>
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={{ color: palette.muted, fontSize: 12 }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR')}</Text>
+          <Text style={{ color: palette.muted, fontSize: 12 }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</Text>
           <Text style={{ fontWeight: '700', color: palette.ink }}>{match.home_name ?? 'Mandante'} × {match.away_name ?? 'Visitante'}</Text>
           {match.status === 'completed' && <Text>{match.home_goals ?? 0} × {match.away_goals ?? 0}</Text>}
         </View>

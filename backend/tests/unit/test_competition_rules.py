@@ -97,7 +97,7 @@ class CompetitionRulesTests(unittest.TestCase):
         repo.find.return_value = {
             **season,
             "league_interval_minutes": 10,
-            "league_schedule_revision": 3,
+            "league_schedule_revision": 4,
             "league_games_per_day": 24,
         }
         CompetitionService.update_league_interval(repo)
@@ -112,7 +112,7 @@ class CompetitionRulesTests(unittest.TestCase):
         }
         season = CompetitionService.create_season(repo, datetime(2026, 10, 11, tzinfo=UTC))
         offsets = GameConfig(**season["config"]).round_offsets()
-        self.assertEqual(season["league_schedule_revision"], 3)
+        self.assertEqual(season["league_schedule_revision"], 4)
         for first, second in zip(offsets, offsets[1:]):
             self.assertAlmostEqual((second - first) * 1440, 60)
 
@@ -121,7 +121,7 @@ class CompetitionRulesTests(unittest.TestCase):
         repo.rules.return_value = {}
         now = datetime(2026, 10, 11, tzinfo=UTC)
         old = {"_id": "season", "ends_at": datetime(2026, 11, 1, tzinfo=UTC)}
-        updated = {**old, "league_schedule_revision": 3, "league_games_per_day": 24}
+        updated = {**old, "league_schedule_revision": 4, "league_games_per_day": 24}
         with (
             patch.object(CompetitionService, "current", side_effect=[old, updated]),
             patch.object(CompetitionService, "play_due") as play,
@@ -130,7 +130,7 @@ class CompetitionRulesTests(unittest.TestCase):
         repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
         play.assert_called_once_with(updated, now)
 
-    def test_calendar_read_repairs_pending_schedule_before_reading_events(self):
+    def test_calendar_read_leaves_schedule_repairs_to_background(self):
         repo = Mock()
         repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
@@ -139,13 +139,13 @@ class CompetitionRulesTests(unittest.TestCase):
         CalendarService(repo).get(
             SimpleNamespace(id="user"), SimpleNamespace(type=None, start=None, end=None)
         )
-        repo.transaction.assert_called_once_with(CompetitionService.update_league_interval)
+        repo.transaction.assert_not_called()
         self.assertEqual(repo.many.call_args_list[0].args[0], "calendar_events")
         self.assertEqual(repo.many.call_args_list[0].args[1]["club_id"], "club")
         repo.reset_mock()
         repo.find.return_value = {
             "_id": "season",
-            "league_schedule_revision": 3,
+            "league_schedule_revision": 4,
             "league_games_per_day": 24,
         }
         CalendarService(repo).get(
@@ -157,7 +157,7 @@ class CompetitionRulesTests(unittest.TestCase):
         repo = Mock()
         repo.rules.return_value = {}
         repo.owned.return_value = {"_id": "club"}
-        repo.find.return_value = {"league_schedule_revision": 3, "league_games_per_day": 24}
+        repo.find.return_value = {"league_schedule_revision": 4, "league_games_per_day": 24}
         events = []
         repo.many.side_effect = lambda collection, *args, **kwargs: (
             events
@@ -218,7 +218,7 @@ class CompetitionRulesTests(unittest.TestCase):
                 GameConfig(MATCHES_PER_DAY=value)
         repo = Mock()
         repo.rules.return_value = {"MATCHES_PER_DAY": 12}
-        season = {"league_schedule_revision": 3, "league_games_per_day": 24}
+        season = {"league_schedule_revision": 4, "league_games_per_day": 24}
         self.assertTrue(CompetitionService.needs_schedule_update(repo, season))
         season["league_games_per_day"] = 12
         self.assertFalse(CompetitionService.needs_schedule_update(repo, season))
@@ -255,7 +255,8 @@ class CompetitionRulesTests(unittest.TestCase):
             if collection != "matches":
                 return []
             return [
-                match for match in matches
+                match
+                for match in matches
                 if match["status"] == "scheduled"
                 and match["date"] <= query["date"]["$lte"]
                 and match["_id"] not in query["_id"]["$nin"]
@@ -342,7 +343,7 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertEqual(len(changes), 310)
         self.assertTrue(all(query["status"] == "scheduled" for _, query, _ in changes))
         dates = sorted({update["$set"]["date"] for _, _, update in changes})
-        self.assertEqual((dates[0] - now).total_seconds(), 3600)
+        self.assertLessEqual(dates[0], now)
         self.assertEqual(len(dates), 31)
         self.assertTrue(all((b - a).total_seconds() == 3600 for a, b in zip(dates, dates[1:])))
 

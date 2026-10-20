@@ -7,7 +7,7 @@ const statusNames: Record<string, string> = { completed: 'Encerrado', finished: 
 function MatchInfo({ match }: { match?: TicketMatch | null }) {
   if (!match) return null;
   return <View style={{ gap: 6 }}><Text style={{ fontWeight: '700' }}>{match.home_name} × {match.away_name}</Text>
-    <Text>{new Date(match.date).toLocaleString('pt-BR')} · {statusNames[match.status] ?? match.status}</Text>
+    <Text>{new Date(match.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })} · {statusNames[match.status] ?? match.status}</Text>
     {match.home_goals != null && match.away_goals != null && <Text>Placar: {match.home_goals} × {match.away_goals}</Text>}
   </View>;
 }

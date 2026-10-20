@@ -7,7 +7,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.config.cup import CupConfig
-from app.models.game import public, utcnow
+from app.models.game import public, round_match_time, utcnow
 from app.services.chemistry import ChemistryService
 from app.services.club_prestige import ClubRankingService, ClubReputationService
 from app.services.fan_base import FanBaseService
@@ -120,7 +120,7 @@ class CupService:
         )
         for home, away in pairs:
             identity = ObjectId()
-            date = competition["round_dates"][number - 1]
+            date = round_match_time(competition["round_dates"][number - 1])
             from app.services.season_calendar import SeasonCalendarService
 
             season = repo.find("seasons", {"_id": competition["season_id"]})

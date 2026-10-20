@@ -7,7 +7,7 @@ from pymongo.errors import OperationFailure
 from pymongo.synchronous.collection import Collection
 
 from app.main import app
-from app.models.game import utcnow
+from app.models.game import round_match_time, utcnow
 from app.repositories.game import GameRepository
 from mock_database import SEED_MARKER, import_database
 
@@ -24,7 +24,12 @@ def test_offline_import_builds_complete_league_on_current_date_and_is_idempotent
     assert database.matches.count_documents({}) == 380
     assert database.season_clubs.count_documents({}) == 20
     assert database.standings.count_documents({}) == 20
-    assert database.matches.count_documents({"round": 1, "date": now}) == 10
+    assert (
+        database.matches.count_documents(
+            {"round": 1, "date": round_match_time(now + timedelta(minutes=15))}
+        )
+        == 10
+    )
     player = database.players.find_one({})
     database.players.update_one({"_id": player["_id"]}, {"$set": {"strength": 99}})
     counts = {name: database[name].count_documents({}) for name in database.list_collection_names()}
@@ -63,7 +68,12 @@ def test_import_resumes_after_failure_without_recreating_or_redating_documents(c
     assert database.clubs.count_documents({}) == 20
     assert database.players.count_documents({}) == 500
     assert database.seasons.find_one({"status": "active"})["starts_at"] == now
-    assert database.matches.count_documents({"round": 1, "date": now}) == 10
+    assert (
+        database.matches.count_documents(
+            {"round": 1, "date": round_match_time(now + timedelta(minutes=15))}
+        )
+        == 10
+    )
 
 
 def test_import_refuses_to_overwrite_an_existing_unprepared_league(client):

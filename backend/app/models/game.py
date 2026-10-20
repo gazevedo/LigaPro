@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 
@@ -47,3 +47,12 @@ def public(document):
     if isinstance(document, dict):
         return {"id" if key == "_id" else key: public(value) for key, value in document.items()}
     return document
+
+
+def round_match_time(value):
+    """Next quarter-hour, keeping exact quarter-hours and never moving backwards."""
+    base = value.replace(second=0, microsecond=0)
+    remainder = value.minute % 15
+    if remainder or value.second or value.microsecond:
+        base += timedelta(minutes=15 - remainder)
+    return base

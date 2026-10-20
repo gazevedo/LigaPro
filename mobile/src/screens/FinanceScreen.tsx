@@ -40,6 +40,8 @@ export function FinanceScreen() {
       <Text>Uma temporada tem 12 meses do jogo. Salários são debitados automaticamente e podem deixar o saldo negativo.</Text>
     </Card><Card><Text style={{ fontSize: 20, fontWeight: '700', color: palette.ink }}>Detalhamento da folha</Text>
       {data?.salary_costs?.map(cost => <View key={cost.player_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderColor: palette.border, paddingVertical: 10 }}>
+        <Text accessibilityLabel={`Camisa de ${cost.name}`} style={{ width: 32, fontWeight: '700' }}>{cost.shirt_number ?? '—'}</Text>
+        <Text accessibilityLabel={`Posição de ${cost.name}`} style={{ width: 28, fontSize: 12 }}>{({ GK: 'GOL', CB: 'ZAG', FB: 'LAT', MID: 'MED', ATT: 'ATA' } as Record<string, string>)[cost.position ?? ''] ?? cost.position ?? '—'}</Text>
         <Text style={{ flex: 1, color: palette.ink }}>{cost.name}</Text><Text>{money(cost.salary)}/mês</Text>
         <Pressable accessibilityRole="button" accessibilityLabel={`Abrir contrato de ${cost.name}`} onPress={() => navigation?.navigate('PlayerNegotiation', { id: cost.player_id })} hitSlop={8}><Text style={{ fontSize: 24 }}>📄</Text></Pressable>
       </View>)}

@@ -23,10 +23,12 @@ class GameRepository:
     def find(self, collection, query, projection=None):
         return self.database[collection].find_one(query, projection, session=self.session)
 
-    def many(self, collection, query, *, limit=200, sort=None, projection=None):
+    def many(self, collection, query, *, limit=200, sort=None, projection=None, skip=0):
         cursor = self.database[collection].find(query, projection, session=self.session)
         if sort:
             cursor = cursor.sort(sort)
+        if skip:
+            cursor = cursor.skip(skip)
         return list(cursor.limit(limit or 0))
 
     def ticket_income(self, club_id):

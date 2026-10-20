@@ -1477,11 +1477,11 @@ class MarketService:
 
 def process_due(repository):
     now = utcnow()
+    CompetitionService(repository).process_due(now)
     try:
         ClubService(repository).complete_pending_creations()
     except Exception:
         logger.exception("club_creation event=background_preparation_failed")
-    CompetitionService(repository).process_due(now)
     MonthlyFinanceService.process_due(repository, now)
     ContractService(repository).process_due(now)
     from app.services.bot_manager import BotManagerService
