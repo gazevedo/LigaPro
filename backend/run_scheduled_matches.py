@@ -4,6 +4,7 @@ import logging
 import os
 
 from pymongo import MongoClient, timeout
+from pymongo.errors import PyMongoError
 
 from app.models.game import utcnow
 from app.repositories.game import GameRepository
@@ -11,14 +12,14 @@ from app.services.game import process_due
 from app.services.game_scheduler import MATCH_COLLECTIONS
 
 logger = logging.getLogger(__name__)
-MAX_MATCHES = 10
+MAX_MATCHES = 3
 RUN_TIMEOUT_SECONDS = 180
 
 
-def run_once(database):
+def run_once(database, *, max_matches=MAX_MATCHES):
     logger.info(
         "scheduled_match_job event=start batch_limit=%s timeout_seconds=%s",
-        MAX_MATCHES,
+        max_matches,
         RUN_TIMEOUT_SECONDS,
     )
     repository = GameRepository(database)
@@ -41,7 +42,7 @@ def run_once(database):
     try:
         logger.info("scheduled_match_job event=processing due_before=%s", due_before)
         with timeout(RUN_TIMEOUT_SECONDS):
-            process_due(repository, max_matches=MAX_MATCHES)
+            process_due(repository, max_matches=max_matches)
         result = {
             "completed_matches": count({"status": "completed"}) - before,
             "due_before": due_before,
@@ -52,26 +53,54 @@ def run_once(database):
                 "Há jogos vencidos, mas nenhum foi concluído. Consulte os erros do job."
             )
     except Exception as error:
-        logger.exception("scheduled_match_job event=failed error_type=%s", type(error).__name__)
-        database.game_state.update_one(
-            marker,
-            {
-                "$set": {
-                    "status": "failed",
-                    "finished_at": utcnow(),
-                    "error_type": type(error).__name__,
-                }
-            },
+        logger.exception(
+            "scheduled_match_job event=interrupted error_type=%s", type(error).__name__
         )
-        raise
+        result = {
+            "completed_matches": count({"status": "completed"}) - before,
+            "due_before": due_before,
+            "remaining_due": count(due_query),
+        }
+        if isinstance(error, PyMongoError) and error.timeout and result["completed_matches"] > 0:
+            result["time_budget_exhausted"] = True
+            logger.warning(
+                "scheduled_match_job event=partial_progress completed=%s remaining_due=%s",
+                result["completed_matches"],
+                result["remaining_due"],
+            )
+        else:
+            database.game_state.update_one(
+                marker,
+                {
+                    "$set": {
+                        "status": "failed",
+                        "finished_at": utcnow(),
+                        "error_type": type(error).__name__,
+                        **result,
+                    }
+                },
+            )
+            raise
     database.game_state.update_one(
         marker,
         {
-            "$set": {"status": "completed", "finished_at": utcnow(), **result},
-            "$unset": {"error_type": ""},
+            "$set": {
+                "status": "partial" if result.get("time_budget_exhausted") else "completed",
+                "finished_at": utcnow(),
+                **result,
+            },
+            "$unset": {
+                "error_type": "",
+                **({} if result.get("time_budget_exhausted") else {"time_budget_exhausted": ""}),
+            },
         },
     )
-    logger.info("scheduled_match_job completed=%s due_before=%s remaining_due=%s", *result.values())
+    logger.info(
+        "scheduled_match_job completed=%s due_before=%s remaining_due=%s",
+        result["completed_matches"],
+        result["due_before"],
+        result["remaining_due"],
+    )
     return result
 
 

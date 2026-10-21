@@ -7,7 +7,7 @@ from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
-from pymongo import UpdateMany
+from pymongo import UpdateMany, UpdateOne
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.config.economy import EconomyConfig
@@ -330,9 +330,13 @@ class CompetitionService:
         rows = ranked(
             repo.many("standings", {"season_id": season_id, "division_id": division_id}, limit=None)
         )
-        for position, row in enumerate(rows, 1):
-            if row["position"] != position:
-                repo.update("standings", {"_id": row["_id"]}, {"$set": {"position": position}})
+        updates = [
+            UpdateOne({"_id": row["_id"]}, {"$set": {"position": position}})
+            for position, row in enumerate(rows, 1)
+            if row["position"] != position
+        ]
+        if updates:
+            repo.database.standings.bulk_write(updates, session=repo.session)
         return rows
 
     def enroll(self, repo, club, now=None, *, lock_universe=True):

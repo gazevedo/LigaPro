@@ -107,7 +107,7 @@ class MarketValueService:
         )
         averages = {r["_id"]: sum(r["ratings"][:5]) / len(r["ratings"][:5]) for r in ratings}
         best = None
-        initial_updates, initial_history = [], []
+        updates, history_rows = [], []
         for player in players:
             value = self.calculate(
                 player,
@@ -140,15 +140,11 @@ class MarketValueService:
                 "reference_id": reference,
                 "created_at": now,
             }
-            if reason == "initial":
-                initial_updates.append(UpdateOne({"_id": player["_id"]}, changes))
-                initial_history.append(history)
-            else:
-                repo.update(collection, {"_id": player["_id"]}, changes)
-                repo.insert("player_market_value_history", history)
-        if initial_updates:
-            repo.database[collection].bulk_write(initial_updates, session=repo.session)
-            repo.insert_many("player_market_value_history", initial_history)
+            updates.append(UpdateOne({"_id": player["_id"]}, changes))
+            history_rows.append(history)
+        if updates:
+            repo.database[collection].bulk_write(updates, session=repo.session)
+            repo.insert_many("player_market_value_history", history_rows)
 
         if best:
             from app.services.game_history import HistoryService

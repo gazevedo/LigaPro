@@ -25,8 +25,8 @@ def test_external_tick_finishes_round_with_human_club_without_http_or_lifespan(c
         patch("run_scheduled_matches.utcnow", return_value=now),
         patch("app.services.game.utcnow", return_value=now),
     ):
-        first = run_once(database)
-        second = run_once(database)
+        first = run_once(database, max_matches=10)
+        second = run_once(database, max_matches=10)
     assert first == {"completed_matches": 10, "due_before": 10, "remaining_due": 0}
     assert second == {"completed_matches": 0, "due_before": 0, "remaining_due": 0}
     assert database.matches.count_documents({"status": "completed"}) == 10
@@ -128,8 +128,54 @@ def test_external_tick_limits_backlog_and_resumes_without_repeating_games(client
         patch("app.services.game.utcnow", return_value=now),
     ):
         first = run_once(database)
-        assert first == {"completed_matches": 10, "due_before": 20, "remaining_due": 10}
+        assert first == {"completed_matches": 3, "due_before": 20, "remaining_due": 17}
         second = run_once(database)
-    assert second == {"completed_matches": 10, "due_before": 10, "remaining_due": 0}
-    assert database.matches.count_documents({"status": "completed"}) == 20
-    assert sum(row["games"] for row in database.standings.find()) == 40
+    assert second == {"completed_matches": 3, "due_before": 17, "remaining_due": 14}
+    assert database.matches.count_documents({"status": "completed"}) == 6
+    assert sum(row["games"] for row in database.standings.find()) == 12
+
+
+def test_tick_keeps_committed_progress_on_timeout_and_resumes_next_time(client):
+    from pymongo.errors import ExecutionTimeout
+
+    from app.services.competition import CompetitionService
+
+    database = app.state.database
+    import_database(database)
+    fixture = database.matches.find_one(sort=[("date", 1)])
+    now = fixture["date"]
+
+    def interrupted(repository, **kwargs):
+        CompetitionService(repository).play(fixture["_id"], now)
+        raise ExecutionTimeout("budget exhausted", code=50)
+
+    with (
+        patch("run_scheduled_matches.utcnow", return_value=now),
+        patch("app.services.game.utcnow", return_value=now),
+    ):
+        with patch("run_scheduled_matches.process_due", side_effect=interrupted):
+            partial = run_once(database)
+        assert partial["completed_matches"] == 1 and partial["remaining_due"] == 9
+        assert partial["time_budget_exhausted"] is True
+        assert database.game_state.find_one({"_id": "scheduled_match_job"})["status"] == "partial"
+        resumed = run_once(database)
+    assert resumed["completed_matches"] == 3 and resumed["remaining_due"] == 6
+    assert database.matches.count_documents({"status": "completed"}) == 4
+    assert sum(row["games"] for row in database.standings.find()) == 8
+    assert "time_budget_exhausted" not in database.game_state.find_one(
+        {"_id": "scheduled_match_job"}
+    )
+
+
+def test_timeout_without_completed_games_remains_a_failure(client):
+    from pymongo.errors import ExecutionTimeout
+
+    database = app.state.database
+    import_database(database)
+    with patch(
+        "run_scheduled_matches.process_due",
+        side_effect=ExecutionTimeout("budget exhausted", code=50),
+    ):
+        with pytest.raises(ExecutionTimeout):
+            run_once(database)
+    assert database.game_state.find_one({"_id": "scheduled_match_job"})["status"] == "failed"
