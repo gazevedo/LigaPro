@@ -115,3 +115,21 @@ def test_calendar_migration_batches_writes_and_preserves_finished_and_live_games
     events = database.calendar_events.find({"reference_id": {"$in": list(dates)}})
     assert all(row["date"] == dates[row["reference_id"]] for row in events)
     assert database.seasons.find_one({"status": "active"})["league_schedule_revision"] == 4
+
+
+def test_external_tick_limits_backlog_and_resumes_without_repeating_games(client):
+    from datetime import timedelta
+
+    database = app.state.database
+    import_database(database)
+    now = database.matches.find_one(sort=[("date", 1)])["date"] + timedelta(hours=1)
+    with (
+        patch("run_scheduled_matches.utcnow", return_value=now),
+        patch("app.services.game.utcnow", return_value=now),
+    ):
+        first = run_once(database)
+        assert first == {"completed_matches": 10, "due_before": 20, "remaining_due": 10}
+        second = run_once(database)
+    assert second == {"completed_matches": 10, "due_before": 10, "remaining_due": 0}
+    assert database.matches.count_documents({"status": "completed"}) == 20
+    assert sum(row["games"] for row in database.standings.find()) == 40

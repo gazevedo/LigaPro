@@ -1104,6 +1104,7 @@ class CompetitionService:
             MonthlyFinanceService.process_due(self.repo, pending["date"])
             from app.services.bot_manager import BotManagerService
 
+            logger.info("scheduled_match stage=bot_management match=%s", identity)
             BotManagerService(self.repo).process_due(pending["date"])
             ContractService(self.repo).process_due(pending["date"])
 
@@ -1141,6 +1142,7 @@ class CompetitionService:
                 home_goals = result["score"][str(match["home_club_id"])]
                 away_goals = result["score"][str(match["away_club_id"])]
             elif home and away:
+                logger.info("scheduled_match stage=simulation match=%s", identity)
                 result = (
                     result_override
                     if result_override is not None
@@ -1161,6 +1163,7 @@ class CompetitionService:
                     },
                     "events": [],
                 }
+            logger.info("scheduled_match stage=settlement match=%s", identity)
             summaries = match_player_summaries(result)
             PlayerStatisticsService.after_match(repo, match, summaries)
             PlayerRatingService.after_match(repo, match, result, summaries)
@@ -1287,6 +1290,7 @@ class CompetitionService:
                 break
             _, kind, identity = min(options, key=lambda row: (row[0], row[1]))
             attempted.add(identity)
+            logger.info("scheduled_match event=start kind=%s match=%s", kind, identity)
             try:
                 if kind == "cup":
                     CupService(self.repo).play(identity, now)
@@ -1296,6 +1300,9 @@ class CompetitionService:
                     FriendlyService(self.repo).play(identity, now)
                 else:
                     self.play(identity, now)
+                logger.info(
+                    "scheduled_match event=attempt_finished kind=%s match=%s", kind, identity
+                )
             except Exception:
                 logger.exception("Scheduled match failed: %s %s", kind, identity)
         return len(attempted)

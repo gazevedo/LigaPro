@@ -12,11 +12,12 @@ jobs:
   process:
     if: github.event_name == 'workflow_dispatch' || vars.GAME_SCHEDULER_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     defaults:
       run:
         working-directory: backend
     env:
+      PYTHONUNBUFFERED: '1'
       MONGODB_CONNECTION_STRING: ${{ secrets.MONGODB_CONNECTION_STRING }}
       MONGODB_DATABASE_NAME: ${{ secrets.MONGODB_DATABASE_NAME }}
     steps:
@@ -31,4 +32,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - run: python run_scheduled_matches.py
+      - name: Process a bounded batch of matches
+        run: |
+          git rev-parse --short HEAD
+          python -u run_scheduled_matches.py

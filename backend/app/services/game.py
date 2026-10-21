@@ -1475,18 +1475,28 @@ class MarketService:
         return self.repo.transaction(operation)
 
 
-def process_due(repository):
+def process_due(repository, *, max_matches=None):
     now = utcnow()
-    CompetitionService(repository).process_due(now)
+    logger.info("game_job stage=matches event=start")
+    if max_matches is None:
+        CompetitionService(repository).process_due(now)
+    else:
+        CompetitionService(repository).process_due(now, max_matches=max_matches)
+    logger.info("game_job stage=matches event=finished")
+    logger.info("game_job stage=club_initialization event=start")
     try:
         ClubService(repository).complete_pending_creations()
     except Exception:
         logger.exception("club_creation event=background_preparation_failed")
+    logger.info("game_job stage=monthly_finance event=start")
     MonthlyFinanceService.process_due(repository, now)
+    logger.info("game_job stage=contracts event=start")
     ContractService(repository).process_due(now)
     from app.services.bot_manager import BotManagerService
 
+    logger.info("game_job stage=bot_management event=start")
     BotManagerService(repository).process_due(now)
+    logger.info("game_job stage=market event=start")
     from app.services.negotiation import NegotiationService
 
     NegotiationService.expire(repository, now)

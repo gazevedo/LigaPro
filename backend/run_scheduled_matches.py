@@ -3,7 +3,7 @@
 import logging
 import os
 
-from pymongo import MongoClient
+from pymongo import MongoClient, timeout
 
 from app.models.game import utcnow
 from app.repositories.game import GameRepository
@@ -11,9 +11,16 @@ from app.services.game import process_due
 from app.services.game_scheduler import MATCH_COLLECTIONS
 
 logger = logging.getLogger(__name__)
+MAX_MATCHES = 10
+RUN_TIMEOUT_SECONDS = 180
 
 
 def run_once(database):
+    logger.info(
+        "scheduled_match_job event=start batch_limit=%s timeout_seconds=%s",
+        MAX_MATCHES,
+        RUN_TIMEOUT_SECONDS,
+    )
     repository = GameRepository(database)
     if not repository.find("game_state", {"_id": "initial_universe", "status": "ready"}):
         raise RuntimeError(
@@ -32,7 +39,9 @@ def run_once(database):
         marker, {"$set": {"status": "running", "started_at": started}}, upsert=True
     )
     try:
-        process_due(repository)
+        logger.info("scheduled_match_job event=processing due_before=%s", due_before)
+        with timeout(RUN_TIMEOUT_SECONDS):
+            process_due(repository, max_matches=MAX_MATCHES)
         result = {
             "completed_matches": count({"status": "completed"}) - before,
             "due_before": due_before,
@@ -43,6 +52,7 @@ def run_once(database):
                 "Há jogos vencidos, mas nenhum foi concluído. Consulte os erros do job."
             )
     except Exception as error:
+        logger.exception("scheduled_match_job event=failed error_type=%s", type(error).__name__)
         database.game_state.update_one(
             marker,
             {
@@ -78,7 +88,8 @@ def main():
         connectTimeoutMS=5000,
         socketTimeoutMS=30000,
     ) as client:
-        run_once(client[name])
+        with timeout(RUN_TIMEOUT_SECONDS + 30):
+            run_once(client[name])
 
 
 if __name__ == "__main__":
