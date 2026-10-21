@@ -66,12 +66,11 @@ def test_clock_migration_preserves_overdue_matches_for_catchup():
     )
     with patch("app.services.competition.utcnow", return_value=now):
         CompetitionService.update_league_interval(repo)
-    match_change = next(
-        call.args for call in repo.update.call_args_list if call.args[0] == "matches"
-    )
-    assert match_change[2]["$set"]["date"] == original.replace(minute=45, second=0)
-    assert match_change[2]["$set"]["date"] < now
-    repo.database.calendar_events.update_many.assert_called_once()
+    operation = repo.database.matches.bulk_write.call_args.args[0][0]
+    assert operation._filter == {"_id": {"$in": ["late"]}, "status": "scheduled"}
+    assert operation._doc["$set"]["date"] == original.replace(minute=45, second=0)
+    assert operation._doc["$set"]["date"] < now
+    repo.database.calendar_events.bulk_write.assert_called_once()
 
 
 def test_initial_import_schedules_future_matches_and_matching_calendar_events():

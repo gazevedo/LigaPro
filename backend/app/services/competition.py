@@ -7,6 +7,7 @@ from time import perf_counter
 
 from bson import ObjectId
 from fastapi import HTTPException
+from pymongo import UpdateMany
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.config.economy import EconomyConfig
@@ -110,7 +111,9 @@ class CompetitionService:
             logger.error(
                 "database_generation event=league_lock_failed code=%s code_name=%s "
                 "labels=%s reason=%s",
-                error.code, details.get("codeName"), details.get("errorLabels", []),
+                error.code,
+                details.get("codeName"),
+                details.get("errorLabels", []),
                 details.get("errmsg", str(error)),
             )
             raise
@@ -344,7 +347,8 @@ class CompetitionService:
             # Fence registration against season finalization without competing
             # with every match transaction on the global universe document.
             season = repo.update(
-                "seasons", {"_id": season["_id"], "status": "active"},
+                "seasons",
+                {"_id": season["_id"], "status": "active"},
                 {"$inc": {"enrollment_revision": 1}},
             )
             if not season:
@@ -550,6 +554,7 @@ class CompetitionService:
             "matches",
             {"season_id": season["_id"], "division_id": {"$exists": True}, "status": "scheduled"},
             limit=None,
+            projection={"round": 1, "date": 1},
         )
         rounds = sorted({match["round"] for match in matches})
         now = utcnow()
@@ -560,6 +565,7 @@ class CompetitionService:
             day = config.playing_day(day)
             dates[number] = round_match_time(starts_at + timedelta(days=day))
             day += 1 / config.MATCHES_PER_DAY
+        changes = {}
         for match in matches:
             original = match.get("date")
             # A clock-format migration must not postpone overdue games or reset
@@ -572,11 +578,26 @@ class CompetitionService:
                 == config.MATCHES_PER_DAY
             )
             date = round_match_time(original) if keep_date else dates[match["round"]]
-            repo.update(
-                "matches", {"_id": match["_id"], "status": "scheduled"}, {"$set": {"date": date}}
+            changes.setdefault(date, []).append(match["_id"])
+        if changes:
+            # Two round trips instead of one read-modify-write plus one calendar
+            # write per fixture. Keep the revision marker in the same transaction.
+            repo.database.matches.bulk_write(
+                [
+                    UpdateMany(
+                        {"_id": {"$in": identities}, "status": "scheduled"},
+                        {"$set": {"date": date}},
+                    )
+                    for date, identities in changes.items()
+                ],
+                session=repo.session,
             )
-            repo.database.calendar_events.update_many(
-                {"reference_id": match["_id"]}, {"$set": {"date": date}}, session=repo.session
+            repo.database.calendar_events.bulk_write(
+                [
+                    UpdateMany({"reference_id": {"$in": identities}}, {"$set": {"date": date}})
+                    for date, identities in changes.items()
+                ],
+                session=repo.session,
             )
         repo.update(
             "seasons",

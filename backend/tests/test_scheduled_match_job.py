@@ -67,3 +67,51 @@ def test_external_tick_does_not_report_success_when_due_matches_make_no_progress
         with pytest.raises(RuntimeError, match="nenhum foi concluído"):
             run_once(database)
     assert database.game_state.find_one({"_id": "scheduled_match_job"})["status"] == "failed"
+
+
+def test_calendar_migration_batches_writes_and_preserves_finished_and_live_games(client):
+    from datetime import timedelta
+
+    from pymongo.synchronous.collection import Collection
+
+    from app.services.competition import CompetitionService
+
+    database = app.state.database
+    import_database(database)
+    fixtures = list(database.matches.find().sort("date", 1))
+    completed, live = fixtures[:2]
+    database.matches.update_one({"_id": completed["_id"]}, {"$set": {"status": "completed"}})
+    database.matches.update_one({"_id": live["_id"]}, {"$set": {"status": "live"}})
+    # Reproduce an existing calendar that still needs the clock migration.
+    database.matches.update_many(
+        {"status": "scheduled"},
+        [{"$set": {"date": {"$dateAdd": {"startDate": "$date", "unit": "second", "amount": 443}}}}],
+    )
+    preserved = list(database.matches.find({"status": {"$in": ["completed", "live"]}}))
+    calls = []
+    original = Collection.bulk_write
+
+    def record(collection, requests, *args, **kwargs):
+        calls.append((collection.name, len(requests)))
+        return original(collection, requests, *args, **kwargs)
+
+    repo = GameRepository(database)
+    now = fixtures[0]["date"] + timedelta(hours=2)
+    with (
+        patch.object(Collection, "bulk_write", record),
+        patch("app.services.competition.utcnow", return_value=now),
+    ):
+        repo.transaction(CompetitionService.update_league_interval)
+    assert [name for name, _ in calls] == ["matches", "calendar_events"]
+    assert all(count <= 38 for _, count in calls)
+    assert list(database.matches.find({"status": {"$in": ["completed", "live"]}})) == preserved
+    scheduled = list(database.matches.find({"status": "scheduled"}))
+    assert len(scheduled) == 378
+    assert all(
+        row["date"].minute % 15 == row["date"].second == row["date"].microsecond == 0
+        for row in scheduled
+    )
+    dates = {row["_id"]: row["date"] for row in scheduled}
+    events = database.calendar_events.find({"reference_id": {"$in": list(dates)}})
+    assert all(row["date"] == dates[row["reference_id"]] for row in events)
+    assert database.seasons.find_one({"status": "active"})["league_schedule_revision"] == 4

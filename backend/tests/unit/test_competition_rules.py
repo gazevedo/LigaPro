@@ -82,14 +82,12 @@ class CompetitionRulesTests(unittest.TestCase):
         query = repo.many.call_args.args[1]
         self.assertEqual(query["status"], "scheduled")
         self.assertEqual(query["division_id"], {"$exists": True})
-        dates = [
-            call.args[2]["$set"]["date"]
-            for call in repo.update.call_args_list
-            if call.args[0] == "matches"
-        ]
-        self.assertEqual(dates[0], dates[1])
+        operations = repo.database.matches.bulk_write.call_args.args[0]
+        dates = [operation._doc["$set"]["date"] for operation in operations]
+        self.assertEqual(operations[0]._filter["_id"]["$in"], ["a", "b"])
         self.assertEqual((dates[0] - now).total_seconds(), 3600)
-        self.assertEqual((dates[2] - dates[0]).total_seconds(), 3600)
+        self.assertEqual((dates[1] - dates[0]).total_seconds(), 3600)
+        repo.database.calendar_events.bulk_write.assert_called_once()
         saved = repo.update.call_args.args[2]["$set"]
         self.assertEqual(saved["config.MATCH_INTERVAL_MINUTES"], 60)
         self.assertEqual(saved["config.ROUND_OFFSETS_DAYS"], [])
@@ -339,10 +337,10 @@ class CompetitionRulesTests(unittest.TestCase):
         self.assertEqual(len(matches), 380)
         self.assertEqual(matches[:70], previous)
         self.assertEqual(len({(m["home_slot_id"], m["away_slot_id"]) for m in matches}), 380)
-        changes = [call.args for call in repo.update.call_args_list if call.args[0] == "matches"]
-        self.assertEqual(len(changes), 310)
-        self.assertTrue(all(query["status"] == "scheduled" for _, query, _ in changes))
-        dates = sorted({update["$set"]["date"] for _, _, update in changes})
+        operations = repo.database.matches.bulk_write.call_args.args[0]
+        self.assertEqual(sum(len(operation._filter["_id"]["$in"]) for operation in operations), 310)
+        self.assertTrue(all(operation._filter["status"] == "scheduled" for operation in operations))
+        dates = sorted(operation._doc["$set"]["date"] for operation in operations)
         self.assertLessEqual(dates[0], now)
         self.assertEqual(len(dates), 31)
         self.assertTrue(all((b - a).total_seconds() == 3600 for a, b in zip(dates, dates[1:])))
