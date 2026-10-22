@@ -117,7 +117,7 @@ def test_calendar_migration_batches_writes_and_preserves_finished_and_live_games
     assert database.seasons.find_one({"status": "active"})["league_schedule_revision"] == 4
 
 
-def test_external_tick_limits_backlog_and_resumes_without_repeating_games(client):
+def test_external_tick_drains_backlog_without_repeating_games(client):
     from datetime import timedelta
 
     database = app.state.database
@@ -128,11 +128,11 @@ def test_external_tick_limits_backlog_and_resumes_without_repeating_games(client
         patch("app.services.game.utcnow", return_value=now),
     ):
         first = run_once(database)
-        assert first == {"completed_matches": 3, "due_before": 20, "remaining_due": 17}
+        assert first == {"completed_matches": 20, "due_before": 20, "remaining_due": 0}
         second = run_once(database)
-    assert second == {"completed_matches": 3, "due_before": 17, "remaining_due": 14}
-    assert database.matches.count_documents({"status": "completed"}) == 6
-    assert sum(row["games"] for row in database.standings.find()) == 12
+    assert second == {"completed_matches": 0, "due_before": 0, "remaining_due": 0}
+    assert database.matches.count_documents({"status": "completed"}) == 20
+    assert sum(row["games"] for row in database.standings.find()) == 40
 
 
 def test_tick_keeps_committed_progress_on_timeout_and_resumes_next_time(client):
@@ -159,9 +159,9 @@ def test_tick_keeps_committed_progress_on_timeout_and_resumes_next_time(client):
         assert partial["time_budget_exhausted"] is True
         assert database.game_state.find_one({"_id": "scheduled_match_job"})["status"] == "partial"
         resumed = run_once(database)
-    assert resumed["completed_matches"] == 3 and resumed["remaining_due"] == 6
-    assert database.matches.count_documents({"status": "completed"}) == 4
-    assert sum(row["games"] for row in database.standings.find()) == 8
+    assert resumed["completed_matches"] == 9 and resumed["remaining_due"] == 0
+    assert database.matches.count_documents({"status": "completed"}) == 10
+    assert sum(row["games"] for row in database.standings.find()) == 20
     assert "time_budget_exhausted" not in database.game_state.find_one(
         {"_id": "scheduled_match_job"}
     )

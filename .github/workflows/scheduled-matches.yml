@@ -11,7 +11,7 @@ concurrency:
 jobs:
   process:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 360
     defaults:
       run:
         working-directory: backend
@@ -31,7 +31,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - name: Process a bounded batch of matches
+      - name: Process all overdue matches
         run: |
           git rev-parse --short HEAD
           python -u run_scheduled_matches.py

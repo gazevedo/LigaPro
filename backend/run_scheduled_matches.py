@@ -12,8 +12,8 @@ from app.services.game import process_due
 from app.services.game_scheduler import MATCH_COLLECTIONS
 
 logger = logging.getLogger(__name__)
-MAX_MATCHES = 3
-RUN_TIMEOUT_SECONDS = 180
+MAX_MATCHES = None
+RUN_TIMEOUT_SECONDS = 5 * 60 * 60
 
 
 def run_once(database, *, max_matches=MAX_MATCHES):
