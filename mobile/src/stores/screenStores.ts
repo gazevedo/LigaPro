@@ -20,7 +20,7 @@ export const useCatalogStore = domainStore(clubService.catalog, 'useCatalogStore
 export const useCompetitionStore = domainStore(competitionService.get, 'useCompetitionStore');
 export const useCompetitionMatchesStore = domainStore(competitionService.matches, 'useCompetitionMatchesStore');
 export const useCupStore = domainStore(cupService.get, 'useCupStore');
-export const useLeagueStatisticsStore = domainStore(() => statisticsService.competition('league', 'goals'), 'useLeagueStatisticsStore');
+export const useLeagueStatisticsStore = domainStore((divisionId?: string) => statisticsService.competition('league', 'goals', divisionId), 'useLeagueStatisticsStore');
 export const useCupStatisticsStore = domainStore(() => statisticsService.competition('cup', 'goals'), 'useCupStatisticsStore');
 export const useBankStore = domainStore(financeService.bank, 'useBankStore');
 export const useTicketingStore = domainStore(financeService.tickets, 'useTicketingStore');

@@ -17,7 +17,7 @@ jest.mock('../services/statisticsService', () => ({ statisticsService: { competi
 jest.mock('../services/calendarService', () => ({ calendarService: { get: jest.fn() } }));
 beforeEach(() => { jest.clearAllMocks(); useCalendarStore.getState().reset(); });
 test('championship opens league table, games and rankings without a cup selector', async () => {
-  jest.mocked(competitionService.get).mockResolvedValue({ season: { number: 1, starts_at: '', ends_at: '' }, division: { name: 'A' }, standings: [{ id: 'row', club_id: 'rival', club_name: 'Aurora', position: 1, points: 3, games: 1, wins: 1, draws: 0, losses: 0, goals_for: 2, goals_against: 0, goal_difference: 2 }] });
+  jest.mocked(competitionService.get).mockResolvedValue({ season: { number: 1, starts_at: '', ends_at: '' }, division: { id: 'a', name: 'A' }, divisions: [{ id: 'a', name: 'A', tier: 0 }, { id: 'b', name: 'B', tier: 1 }], standings: [{ id: 'row', club_id: 'rival', club_name: 'Aurora', position: 1, points: 3, games: 1, wins: 1, draws: 0, losses: 0, goals_for: 2, goals_against: 0, goal_difference: 2 }] });
   jest.mocked(competitionService.matches).mockResolvedValue([{ id: 'match', date: '2026-10-15T18:00:00Z', round: 1, status: 'completed', home_name: 'Aurora', away_name: 'Estrela', home_goals: 2, away_goals: 0 }]);
   jest.mocked(cupService.get).mockResolvedValue({ competition: { id: 'cup', name: 'Copa Nacional', status: 'active' }, entry: { status: 'active', phase: 'Semifinal' }, matches: [] });
   jest.mocked(statisticsService.competition).mockResolvedValue({ season: null, ranking: 'goals', rows: [] });
@@ -43,8 +43,18 @@ test('championship opens league table, games and rankings without a cup selector
   expect(screen.queryByText('Estatísticas do campeonato')).toBeNull();
   expect(screen.queryByText('Mais cartões')).toBeNull();
   expect(screen.getByText('Gols')).toBeTruthy();
-  await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('league', 'goals'));
-});
+  await waitFor(() => expect(statisticsService.competition).toHaveBeenCalledWith('league', 'goals', undefined));
+  const first = await jest.mocked(competitionService.get).mock.results[0].value;
+  jest.mocked(competitionService.get).mockResolvedValue({ ...first, division: { id: 'b', name: 'B' }, standings: [] });
+  await fireEvent.press(screen.getByRole('tab', { name: 'Série B' }));
+  await waitFor(() => expect(competitionService.get).toHaveBeenLastCalledWith('b'));
+  expect(competitionService.matches).toHaveBeenLastCalledWith('b');
+  await waitFor(() => expect(statisticsService.competition).toHaveBeenLastCalledWith('league', 'goals', 'b'));
+  await fireEvent.press(screen.getByRole('tab', { name: 'Tabela' }));
+  expect(await screen.findByText('Série B · Temporada 1')).toBeTruthy();
+  expect(screen.queryByText('1. Aurora')).toBeNull();
+  expect(screen.getByRole('tab', { name: 'Série B', selected: true })).toBeTruthy();
+}, 20000);
 test('calendar selects event day and loads adjacent month without filters', async () => {
   const now = new Date();
   const eventDate = new Date(now.getFullYear(), now.getMonth(), 15, 15);

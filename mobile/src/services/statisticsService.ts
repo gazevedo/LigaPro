@@ -18,7 +18,7 @@ export interface MatchReport {
   ratings: { id: string; player_id: string; club_id: string; name: string; position: string; rating: number; minutes: number; events_summary: Record<string, number | string> }[];
 }
 export const statisticsService = {
-  competition: (kind: 'league' | 'cup', ranking: Ranking = 'goals') => apiRequest<Statistics>(`/competition/statistics?${new URLSearchParams({ kind, ranking })}`),
+  competition: (kind: 'league' | 'cup', ranking: Ranking = 'goals', divisionId?: string) => apiRequest<Statistics>(`/competition/statistics?${new URLSearchParams({ kind, ranking, ...(divisionId ? { division_id: divisionId } : {}) })}`),
   get: (ranking: Ranking = 'goals', season?: string) => apiRequest<Statistics>(`/statistics?${new URLSearchParams({ ranking, ...(season ? { season_id: season } : {}) })}`),
   report: (id: string) => apiRequest<MatchReport>(`/competition/matches/${id}`),
 };

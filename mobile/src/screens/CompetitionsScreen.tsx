@@ -24,16 +24,24 @@ function Tabs({ values, selected, onChange, disabled = false, buttons = false }:
   </View>;
 }
 export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Competitions'>) {
+  const [selection, setSelection] = useState<{ id: string; divisions: { id: string; name: string; tier: number }[] }>();
+  const divisionId = selection?.id;
   const [kind] = useState<'league' | 'cup'>('league'), [tab, setTab] = useState('Tabela');
   const table = useCompetitionStore(), games = useCompetitionMatchesStore(), cupStore = useCupStore();
   const league = table.data, cup = cupStore.data, matches = (kind === 'league' ? games.data : cup?.matches) ?? [];
+  const divisions = league?.divisions ?? selection?.divisions ?? [];
   const clubId = useClubStore(state => state.data?.club?.id);
   const loading = kind === 'league' ? table.loading || games.loading : cupStore.loading;
   const error = kind === 'league' ? table.error || games.error : cupStore.error;
-  useScreenRefresh(() => Promise.all([table.ensure(), games.ensure()]), () => Promise.all([table.refresh(), games.refresh()]), kind === 'league');
+  useScreenRefresh(() => Promise.all([table.ensure(divisionId), games.ensure(divisionId)]), () => Promise.all([table.refresh(divisionId), games.refresh(divisionId)]), kind === 'league', divisionId);
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
   const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
   return <GamePage loading={loading} error={error}>
+    {kind === 'league' && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, padding: 8 }}>
+      {divisions.map(division => <Pressable key={division.id} accessibilityRole="tab" accessibilityLabel={`Série ${division.name}`} accessibilityState={{ selected: (divisionId ?? league?.division.id) === division.id }} onPress={() => setSelection({ id: division.id, divisions })} style={{ paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12, backgroundColor: (divisionId ?? league?.division.id) === division.id ? palette.primary : '#e0eafe' }}>
+        <Text style={{ fontWeight: '800', color: (divisionId ?? league?.division.id) === division.id ? '#fff' : palette.ink }}>Série {division.name}</Text>
+      </Pressable>)}
+    </ScrollView>}
     <Tabs values={['Tabela', 'Partidas', 'Artilheiros']} selected={tab} onChange={setTab} />
     {tab === 'Tabela' && kind === 'league' && league && <View style={{ paddingVertical: 16, gap: 12, backgroundColor: '#fff' }}><Text style={{ paddingHorizontal: 8, fontSize: 18, fontWeight: '800', color: palette.ink }}>Série {league.division.name} · Temporada {league.season.number}</Text>
       <ScrollView horizontal><View style={{ gap: 4 }}><View style={{ flexDirection: 'row', backgroundColor: '#e0eafe', paddingVertical: 8 }}>{columns.map((column, index) => <Text key={column.title} style={{ width: column.width, paddingHorizontal: 4, fontSize: 12, textAlign: index ? 'center' : 'left', fontWeight: '800', color: palette.ink }}>{column.title}</Text>)}</View>
@@ -42,7 +50,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
     </View>}
     {tab === 'Tabela' && kind === 'cup' && <Card><Text style={{ fontSize: 22, fontWeight: '800', color: palette.ink }}>Copa Nacional</Text><Text>{cup?.entry ? `${cup.entry.phase} · ${cup.entry.status === 'active' ? 'Em disputa' : cup.entry.status === 'eliminated' ? 'Eliminado' : cup.entry.status === 'champion' ? 'Campeão' : cup.entry.status}` : 'Nenhuma participação nesta temporada.'}</Text></Card>}
     {tab === 'Partidas' && <View style={{ backgroundColor: '#fff', paddingHorizontal: 8 }}>
-      <Text style={{ fontSize: 20, fontWeight: '800', color: palette.ink, paddingVertical: 12 }}>Jogos do clube</Text>
+      <Text style={{ fontSize: 20, fontWeight: '800', color: palette.ink, paddingVertical: 12 }}>{divisionId ? `Jogos da Série ${league?.division.name ?? ''}` : 'Jogos do clube'}</Text>
       {matches.map(match => <View key={match.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderTopWidth: 1, borderColor: palette.border }}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={{ color: palette.muted, fontSize: 12 }}>{match.phase || `Rodada ${match.round}`} · {new Date(match.date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</Text>
@@ -53,6 +61,6 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
       </View>)}
       {!matches.length && games.data !== null && !loading && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}
     </View>}
-    {tab === 'Artilheiros' && <CompetitionStatistics key={kind} kind={kind} openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
+    {tab === 'Artilheiros' && <CompetitionStatistics key={`${kind}:${divisionId ?? 'own'}`} kind={kind} divisionId={divisionId} openPlayer={id => navigation.navigate('PlayerDetails', { id })} />}
   </GamePage>;
 }

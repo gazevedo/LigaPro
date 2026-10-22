@@ -987,11 +987,29 @@ class CompetitionService:
                 },
             )
 
-    def table(self, user):
+    def selected_division(self, season, club, division_id=None):
+        query = {"season_id": season["_id"]}
+        if division_id is None:
+            query["club_id"] = club["_id"]
+        else:
+            if not ObjectId.is_valid(division_id):
+                raise HTTPException(404, "Série não encontrada.")
+            query["division_id"] = ObjectId(division_id)
+        slot = self.repo.find("season_clubs", query)
+        if not slot:
+            raise HTTPException(404, "Série não encontrada nesta temporada.")
+        return self.repo.find("divisions", {"_id": slot["division_id"]})
+
+    def table(self, user, division_id=None):
         club = self.repo.owned(user.id)
         season = self.current(self.repo)
-        slot = self.repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
-        division = self.repo.find("divisions", {"_id": slot["division_id"]})
+        division = self.selected_division(season, club, division_id)
+        division_ids = self.repo.database.season_clubs.distinct(
+            "division_id", {"season_id": season["_id"]}, session=self.repo.session
+        )
+        divisions = self.repo.many(
+            "divisions", {"_id": {"$in": division_ids}}, sort=[("tier", 1)], limit=None
+        )
         standings = self.repo.many(
             "standings",
             {"season_id": season["_id"], "division_id": division["_id"]},
@@ -1024,18 +1042,22 @@ class CompetitionService:
                         totals[field] += stats.get(field, 0)
         for row in standings:
             row.update(cards[str(row["_id"])])
-        return public({"season": season, "division": division, "standings": standings})
+        return public(
+            {"season": season, "division": division, "divisions": divisions, "standings": standings}
+        )
 
-    def matches(self, user):
+    def matches(self, user, division_id=None):
         club = self.repo.owned(user.id)
         season = self.current(self.repo)
         slot = self.repo.find("season_clubs", {"season_id": season["_id"], "club_id": club["_id"]})
+        query = {"season_id": season["_id"]}
+        if division_id is None:
+            query["$or"] = [{"home_slot_id": slot["_id"]}, {"away_slot_id": slot["_id"]}]
+        else:
+            query["division_id"] = self.selected_division(season, club, division_id)["_id"]
         rows = self.repo.many(
             "matches",
-            {
-                "season_id": season["_id"],
-                "$or": [{"home_slot_id": slot["_id"]}, {"away_slot_id": slot["_id"]}],
-            },
+            query,
             limit=None,
             sort=[("round", 1)],
             projection={"result": 0, "seed": 0},

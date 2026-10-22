@@ -229,13 +229,13 @@ def cancel_offer(identity: str, user: User, repo: Repo):
 
 
 @router.get("/competition")
-def competition(user: User, repo: Repo):
-    return CompetitionService(repo).table(user)
+def competition(user: User, repo: Repo, division_id: str | None = None):
+    return CompetitionService(repo).table(user, division_id)
 
 
 @router.get("/competition/matches")
-def competition_matches(user: User, repo: Repo):
-    return CompetitionService(repo).matches(user)
+def competition_matches(user: User, repo: Repo, division_id: str | None = None):
+    return CompetitionService(repo).matches(user, division_id)
 
 
 @router.get("/training")
@@ -314,9 +314,10 @@ def competition_statistics(
     user: User,
     repo: Repo,
     kind: Literal["league", "cup"] = "league",
+    division_id: str | None = None,
     ranking: Literal["goals", "matches", "cards"] = "goals",
 ):
-    return PlayerStatisticsService(repo).competition_rankings(user, kind, ranking)
+    return PlayerStatisticsService(repo).competition_rankings(user, kind, ranking, division_id)
 
 
 @router.get("/competition/matches/{identity}")

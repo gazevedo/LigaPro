@@ -669,3 +669,61 @@ def test_failed_roster_creation_rolls_back_the_reserved_bot_slot(client, monkeyp
     assert database.standings.count_documents({"is_bot": True}) == 20
     assert database.clubs.count_documents({"owner_user_id": {"$type": "objectId"}}) == 0
     assert database.clubs.count_documents({"active": False}) == 0
+
+
+def test_browse_existing_divisions_without_changing_clubs_default_series(client):
+    headers = account(client, 1)
+    create(client, headers)
+    db = app.state.database
+    own = client.get("/api/competition", headers=headers).json()
+    season_id = ObjectId(own["season"]["id"])
+    division_id = ObjectId()
+    db.divisions.insert_one({"_id": division_id, "name": "B", "tier": 1, "active": True})
+    # A second series with distinct participants, standings and a fixture.
+    slots = []
+    for name in ["Clube B1", "Clube B2"]:
+        club_id, slot_id = ObjectId(), ObjectId()
+        db.clubs.insert_one({"_id": club_id, "name": name})
+        slot = {
+            "_id": slot_id,
+            "season_id": season_id,
+            "division_id": division_id,
+            "club_id": club_id,
+            "club_name": name,
+            "is_bot": True,
+        }
+        db.season_clubs.insert_one(slot)
+        db.standings.insert_one({**slot, "position": len(slots) + 1, "points": 0})
+        slots.append(slot)
+    match_id = ObjectId()
+    db.matches.insert_one(
+        {
+            "_id": match_id,
+            "season_id": season_id,
+            "division_id": division_id,
+            "home_slot_id": slots[0]["_id"],
+            "away_slot_id": slots[1]["_id"],
+            "home_club_id": slots[0]["club_id"],
+            "away_club_id": slots[1]["club_id"],
+            "round": 1,
+            "date": db.matches.find_one()["date"],
+            "status": "scheduled",
+        }
+    )
+    table = client.get(f"/api/competition?division_id={division_id}", headers=headers)
+    assert table.status_code == 200, table.text
+    data = table.json()
+    assert data["division"]["name"] == "B"
+    assert [d["name"] for d in data["divisions"]] == ["A", "B"]
+    assert {r["club_name"] for r in data["standings"]} == {"Clube B1", "Clube B2"}
+    matches = client.get(f"/api/competition/matches?division_id={division_id}", headers=headers)
+    assert matches.status_code == 200, matches.text
+    assert [row["id"] for row in matches.json()] == [str(match_id)]
+    assert matches.json()[0]["home_name"] == "Clube B1"
+    stats = client.get(f"/api/competition/statistics?division_id={division_id}", headers=headers)
+    assert stats.status_code == 200 and stats.json()["rows"] == []
+    assert client.get("/api/competition", headers=headers).json()["division"] == own["division"]
+    assert len(client.get("/api/competition/matches", headers=headers).json()) == 38
+    for path in ["/api/competition", "/api/competition/matches", "/api/competition/statistics"]:
+        for identity in ["invalid", str(ObjectId())]:
+            assert client.get(f"{path}?division_id={identity}", headers=headers).status_code == 404

@@ -254,7 +254,7 @@ class PlayerStatisticsService:
             }
         )
 
-    def competition_rankings(self, user, kind, ranking):
+    def competition_rankings(self, user, kind, ranking, division_id=None):
         club = self.repo.owned(user.id)
         season = self.repo.find("seasons", {"status": "active"})
         if not season:
@@ -265,11 +265,14 @@ class PlayerStatisticsService:
             )
             if not slot:
                 return public({"season": season, "ranking": ranking, "rows": []})
+            from app.services.competition import CompetitionService
+
+            division = CompetitionService(self.repo).selected_division(season, club, division_id)
             matches = self.repo.many(
                 "matches",
                 {
                     "season_id": season["_id"],
-                    "division_id": slot["division_id"],
+                    "division_id": division["_id"],
                     "status": "completed",
                 },
                 projection={"_id": 1},
