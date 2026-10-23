@@ -79,7 +79,7 @@ def test_competition_reads_return_saved_data_without_simulating_matches():
         assert kwargs == {"max_matches": 10}
         events.append("processed")
 
-    def read(_user):
+    def read(_user, _division_id=None):
         events.append("read")
         return {"games": 4}
 
@@ -247,3 +247,17 @@ def test_external_mode_does_not_start_an_embedded_scheduler():
             scheduler.assert_not_awaited()
 
     asyncio.run(scenario())
+
+
+def test_serverless_live_progress_does_not_depend_on_background_rooms():
+    main = module()
+    manager = Mock(start_due=AsyncMock())
+    repository = Mock()
+    repository.find.return_value = {"status": "ready"}
+    with (
+        patch.object(main, "is_serverless_runtime", return_value=True),
+        patch.object(main, "process_due"),
+        patch.object(main, "send_match_reminders"),
+    ):
+        asyncio.run(main.run_game_maintenance(manager, repository, Mock()))
+    manager.start_due.assert_not_awaited()

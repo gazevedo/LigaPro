@@ -46,6 +46,8 @@ async def run_game_maintenance(manager, repository, config, *, scheduled=True):
         ("scheduled", lambda: asyncio.to_thread(process_due, repository)),
         ("reminders", lambda: asyncio.to_thread(send_match_reminders, repository, config)),
     ):
+        if name == "live" and is_serverless_runtime():
+            continue
         if name == "scheduled" and (not scheduled or getenv("GAME_SCHEDULER_MODE") == "external"):
             continue
         try:
@@ -78,7 +80,8 @@ async def lifespan(app: FastAPI):
         from app.services.live_match import MatchRoomManager
 
         app.state.match_rooms = MatchRoomManager(repository)
-        await app.state.match_rooms.recover()
+        if not is_serverless_runtime():
+            await app.state.match_rooms.recover()
 
         async def maintenance():
             while True:

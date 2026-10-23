@@ -48,7 +48,12 @@ def run_once(database, *, max_matches=MAX_MATCHES):
             "due_before": due_before,
             "remaining_due": count(due_query),
         }
-        if due_before and result["remaining_due"] and not result["completed_matches"]:
+        if (
+            due_before
+            and result["remaining_due"]
+            and not result["completed_matches"]
+            and not count({"status": "live"})
+        ):
             raise RuntimeError(
                 "Há jogos vencidos, mas nenhum foi concluído. Consulte os erros do job."
             )

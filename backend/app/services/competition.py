@@ -1,5 +1,6 @@
 """Persistent league slots preserve sporting history when a human replaces a bot."""
 
+import asyncio
 import logging
 from datetime import timedelta
 from random import Random
@@ -1272,7 +1273,22 @@ class CompetitionService:
         return self.repo.transaction(operation)
 
     def play_due(self, season, now, max_matches=None):
+        from app.services.live_match import (
+            LIVE_MATCH_DURATION_SECONDS,
+            MATCH_COLLECTIONS,
+            advance_persisted_match,
+        )
+
         self.repo.transaction(lambda repo: (self.lock(repo), CupService.ensure(repo, season)))
+        # Finish/recover sessions even when no browser or WebSocket remains connected.
+        for collection in MATCH_COLLECTIONS:
+            for match in self.repo.many(
+                collection,
+                {"season_id": season["_id"], "status": "live"},
+                limit=None,
+                projection={"_id": 1},
+            ):
+                asyncio.run(advance_persisted_match(self.repo, match["_id"], now))
         attempted = set()
         while max_matches is None or len(attempted) < max_matches:
             from app.services.live_match import busy_clubs
@@ -1314,11 +1330,13 @@ class CompetitionService:
             ]
             if not options:
                 break
-            _, kind, identity = min(options, key=lambda row: (row[0], row[1]))
+            kickoff, kind, identity = min(options, key=lambda row: (row[0], row[1]))
             attempted.add(identity)
             logger.info("scheduled_match event=start kind=%s match=%s", kind, identity)
             try:
-                if kind == "cup":
+                if (now - kickoff).total_seconds() < LIVE_MATCH_DURATION_SECONDS:
+                    asyncio.run(advance_persisted_match(self.repo, identity, now))
+                elif kind == "cup":
                     CupService(self.repo).play(identity, now)
                 elif kind == "friendly":
                     from app.services.season_calendar import FriendlyService

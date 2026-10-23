@@ -5,6 +5,7 @@ export interface LiveEvent { sequence: number; minute: number; type: string; nar
 export interface LiveState {
   match_id: string; status: string; current_minute: number; current_second: number; updated_at: string;
   home_name: string; away_name: string; home_score: number; away_score: number;
+  duration_seconds?: number; real_seconds_per_game_minute?: number;
   simulation_speed: number; paused: boolean; connected_users: number; human_vs_human: boolean;
   home_possession: number; away_possession: number; home_attacks: number; away_attacks: number;
   home_chances: number; away_chances: number; home_shots: number; away_shots: number;
@@ -17,6 +18,7 @@ export interface LiveMessage { type: string; data: LiveState | LiveEvent | { rea
 export const liveMatchService = {
   commandId: (sequence: number) => `${Date.now()}-${sequence}`,
   state: (id: string) => apiRequest<LiveState>(`/matches/${id}/live-state`),
+  command: (id: string, kind: string, payload: Record<string, string>, commandId: string) => apiRequest<{ status: string }>(`/matches/${id}/commands/${kind}`, { method: 'POST', body: JSON.stringify({ command_id: commandId, payload }) }),
   upcoming: () => apiRequest<{ id: string; date: string; round?: number; status: string }[]>('/matches/upcoming'),
   connect(id: string) {
     const base = process.env.EXPO_PUBLIC_API_URL?.replace(/\/api\/?$/, '').replace(/\/$/, '').replace(/^http/, 'ws');

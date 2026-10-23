@@ -1,3 +1,4 @@
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -20,7 +21,7 @@ def test_external_tick_finishes_round_with_human_club_without_http_or_lifespan(c
         SimpleNamespace(id=str(ObjectId())),
         ClubInput(name="Clube humano", country_id="BR", badge_id="blue"),
     )
-    now = database.matches.find_one(sort=[("date", 1)])["date"]
+    now = database.matches.find_one(sort=[("date", 1)])["date"] + timedelta(minutes=5)
     with (
         patch("run_scheduled_matches.utcnow", return_value=now),
         patch("app.services.game.utcnow", return_value=now),
@@ -59,7 +60,7 @@ def test_external_tick_records_processing_failure(client):
 def test_external_tick_does_not_report_success_when_due_matches_make_no_progress(client):
     database = app.state.database
     import_database(database)
-    now = database.matches.find_one(sort=[("date", 1)])["date"]
+    now = database.matches.find_one(sort=[("date", 1)])["date"] + timedelta(minutes=5)
     with (
         patch("run_scheduled_matches.utcnow", return_value=now),
         patch("run_scheduled_matches.process_due"),
@@ -122,7 +123,7 @@ def test_external_tick_drains_backlog_without_repeating_games(client):
 
     database = app.state.database
     import_database(database)
-    now = database.matches.find_one(sort=[("date", 1)])["date"] + timedelta(hours=1)
+    now = database.matches.find_one(sort=[("date", 1)])["date"] + timedelta(hours=1, minutes=5)
     with (
         patch("run_scheduled_matches.utcnow", return_value=now),
         patch("app.services.game.utcnow", return_value=now),
@@ -143,7 +144,7 @@ def test_tick_keeps_committed_progress_on_timeout_and_resumes_next_time(client):
     database = app.state.database
     import_database(database)
     fixture = database.matches.find_one(sort=[("date", 1)])
-    now = fixture["date"]
+    now = fixture["date"] + timedelta(minutes=5)
 
     def interrupted(repository, **kwargs):
         CompetitionService(repository).play(fixture["_id"], now)

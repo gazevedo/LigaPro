@@ -13,6 +13,7 @@ from app.models.game import utcnow
 from app.repositories.game import GameRepository
 from app.services.live_match import MatchRoomManager, team_from_snapshot
 from app.services.match_engine import MatchEngine
+from mock_database import import_database
 
 
 class Socket:
@@ -24,6 +25,7 @@ class Socket:
 
 
 def setup(client):
+    import_database(app.state.database)
     h1, h2 = account(client, 1), account(client, 2)
     c1, c2 = create(client, h1), create(client, h2)
     db = app.state.database
@@ -36,7 +38,7 @@ def setup(client):
     return h1, h2, u1, u2, match["_id"], repo
 
 
-def test_shared_room_ordered_commands_privacy_pause_and_restart(client):
+def test_shared_room_ordered_commands_privacy_fixed_clock_and_restart(client):
     h1, h2, u1, u2, match, repo = setup(client)
 
     async def scenario():
@@ -56,12 +58,11 @@ def test_shared_room_ordered_commands_privacy_pause_and_restart(client):
         assert speed_error.value.status_code == 422
         with pytest.raises(HTTPException) as skip_error:
             await room.command(u1, {"type": "skip_to_end"})
-        assert skip_error.value.status_code == 409
-        await room.command(u1, {"type": "pause"})
-        frozen = deepcopy(room.session.frame)
-        assert room.session.advance() == frozen
-        assert room.session.paused
-        await room.command(u2, {"type": "resume"})
+        assert skip_error.value.status_code == 422
+        with pytest.raises(HTTPException) as pause_error:
+            await room.command(u1, {"type": "pause"})
+        assert pause_error.value.status_code == 422
+        assert not room.session.paused
         commands = [
             {"type": "tactics_change", "command_id": "home-1", "payload": {"marking": "heavy"}},
             {
@@ -165,7 +166,7 @@ def test_websocket_auth_shared_sync_and_disconnect_finishes(client):
             assert "próprio" in rejected["data"]["reason"]
         # Both leave: no client can prevent the automatic conclusion.
     room = app.state.match_rooms.rooms[str(match)]
-    room.match["date"] = utcnow()
+    room.match["date"] = utcnow() - timedelta(minutes=5)
     repo.update("matches", {"_id": match}, {"$set": {"date": room.match["date"]}})
 
     async def finish_offline():
@@ -220,7 +221,7 @@ def test_live_cup_and_friendly_settle_the_same_production_result(client):
     friendly = FriendlyService(repo).create(
         u1,
         FriendlyInput(
-            opponent_club_id=str(rival["_id"]), date=season["starts_at"] + timedelta(days=1)
+            opponent_club_id=str(rival["_id"]), date=season["starts_at"] + timedelta(days=3)
         ),
     )
     repo.update("friendly_matches", {"_id": ObjectId(friendly["id"])}, {"$set": {"date": utcnow()}})

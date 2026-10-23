@@ -35,16 +35,16 @@ async def apply_command(room, user, message):
 
 @router.get("/api/matches/{identity}/live-state")
 async def live_state(identity: str, request: Request, user: User):
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     club = await asyncio.to_thread(room.authorize, user)
     async with room.lock:
-        await room.start()
+        await room.advance_clock()
         return room.state(str(club["_id"]))
 
 
 @router.get("/api/matches/{identity}/events")
 async def events(identity: str, request: Request, user: User, after: int = -1):
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     club = await asyncio.to_thread(room.authorize, user)
     return public([e for e in room.events(str(club["_id"])) if e["sequence"] > after])
 
@@ -53,7 +53,7 @@ async def events(identity: str, request: Request, user: User, after: int = -1):
 async def command(identity: str, kind: str, data: LiveCommandInput, request: Request, user: User):
     if kind not in {"substitution", "formation", "tactics", "combined_change"}:
         raise HTTPException(422, "Tipo de comando inválido.")
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     return await apply_command(
         room,
         user,
@@ -66,19 +66,19 @@ async def command(identity: str, kind: str, data: LiveCommandInput, request: Req
 
 @router.post("/api/matches/{identity}/pause")
 async def pause(identity: str, request: Request, user: User):
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     return await apply_command(room, user, {"type": "pause"})
 
 
 @router.post("/api/matches/{identity}/resume")
 async def resume(identity: str, request: Request, user: User):
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     return await apply_command(room, user, {"type": "resume"})
 
 
 @router.post("/api/matches/{identity}/speed")
 async def speed(identity: str, data: SpeedInput, request: Request, user: User):
-    room = await request.app.state.match_rooms.get(identity, user)
+    room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     return await apply_command(room, user, {"type": "set_speed", **data.model_dump()})
 
 

@@ -1,8 +1,8 @@
-"""One server-owned progressive session per match; connection affects only cadence.
+"""Five-minute progressive matches with durable checkpoints and clock-based recovery.
 
-A single FastAPI process owns these rooms. Restart recovery replays the saved initial
-context + ordered accepted commands to the last committed checkpoint using the same
-seed; it never broadcasts or settles that replay. No result is calculated on join.
+Rooms recover their initial context and ordered commands from MongoDB. The clock
+is anchored to kick-off, so HTTP polling, reconnecting and scheduled jobs share the
+same five-minute timeline without revealing future events.
 """
 
 import asyncio
@@ -26,7 +26,8 @@ from app.services.match_engine import (
 
 MIN_CONNECTED_USERS_TO_RUN = 0
 MATCH_MUST_NEVER_WAIT_FOR_PLAYER_CONNECTION = True
-LIVE_MATCH_REAL_SECONDS_PER_GAME_MINUTE = 1.0
+LIVE_MATCH_DURATION_SECONDS = 300
+LIVE_MATCH_REAL_SECONDS_PER_GAME_MINUTE = LIVE_MATCH_DURATION_SECONDS / 90
 MAX_TACTICAL_PAUSES_PER_USER = 3
 TACTICAL_PAUSE_SECONDS = 15
 RELEVANT = {
@@ -376,7 +377,38 @@ class MatchRoom:
         self.last_saved = restore_minute if snapshots else -1
         self.match["status"] = "live"
         self.last_due = monotonic()
-        await self.checkpoint(force=True)
+        if not snapshots:
+            await self.checkpoint(force=True)
+
+    async def advance_clock(self, now=None):
+        """Recover persisted progress and reveal only elapsed play, without a worker loop."""
+        now = now or utcnow()
+        current = await asyncio.to_thread(
+            self.repo.find, self.collection, {"_id": self.match["_id"]}
+        )
+        if not current:
+            return
+        self.match = current
+        if current["status"] == "completed":
+            self.session = None
+            return
+        # Other API instances and the scheduled job may have advanced this match.
+        self.session = None
+        await self.start()
+        if not self.session:
+            return
+        elapsed = max(0, (now - self.match["date"]).total_seconds())
+        target = min(90, elapsed / LIVE_MATCH_REAL_SECONDS_PER_GAME_MINUTE)
+        before = self.session.frame["minute"]
+        if elapsed >= LIVE_MATCH_DURATION_SECONDS:
+            self.session.simulate_to_end()
+            await self.finish()
+        else:
+            while self.session.frame["minute"] + 5 <= target:
+                self.session.advance()
+            if self.session.frame["minute"] != before:
+                await self.checkpoint(force=True)
+        self.clock_minute = max(target, min(90, self.session.frame["minute"]))
 
     def events(self, club_id=None):
         raw = (
@@ -449,7 +481,13 @@ class MatchRoom:
         state = {
             "match_id": self.identity,
             "status": status,
-            "current_minute": minute,
+            "current_minute": (
+                getattr(self, "clock_minute", minute)
+                if session and session.result is None
+                else minute
+            ),
+            "real_seconds_per_game_minute": LIVE_MATCH_REAL_SECONDS_PER_GAME_MINUTE,
+            "duration_seconds": LIVE_MATCH_DURATION_SECONDS,
             "current_second": 0,
             "current_period": 1 if minute < 45 else 2,
             "simulation_speed": session.speed if session else 1,
@@ -511,6 +549,18 @@ class MatchRoom:
 
         def save():
             def operation(tx):
+                from app.services.competition import CompetitionService
+
+                CompetitionService.lock(tx)
+                current = tx.find(self.collection, {"_id": self.match["_id"]})
+                if not current or current["status"] != "live":
+                    return
+                if current.get("command_revision", 0) != self.match.get("command_revision", 0):
+                    raise HTTPException(
+                        409, "A partida recebeu novos comandos. Atualize o acompanhamento."
+                    )
+                if current.get("live_minute", 0) > frame["minute"]:
+                    raise HTTPException(409, "A partida avançou. Atualize o acompanhamento.")
                 # Version/checkpoint and events are committed together.
                 tx.update(
                     self.collection,
@@ -594,7 +644,7 @@ class MatchRoom:
             cid = str(club["_id"])
             if message.get("club_id", cid) != cid:
                 raise HTTPException(403, "Você controla somente o próprio clube.")
-            await self.start()
+            await self.advance_clock()
             if not self.session or self.session.result is not None:
                 raise HTTPException(409, "Partida não está em andamento.")
             s = self.session
@@ -617,108 +667,124 @@ class MatchRoom:
                 "attack_focus_change",
             }:
                 raise HTTPException(422, "Tipo de comando inválido.")
-            human_pair = bool(self.home_user_id and self.away_user_id)
-            if kind in {"pause", "pause_request", "tactical_pause"}:
-                if s.pause_counts.get(user.id, 0) >= MAX_TACTICAL_PAUSES_PER_USER or s.paused:
-                    raise HTTPException(409, "Pausa indisponível.")
-                s.pause_counts[user.id] = s.pause_counts.get(user.id, 0) + 1
-                s.paused = True
-                s.pause_deadline = monotonic() + TACTICAL_PAUSE_SECONDS
-            elif kind in {"resume", "start_second_half"}:
-                s.paused = False
-                self.last_due = monotonic()
-            elif kind == "set_speed":
-                speed = message.get("speed")
-                if type(speed) is not int or speed not in {1, 2, 4} or human_pair and speed != 1:
-                    raise HTTPException(422, "Velocidade deve ser 1× entre dois clubes humanos.")
-                s.speed = speed
-            elif kind in {"skip_to_end", "skip_to_halftime"}:
-                if human_pair and len(self.connected_users - {user.id}) > 0:
-                    raise HTTPException(
-                        409, "Não é permitido pular enquanto o outro técnico acompanha."
-                    )
-                if kind == "skip_to_halftime" and s.frame["minute"] >= 45:
-                    raise HTTPException(409, "O intervalo já ocorreu.")
-                s.skip_target = 45 if kind == "skip_to_halftime" else 120 if s.knockout else 90
-                s.paused = False
-            else:
-                client_id = message.get("command_id")
-                if not isinstance(client_id, str) or not 1 <= len(client_id) <= 80:
-                    raise HTTPException(422, "Informe um identificador de comando válido.")
-                saved = next(
-                    (
-                        r
-                        for r in self.command_rows
-                        if r["user_id"] == user.id and r["client_id"] == client_id
-                    ),
-                    None,
+            if kind in {
+                "pause",
+                "pause_request",
+                "tactical_pause",
+                "resume",
+                "start_second_half",
+                "set_speed",
+                "skip_to_end",
+                "skip_to_halftime",
+            }:
+                raise HTTPException(422, "A partida tem duração fixa de cinco minutos.")
+            client_id = message.get("command_id")
+            if not isinstance(client_id, str) or not 1 <= len(client_id) <= 80:
+                raise HTTPException(422, "Informe um identificador de comando válido.")
+            saved = next(
+                (
+                    r
+                    for r in self.command_rows
+                    if r["user_id"] == user.id and r["client_id"] == client_id
+                ),
+                None,
+            )
+            if saved:
+                return public(saved)
+            if len([r for r in self.command_rows if r["user_id"] == user.id]) >= 30:
+                raise HTTPException(409, "Limite de comandos por partida atingido.")
+            payload = message.get("payload", {})
+            command = {
+                "team_id": cid,
+                "minute": s.frame["minute"],
+                "type": "substitution" if kind == "substitution" else "tactics_change",
+                "payload": payload,
+            }
+            try:
+                validate_commands([command], {cid}, 120 if s.knockout else 90)
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(422, str(exc)) from exc
+            if kind == "substitution":
+                own = self.state(cid)["own_team"]
+                outgoing = next(
+                    (p for p in own["lineup"] if p["id"] == payload.get("out_player_id")), None
                 )
-                if saved:
-                    return public(saved)
-                if len([r for r in self.command_rows if r["user_id"] == user.id]) >= 30:
-                    raise HTTPException(409, "Limite de comandos por partida atingido.")
-                payload = message.get("payload", {})
-                command = {
-                    "team_id": cid,
-                    "minute": s.frame["minute"],
-                    "type": "substitution" if kind == "substitution" else "tactics_change",
-                    "payload": payload,
-                }
-                try:
-                    validate_commands([command], {cid}, 120 if s.knockout else 90)
-                except (ValueError, TypeError) as exc:
-                    raise HTTPException(422, str(exc)) from exc
-                if kind == "substitution":
-                    own = self.state(cid)["own_team"]
-                    outgoing = next(
-                        (p for p in own["lineup"] if p["id"] == payload.get("out_player_id")), None
+                incoming = next(
+                    (p for p in own["reserves"] if p["id"] == payload.get("in_player_id")), None
+                )
+                pending_subs = [
+                    r
+                    for r in self.command_rows
+                    if r["club_id"] == club["_id"]
+                    and r["status"] == "pending"
+                    and r["engine_command"]["type"] == "substitution"
+                ]
+                if (
+                    not outgoing
+                    or not incoming
+                    or outgoing["dismissed"]
+                    and not outgoing["injured"]
+                    or incoming["injured"]
+                    or own["substitutions_used"] + len(pending_subs) >= MAX_SUBSTITUTIONS
+                    or any(
+                        incoming["id"] == r["engine_command"]["payload"]["in_player_id"]
+                        or outgoing["id"] == r["engine_command"]["payload"]["out_player_id"]
+                        for r in pending_subs
                     )
-                    incoming = next(
-                        (p for p in own["reserves"] if p["id"] == payload.get("in_player_id")), None
-                    )
-                    pending_subs = [
-                        r
-                        for r in self.command_rows
-                        if r["club_id"] == club["_id"]
-                        and r["status"] == "pending"
-                        and r["engine_command"]["type"] == "substitution"
-                    ]
-                    if (
-                        not outgoing
-                        or not incoming
-                        or outgoing["dismissed"]
-                        and not outgoing["injured"]
-                        or incoming["injured"]
-                        or own["substitutions_used"] + len(pending_subs) >= MAX_SUBSTITUTIONS
-                        or any(
-                            incoming["id"] == r["engine_command"]["payload"]["in_player_id"]
-                            or outgoing["id"] == r["engine_command"]["payload"]["out_player_id"]
-                            for r in pending_subs
-                        )
-                    ):
-                        raise HTTPException(409, "Substituição inelegível ou limite atingido.")
-                self.sequence += 1
-                s.version += 1
-                row = {
-                    "_id": f"{self.identity}:{user.id}:{client_id}",
-                    "match_id": self.match["_id"],
-                    "user_id": user.id,
-                    "club_id": club["_id"],
-                    "client_id": client_id,
-                    "minute": s.frame["minute"],
-                    "status": "pending",
-                    "engine_command": command,
-                    "sequence_number": self.sequence,
-                    "created_at": utcnow(),
-                }
-                await asyncio.to_thread(self.repo.insert, "match_commands", row)
-                self.command_rows.append(row)
-                s.queue.append(command)
-                await self.broadcast("sync")
-                return public(row)
+                ):
+                    raise HTTPException(409, "Substituição inelegível ou limite atingido.")
+            self.sequence += 1
             s.version += 1
-            await self.broadcast("match_state")
-            return {"status": "accepted", "version": s.version}
+            row = {
+                "_id": f"{self.identity}:{user.id}:{client_id}",
+                "match_id": self.match["_id"],
+                "user_id": user.id,
+                "club_id": club["_id"],
+                "client_id": client_id,
+                "minute": s.frame["minute"],
+                "status": "pending",
+                "engine_command": command,
+                "sequence_number": self.sequence,
+                "created_at": utcnow(),
+            }
+
+            def save_command(tx):
+                from app.services.competition import CompetitionService
+
+                CompetitionService.lock(tx)
+                current = tx.find(self.collection, {"_id": self.match["_id"]})
+                if (
+                    not current
+                    or current["status"] != "live"
+                    or current.get("live_minute", 0) > row["minute"]
+                    or (utcnow() - current["date"]).total_seconds() >= LIVE_MATCH_DURATION_SECONDS
+                ):
+                    raise HTTPException(
+                        409, "A partida avançou. Atualize antes de enviar o comando."
+                    )
+                previous = tx.find("match_commands", {"_id": row["_id"]})
+                if previous:
+                    return previous
+                latest = tx.many(
+                    "match_commands",
+                    {"match_id": self.match["_id"]},
+                    sort=[("sequence_number", -1)],
+                    limit=1,
+                )
+                row["sequence_number"] = latest[0]["sequence_number"] + 1 if latest else 1
+                tx.insert("match_commands", row)
+                tx.update(
+                    self.collection, {"_id": self.match["_id"]}, {"$inc": {"command_revision": 1}}
+                )
+                return row
+
+            row = await asyncio.to_thread(self.repo.transaction, save_command)
+            self.match["command_revision"] = self.match.get("command_revision", 0) + 1
+            self.sequence = row["sequence_number"]
+            self.command_rows.append(row)
+            s.queue.append(command)
+            await self.broadcast("sync")
+            return public(row)
 
     async def finish(self):
         if self.settled:
@@ -746,77 +812,24 @@ class MatchRoom:
         while not self.manager.closed:
             try:
                 async with self.lock:
-                    await self.start()
-                    if not self.session and not self.connections and self.match["date"] > utcnow():
-                        return
-                    if self.session and self.session.result is not None:
-                        await self.finish()
-                        return
+                    await self.advance_clock()
+                    if self.session or self.match["status"] == "completed":
+                        await self.broadcast(
+                            "match_finished"
+                            if self.match["status"] == "completed"
+                            else "match_state"
+                        )
                     if self.match["status"] == "completed":
-                        await self.broadcast("match_finished")
                         return
-                    if self.session:
-                        s = self.session
-                        if not self.connections:
-                            s.paused = False
-                            s.simulate_to_end()
-                            await self.finish()
-                            return
-                        if s.paused and monotonic() >= s.pause_deadline:
-                            s.paused = False
-                        if not s.paused and (s.skip_target or monotonic() >= self.last_due):
-                            before = len(s.frame["events"])
-                            s.advance()
-                            self.last_due = (
-                                monotonic() + 5 * LIVE_MATCH_REAL_SECONDS_PER_GAME_MINUTE / s.speed
-                            )
-                            if s.status == "halftime" and s.skip_target not in {90, 120}:
-                                s.paused = True
-                                s.pause_deadline = monotonic() + TACTICAL_PAUSE_SECONDS
-                                s.skip_target = 0
-                            if s.skip_target and s.frame["minute"] >= s.skip_target:
-                                s.skip_target = 0
-                            await self.checkpoint()
-                            new = s.frame["events"][before:]
-                            for e in new:
-                                if e["type"] in RELEVANT:
-                                    for ws, (_, club_id) in list(self.connections.items()):
-                                        safe = next(
-                                            (
-                                                x
-                                                for x in self.events(club_id)
-                                                if x["sequence"] == s.frame["events"].index(e)
-                                            ),
-                                            None,
-                                        )
-                                        if safe:
-                                            await ws.send_json(
-                                                {"type": "match_event", "data": public(safe)}
-                                            )
-                            for row in self.command_rows:
-                                if row.get("reported") or row["status"] == "pending":
-                                    continue
-                                row["reported"] = True
-                                for ws, (user, _) in list(self.connections.items()):
-                                    if user.id == row["user_id"]:
-                                        await ws.send_json(
-                                            {
-                                                "type": "command_rejected"
-                                                if row["status"] == "rejected"
-                                                else "command_applied",
-                                                "data": public(row),
-                                            }
-                                        )
-                            await self.broadcast(
-                                "halftime" if s.status == "halftime" else "match_state"
-                            )
+                    if self.match["date"] > utcnow() and not self.connections:
+                        return
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self.manager.logger.error(
                     "Live match %s failed (%s); retrying", self.identity, type(exc).__name__
                 )
-            await asyncio.sleep(0.05 if self.session and self.session.skip_target else 0.25)
+            await asyncio.sleep(2)
 
 
 class MatchRoomManager:
@@ -896,3 +909,10 @@ class MatchRoomManager:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def advance_persisted_match(repo, identity, now=None):
+    manager = MatchRoomManager(repo)
+    room = await manager.get(str(identity), start_task=False)
+    async with room.lock:
+        await room.advance_clock(now)
