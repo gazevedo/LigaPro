@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -11,3 +11,7 @@ class SettingUpdate(BaseModel):
 
 class SettingResponse(Setting):
     pass
+
+
+class DatabaseResetInput(BaseModel):
+    confirmation: Literal["APAGAR TODOS OS DADOS"]

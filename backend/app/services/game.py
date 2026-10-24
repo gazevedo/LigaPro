@@ -129,7 +129,8 @@ class ClubService:
         def operation(repo):
             logger.info("club_creation event=transaction_start user=%s", user.id)
             initialization = repo.find("game_state", {"_id": "initial_universe"})
-            if initialization and initialization.get("status") == "preparing":
+            resetting = repo.find("game_state", {"_id": "database_reset", "status": "running"})
+            if resetting or initialization and initialization.get("status") == "preparing":
                 raise HTTPException(
                     503, "A liga está sendo preparada. Aguarde a conclusão para criar o clube."
                 )
