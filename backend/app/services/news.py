@@ -22,6 +22,16 @@ NEWS_TYPES = {
 }
 
 
+SALARY_NEWS_TITLES = ("salary", "player_salary", "Pagamento de salários")
+
+
+def visible_news_query(club_id=None):
+    query = {"$nor": [{"type": "financial", "title": {"$in": list(SALARY_NEWS_TITLES)}}]}
+    if club_id is not None:
+        query["club_id"] = {"$in": [club_id, None]}
+    return query
+
+
 class NewsService:
     @staticmethod
     def publish(
@@ -36,6 +46,8 @@ class NewsService:
         body=None,
         now=None,
     ):
+        if kind == "financial" and title in SALARY_NEWS_TITLES:
+            return
         if kind not in NEWS_TYPES:
             return
         if kind == "transfer" and player_id is None and reference is not None:
@@ -47,8 +59,6 @@ class NewsService:
                 player_id = listing["player_id"]
         if kind == "financial":
             title = {
-                "salary": "Pagamento de salários",
-                "player_salary": "Pagamento de salários",
                 "sponsorship": "Receita de patrocínio",
                 "tv_rights": "Receita de direitos de TV",
                 "ticketing": "Receita de bilheteria",
@@ -85,7 +95,7 @@ class NewsService:
 
     @staticmethod
     def feed(repo, club_id=None):
-        query = {"club_id": {"$in": [club_id, None]}} if club_id else {}
+        query = visible_news_query(club_id)
         return public(repo.many("news_items", query, sort=[("created_at", -1)], limit=30))
 
     @staticmethod
@@ -93,7 +103,7 @@ class NewsService:
         result = list(
             repo.database.news_items.aggregate(
                 [
-                    {"$match": {"club_id": {"$in": [club_id, None]}}},
+                    {"$match": visible_news_query(club_id)},
                     {
                         "$lookup": {
                             "from": "news_reads",

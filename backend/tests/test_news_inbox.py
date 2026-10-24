@@ -7,9 +7,11 @@ from app.main import app
 from app.models.game import utcnow
 from app.repositories.game import GameRepository
 from app.services.news import NewsService
+from mock_database import import_database
 
 
 def setup(client):
+    import_database(app.state.database)
     headers = account(client, 71)
     club = ObjectId(create(client, headers)["id"])
     repo = GameRepository(app.state.database)
@@ -91,3 +93,27 @@ def test_pagination_counts_unread_messages_outside_the_first_page(client):
         item["id"] for item in second["items"]
     )
     assert client.get("/api/news/inbox?offset=-1", headers=headers).status_code == 422
+
+
+def test_salary_messages_are_not_published_or_counted_in_the_inbox(client):
+    headers, club, repo = setup(client)
+    for title in ["salary", "player_salary", "Pagamento de salários"]:
+        NewsService.publish(repo, "financial", title, club, "new-salary")
+    assert repo.database.news_items.count_documents({}) == 0
+    # Previously generated salary messages are hidden without deleting ledger entries.
+    repo.database.news_items.insert_one(
+        {
+            "_id": "old-salary",
+            "club_id": club,
+            "type": "financial",
+            "title": "Pagamento de salários",
+            "body": "Pagamento de salários",
+            "created_at": utcnow(),
+        }
+    )
+    NewsService.publish(repo, "financial", "tv_rights", club, "tv")
+    inbox = client.get("/api/news/inbox", headers=headers).json()
+    assert inbox["total"] == inbox["unread_count"] == 1
+    assert [item["title"] for item in inbox["items"]] == ["Receita de direitos de TV"]
+    assert [item["title"] for item in NewsService.feed(repo, club)] == ["Receita de direitos de TV"]
+    assert repo.database.news_items.count_documents({}) == 2
