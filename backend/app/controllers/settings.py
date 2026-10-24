@@ -5,7 +5,7 @@ from anyio import CancelScope
 from fastapi import APIRouter, Depends, Path, Request
 
 from app.api.dependencies import get_current_user, get_settings_service
-from app.schemas.settings import DatabaseResetInput, SettingResponse, SettingUpdate
+from app.schemas.settings import SettingResponse, SettingUpdate
 from app.services.settings import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(get_current_user)])
@@ -19,9 +19,7 @@ def list_settings(service: Service):
 
 
 @router.post("/database-reset")
-async def reset_database(
-    body: DatabaseResetInput, request: Request, service: Service, user=Depends(get_current_user)
-):
+async def reset_database(request: Request, service: Service, user=Depends(get_current_user)):
     # Disconnects must not interrupt deletion between clearing and seeding.
     with CancelScope(shield=True):
         manager = getattr(request.app.state, "match_rooms", None)

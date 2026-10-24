@@ -27,7 +27,7 @@ test('settings logs out using the existing session handler', async () => {
   } finally { useAuthStore.setState({ logout: previous }); }
 });
 
-test('database reset requires typed confirmation and clears the session after success', async () => {
+test('one press resets the database and clears the session after success', async () => {
   jest.mocked(settingsService.resetDatabase).mockResolvedValue({ status: 'ready' });
   const previous = useAuthStore.getState().clearSession;
   const clearSession = jest.fn(async () => undefined);
@@ -35,19 +35,8 @@ test('database reset requires typed confirmation and clears the session after su
   try {
     await render(<SettingsScreen />);
     await fireEvent.press(screen.getByRole('button', { name: 'Zerar banco de dados' }));
-    await fireEvent.press(screen.getByRole('button', { name: 'Confirmar reinicialização' }));
-    expect(settingsService.resetDatabase).not.toHaveBeenCalled();
-    await fireEvent.changeText(screen.getByLabelText('Digite APAGAR TODOS OS DADOS'), 'APAGAR TODOS OS DADOS');
-    await fireEvent.press(screen.getByRole('button', { name: 'Confirmar reinicialização' }));
     await waitFor(() => expect(clearSession).toHaveBeenCalledTimes(1));
-    expect(settingsService.resetDatabase).toHaveBeenCalledWith('APAGAR TODOS OS DADOS');
+    expect(settingsService.resetDatabase).toHaveBeenCalledTimes(1);
+    expect(settingsService.resetDatabase).toHaveBeenCalledWith();
   } finally { useAuthStore.setState({ clearSession: previous }); }
-});
-
-test('cancel closes confirmation without resetting any data', async () => {
-  await render(<SettingsScreen />);
-  await fireEvent.press(screen.getByRole('button', { name: 'Zerar banco de dados' }));
-  await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }));
-  expect(screen.queryByLabelText('Digite APAGAR TODOS OS DADOS')).toBeNull();
-  expect(settingsService.resetDatabase).not.toHaveBeenCalled();
 });

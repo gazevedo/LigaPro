@@ -6,25 +6,19 @@ from app.main import app
 from mock_database import import_database
 
 
-def test_authenticated_reset_requires_confirmation_and_recreates_initial_universe(client):
+def test_authenticated_reset_directly_recreates_initial_universe(client):
     database = app.state.database
     import_database(database)
     admin, other = account(client, 81), account(client, 82)
     create(client, admin)
     path = "/api/settings/database-reset"
-    assert client.post(path, json={"confirmation": "APAGAR TODOS OS DADOS"}).status_code == 401
-    assert client.post(path, headers=admin, json={"confirmation": "sim"}).status_code == 422
+    assert client.post(path).status_code == 401
     assert database.users.count_documents({}) == 2
     # On import failure the requester can still retry from Settings.
     with patch("mock_database.import_database", side_effect=RuntimeError("failure")):
-        assert (
-            client.post(
-                path, headers=other, json={"confirmation": "APAGAR TODOS OS DADOS"}
-            ).status_code
-            == 500
-        )
+        assert client.post(path, headers=other).status_code == 500
     assert client.get("/api/auth/me", headers=other).status_code == 200
-    response = client.post(path, headers=other, json={"confirmation": "APAGAR TODOS OS DADOS"})
+    response = client.post(path, headers=other)
     assert response.status_code == 200, response.text
     assert database.users.count_documents({}) == 0
     assert database.user_sessions.count_documents({}) == 0
