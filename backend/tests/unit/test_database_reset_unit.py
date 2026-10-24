@@ -20,28 +20,10 @@ def setup():
     return SettingsService(repository), database, user
 
 
-def test_reset_is_disabled_without_admin_and_for_every_other_user():
-    service, database, user = setup()
-    for email in [None, "", "other@example.com"]:
-        with patch(
-            "app.services.settings.get_settings",
-            return_value=SimpleNamespace(database_reset_admin_email=email),
-        ):
-            assert not service.can_reset_database(user)
-            with pytest.raises(HTTPException) as error:
-                service.reset_database(user)
-            assert error.value.status_code == 403
-    database.game_state.find_one_and_update.assert_not_called()
-
-
-def test_reset_retains_admin_until_seed_succeeds_and_then_revokes_every_session():
+def test_reset_retains_requester_until_seed_succeeds_and_then_revokes_every_session():
     service, database, user = setup()
     tx = SimpleNamespace(session=None)
     with (
-        patch(
-            "app.services.settings.get_settings",
-            return_value=SimpleNamespace(database_reset_admin_email="ADMIN@example.com"),
-        ),
         patch("app.repositories.game.GameRepository") as repo,
         patch("app.services.competition.CompetitionService.lock"),
         patch("mock_database.import_database") as seed,
@@ -57,13 +39,9 @@ def test_reset_retains_admin_until_seed_succeeds_and_then_revokes_every_session(
     assert database.clubs.delete_many.call_args.args[0] == {}
 
 
-def test_failed_seed_keeps_admin_and_sessions_available_for_retry():
+def test_failed_seed_keeps_requester_and_sessions_available_for_retry():
     service, database, user = setup()
     with (
-        patch(
-            "app.services.settings.get_settings",
-            return_value=SimpleNamespace(database_reset_admin_email=user.email),
-        ),
         patch("app.repositories.game.GameRepository") as repo,
         patch("app.services.competition.CompetitionService.lock"),
         patch("mock_database.import_database", side_effect=RuntimeError("seed failed")),
@@ -81,11 +59,7 @@ def test_failed_seed_keeps_admin_and_sessions_available_for_retry():
 def test_concurrent_reset_is_rejected_before_clearing_any_collection():
     service, database, user = setup()
     database.game_state.find_one_and_update.side_effect = DuplicateKeyError("reset in progress")
-    with patch(
-        "app.services.settings.get_settings",
-        return_value=SimpleNamespace(database_reset_admin_email=user.email),
-    ):
-        with pytest.raises(HTTPException) as error:
-            service.reset_database(user)
+    with pytest.raises(HTTPException) as error:
+        service.reset_database(user)
     assert error.value.status_code == 409
     database.list_collection_names.assert_not_called()

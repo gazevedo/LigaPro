@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from app.config.settings import get_settings
 from app.models.game import utcnow
 from app.models.setting import Setting
 from app.repositories.settings import SettingsRepository
@@ -30,14 +29,7 @@ class SettingsService:
             raise HTTPException(403, "Regras do jogo são administradas no servidor.")
         return self.repository.put(key, value)
 
-    @staticmethod
-    def can_reset_database(user):
-        email = get_settings().database_reset_admin_email
-        return bool(email and user.email.casefold() == email.strip().casefold())
-
     def reset_database(self, user):
-        if not self.can_reset_database(user):
-            raise HTTPException(403, "Somente o administrador pode reinicializar o banco de dados.")
         from bson import ObjectId
 
         from app.repositories.game import GameRepository
@@ -80,7 +72,7 @@ class SettingsService:
                     if name == "game_state":
                         query = {"_id": {"$nin": ["database_reset", "database_schema_v1"]}}
                     elif name == "users":
-                        # Keep the administrator authenticated if seeding fails and needs retry.
+                        # Keep the requesting user authenticated if seeding fails and needs retry.
                         query = {"_id": {"$ne": owner}}
                     elif name == "user_sessions":
                         query = {"user_id": {"$ne": owner}}

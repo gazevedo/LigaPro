@@ -2,7 +2,7 @@ import asyncio
 from typing import Annotated
 
 from anyio import CancelScope
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, Path, Request
 
 from app.api.dependencies import get_current_user, get_settings_service
 from app.schemas.settings import DatabaseResetInput, SettingResponse, SettingUpdate
@@ -18,17 +18,10 @@ def list_settings(service: Service):
     return service.list()
 
 
-@router.get("/database-reset")
-def reset_capability(user=Depends(get_current_user)):
-    return {"allowed": SettingsService.can_reset_database(user)}
-
-
 @router.post("/database-reset")
 async def reset_database(
     body: DatabaseResetInput, request: Request, service: Service, user=Depends(get_current_user)
 ):
-    if not service.can_reset_database(user):
-        raise HTTPException(403, "Somente o administrador pode reinicializar o banco de dados.")
     # Disconnects must not interrupt deletion between clearing and seeding.
     with CancelScope(shield=True):
         manager = getattr(request.app.state, "match_rooms", None)

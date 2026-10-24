@@ -2,8 +2,8 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/react-nativ
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { useAuthStore } from '../stores/authStore';
 import { settingsService } from '../services/settingsService';
-jest.mock('../services/settingsService', () => ({ settingsService: { resetCapability: jest.fn(), resetDatabase: jest.fn() } }));
-beforeEach(() => { jest.clearAllMocks(); jest.mocked(settingsService.resetCapability).mockResolvedValue({ allowed: false }); });
+jest.mock('../services/settingsService', () => ({ settingsService: { resetDatabase: jest.fn() } }));
+beforeEach(() => { jest.clearAllMocks(); });
 
 jest.mock('../components/MatchNotifications', () => ({ MatchNotifications: () => {
   const { Text } = jest.requireActual('react-native');
@@ -28,14 +28,12 @@ test('settings logs out using the existing session handler', async () => {
 });
 
 test('database reset requires typed confirmation and clears the session after success', async () => {
-  jest.mocked(settingsService.resetCapability).mockResolvedValue({ allowed: true });
   jest.mocked(settingsService.resetDatabase).mockResolvedValue({ status: 'ready' });
   const previous = useAuthStore.getState().clearSession;
   const clearSession = jest.fn(async () => undefined);
   useAuthStore.setState({ clearSession });
   try {
     await render(<SettingsScreen />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Zerar banco de dados' }).props.accessibilityState.disabled).toBe(false));
     await fireEvent.press(screen.getByRole('button', { name: 'Zerar banco de dados' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Confirmar reinicialização' }));
     expect(settingsService.resetDatabase).not.toHaveBeenCalled();
@@ -46,10 +44,10 @@ test('database reset requires typed confirmation and clears the session after su
   } finally { useAuthStore.setState({ clearSession: previous }); }
 });
 
-test('database reset is unavailable to a regular player', async () => {
+test('cancel closes confirmation without resetting any data', async () => {
   await render(<SettingsScreen />);
-  await screen.findByText('Esta ação está disponível somente para o administrador autorizado.');
   await fireEvent.press(screen.getByRole('button', { name: 'Zerar banco de dados' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }));
   expect(screen.queryByLabelText('Digite APAGAR TODOS OS DADOS')).toBeNull();
   expect(settingsService.resetDatabase).not.toHaveBeenCalled();
 });

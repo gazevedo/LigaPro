@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     mongodb_database_name: str = Field(min_length=1)
     cors_origins: list[str] = []
     environment: str = "development"
-    database_reset_admin_email: str | None = None
     jwt_secret_key: SecretStr = Field(min_length=32)
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_expire_minutes: int = Field(default=15, ge=1, le=60)
