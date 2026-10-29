@@ -5,7 +5,7 @@ import { developmentService } from '../services/developmentService';
 import { useAuthStore } from '../stores/authStore';
 jest.mock('../services/developmentService', () => ({ developmentService: {
   training: jest.fn(), youth: jest.fn(), train: jest.fn(), promote: jest.fn(), selectYouth: jest.fn(), release: jest.fn(),
-} }));
+}, trainingPlanService: { get: jest.fn().mockResolvedValue({ enabled: false, days: 7, skill: 'passing', intensity: 'normal', individual: {} }), save: jest.fn() } }));
 const player = { id: 'p1', name: 'Pedro Silva', age: 21, position: 'MID', strength: 50,
   overall: 50, training_progress: 99, country_id: 'BR', value: 100000,
   owner_club_id: 'c1', current_club_id: 'c1' };

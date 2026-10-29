@@ -51,7 +51,7 @@ export function SquadScreen({ navigation }: NativeStackScreenProps<RootStackPara
       }
     });
   }
-  return <GamePage loading={loading} error={error}><Card><View style={{ width: '100%', minWidth: 0 }}>
+  return <GamePage loading={loading} error={error}><ActionButton title="Desempenho e comparação do plantel" onPress={() => navigation.navigate('Performance')} /><Card><View style={{ width: '100%', minWidth: 0 }}>
     <PlayerRosterHeader compact={compact} trailing="Contrato" />
     {players.map(player => <Pressable key={player.id} accessibilityRole="button" accessibilityLabel={`Detalhes de ${player.name}`} onPress={() => setSelected(player.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, borderTopWidth: 1, borderColor: palette.border }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`Editar camisa de ${player.name}`} onPress={event => { event.stopPropagation(); setInput(String(numberOf(player.id) ?? '')); setValidation(null); setEditor(player.id); }} style={{ width: 42, paddingVertical: 8 }}><Text style={{ fontWeight: '700', color: duplicates.has(numberOf(player.id)) ? '#dc2626' : palette.ink }}>{numberOf(player.id) ?? '—'}</Text></Pressable>

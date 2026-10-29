@@ -21,6 +21,15 @@ export function MatchReportScreen({ route, navigation }: NativeStackScreenProps<
       <Text>{report.competition}</Text>
       <Text>Estatísticas: mandante × visitante</Text>
       {['possession', 'attacks', 'chances', 'shots', 'shots_on_target', 'fouls', 'yellow_cards', 'red_cards'].map(key => <Text key={key}>{({possession: 'Posse', attacks: 'Ataques', chances: 'Chances', shots: 'Finalizações', shots_on_target: 'No alvo', fouls: 'Faltas', yellow_cards: 'Amarelos', red_cards: 'Vermelhos'} as Record<string, string>)[key]}: {[report.match.home_club_id, report.match.away_club_id].map(id => { const value = Number(report.statistics?.[id]?.[key] ?? 0); return key === 'possession' ? `${Math.round(value * 100)}%` : value; }).join(' × ')}</Text>)}
+      <Text style={{ fontSize: 20, fontWeight: '700' }}>Análise do desempenho</Text>
+      {report.analysis?.map(team => <View key={team.club_id} style={{ gap: 8 }}>
+        <Text style={{ fontWeight: '700' }}>{team.club_id === report.match.home_club_id ? report.home_name : report.away_name}</Text>
+        {team.sectors.map(sector => <Text key={sector.label}>{sector.label}: {sector.rate === null ? 'Sem ações registradas' : `${sector.successes}/${sector.attempts} ações bem-sucedidas (${sector.rate}%)`}</Text>)}
+        {team.sectors.filter(sector => sector.rate !== null && sector.attempts >= 3).sort((a, b) => b.rate! - a.rate!).slice(0, 1).map(sector => <Text key={sector.label}>Setor mais eficiente: {sector.label.toLowerCase()} · {sector.rate}% de aproveitamento.</Text>)}
+        <Text>Pontaria: {team.accuracy === null ? 'Sem finalizações' : `${team.accuracy}% · ${team.shots_on_target}/${team.shots} chutes no alvo`}</Text>
+        {team.sectors.filter(sector => sector.rate !== null && sector.attempts >= 3).sort((a, b) => a.rate! - b.rate!).slice(0, 1).map(sector => <Text key={sector.label}>Maior perda proporcional de jogadas: {sector.label.toLowerCase()}. Use esse dado para revisar o setor; ele não explica o resultado sozinho.</Text>)}
+      </View>)}
+      <Button title="Comparar desempenho do plantel" onPress={() => navigation.navigate('Performance')} />
       <Text>Público: {report.financial?.attendance ?? 0} · Ingresso médio: {money(report.financial?.price ?? 0)} · Renda: {money(report.financial?.income ?? 0)}</Text>
       <Text>Linha do tempo</Text>
       {report.events?.filter(e => ['goal', 'yellow_card', 'red_card', 'penalty_awarded', 'substitution', 'injury'].includes(e.type)).map((e, i) => <Text key={e.id ?? i}>{e.minute}′ · {({goal: 'Gol', yellow_card: 'Amarelo', red_card: 'Vermelho', penalty_awarded: 'Pênalti', substitution: 'Substituição', injury: 'Lesão'} as Record<string, string>)[e.type]} · {report.ratings.find(r => r.player_id === e.player_id)?.name ?? 'Equipe'}</Text>)}
@@ -30,7 +39,7 @@ export function MatchReportScreen({ route, navigation }: NativeStackScreenProps<
       {([['home', report.home_name, report.match.home_club_id], ['away', report.away_name, report.match.away_club_id]] as const).map(([side, name, club]) => <View key={side} style={{ gap: 8 }}><Text style={{ fontWeight: 'bold' }}>{name}</Text>{report.ratings.filter(r => r.club_id === club).map(r => <View key={r.id}>
         <Text>{r.name} · {r.position} · nota {r.rating.toFixed(1).replace('.', ',')} · {r.minutes} min</Text>
         <Button title={`Ver ${r.name}`} onPress={() => navigation.navigate('PlayerDetails', { id: r.player_id })} />
-        <Text>Gols: {r.events_summary.goals ?? 0} · Amarelos: {r.events_summary.yellow_cards ?? 0} · Vermelhos: {r.events_summary.red_cards ?? 0} · Defesas: {r.events_summary.saves ?? 0}</Text>
+        <Text>Gols: {r.events_summary.goals ?? 0} · Assistências: {r.events_summary.assists ?? 0} · Amarelos: {r.events_summary.yellow_cards ?? 0} · Vermelhos: {r.events_summary.red_cards ?? 0} · Defesas: {r.events_summary.saves ?? 0}</Text>
       </View>)}</View>)}
       {!report.ratings.length && <Text>Sem notas individuais para esta partida.</Text>}
       <Button title="Voltar" onPress={() => navigation.goBack()} />

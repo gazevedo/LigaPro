@@ -255,7 +255,10 @@ class GameRepository:
                 index([("player_id", 1), ("club_id", 1), ("season_id", 1)], unique=True),
                 index([("season_id", 1), ("goals", -1)]),
             ],
+            "training_plans": [index([("enabled", 1), ("next_session_at", 1)])],
+            "player_development_history": [index([("player_id", 1), ("created_at", -1)])],
             "player_match_ratings": [
+                index([("club_id", 1), ("match_date", -1)]),
                 index([("match_id", 1), ("player_id", 1)], unique=True),
                 index([("player_id", 1), ("match_id", 1)]),
             ],

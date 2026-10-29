@@ -1494,6 +1494,9 @@ def process_due(repository, *, max_matches=None):
     logger.info("game_job stage=contracts event=start")
     ContractService(repository).process_due(now)
     from app.services.bot_manager import BotManagerService
+    from app.services.player_development import TrainingService
+
+    TrainingService.process_due(repository, now)
 
     logger.info("game_job stage=bot_management event=start")
     BotManagerService(repository).process_due(now)

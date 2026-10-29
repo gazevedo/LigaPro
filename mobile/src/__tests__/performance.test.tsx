@@ -1,0 +1,20 @@
+import { render, screen, fireEvent } from '@testing-library/react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+import { PerformanceScreen } from '../screens/PerformanceScreen';
+import { PerformanceRow, performanceService } from '../services/statisticsService';
+import { resetDomainStores } from '../stores/domainStore';
+jest.mock('../services/statisticsService', () => ({ performanceService: { get: jest.fn() } }));
+const row = (id: string, name: string): PerformanceRow => ({ player: { id, name, position: 'MID', age: 22, country_id: 'BR', overall: 50, value: 10000, owner_club_id: 'club', current_club_id: 'club' }, average_rating: null, rating_change: null, recent: [], development: [] });
+beforeEach(() => { jest.clearAllMocks(); resetDomainStores(); });
+test('comparison does not invent averages or growth when history is empty', async () => {
+  jest.mocked(performanceService.get).mockResolvedValue({ players: [row('one', 'Pedro'), row('two', 'João')] });
+  const navigation = { navigate: jest.fn() };
+  await render(<PerformanceScreen {...{ navigation } as unknown as NativeStackScreenProps<RootStackParamList, 'Performance'>} />);
+  expect(await screen.findByText('Pedro × João')).toBeTruthy();
+  expect(screen.getAllByText(/Sem atuações/)).toHaveLength(2);
+  expect(screen.getAllByText(/Sem registros suficientes/).length).toBeGreaterThan(0);
+  await fireEvent.press(screen.getByRole('combobox', { name: 'Primeiro jogador' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'João · MID' }));
+  expect(screen.getByText('João × Pedro')).toBeTruthy();
+});

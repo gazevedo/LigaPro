@@ -17,7 +17,7 @@ export interface LiveState {
 export interface LiveMessage { type: string; data: LiveState | LiveEvent | { reason?: string; status?: string } }
 export const liveMatchService = {
   commandId: (sequence: number) => `${Date.now()}-${sequence}`,
-  state: (id: string) => apiRequest<LiveState>(`/matches/${id}/live-state`),
+  state: (id: string) => apiRequest<LiveState>(`/matches/${id}/live-state`, {}, true, 8000),
   command: (id: string, kind: string, payload: Record<string, string>, commandId: string) => apiRequest<{ status: string }>(`/matches/${id}/commands/${kind}`, { method: 'POST', body: JSON.stringify({ command_id: commandId, payload }) }),
   upcoming: () => apiRequest<{ id: string; date: string; round?: number; status: string }[]>('/matches/upcoming'),
   connect(id: string) {

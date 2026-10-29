@@ -976,6 +976,7 @@ class MatchEngine:
                     continue
                 defenders = [p for p in defenders if p.id not in dismissed[defender]]
             quality = 0.5
+            creators = []
             for phase, resolver in self.phases:
                 participants = (
                     build_players
@@ -1018,11 +1019,16 @@ class MatchEngine:
                     )
                     event("attack_lost", phase=phase)
                     break
+                if phase == "create":
+                    creators = list(participants)
                 stats[attacker]["phases"][phase]["successes"] += 1
                 quality = clamp(0.5 + (attack - defense) / max(1, attack + defense), 0, 1)
             else:
                 shooters = self.sectors.participants(team, "finish", lane, rng, dismissed[attacker])
                 shooter = shooters[0]
+                passer = next((p for p in creators if p.id != shooter.id), None)
+                if passer:
+                    event("pass_completed", passer, receiver_id=shooter.id, key_pass=True)
                 event("chance", shooter, quality=quality, transition=transition_attack)
                 stats[attacker]["transition_chances"] += int(transition_attack)
                 keeper = next(
@@ -1039,7 +1045,12 @@ class MatchEngine:
                     quality,
                     rng,
                 )
-                event(shot, shooter, goalkeeper_id=keeper.id if keeper else None)
+                event(
+                    shot,
+                    shooter,
+                    goalkeeper_id=keeper.id if keeper else None,
+                    assist_player_id=passer.id if passer and shot == "goal" else None,
+                )
                 scores[attacker] += shot == "goal"
         for command in pending:
             events.append(

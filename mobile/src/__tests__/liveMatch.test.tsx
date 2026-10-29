@@ -19,6 +19,7 @@ test('follows the five minute match over HTTP and sends tactics and substitution
   expect(await screen.findByText('Casa 1 × 0 Visitante')).toBeTruthy();
   expect(screen.getByText(/Duração: 5 minutos/)).toBeTruthy();
   expect(screen.queryByText('Ir para o final')).toBeNull();
+  expect(screen.queryByText('Voltar ao calendário')).toBeNull();
   await fireEvent.press(screen.getByText('Aplicar mudanças táticas'));
   await waitFor(() => expect(liveMatchService.command).toHaveBeenCalledWith('match', 'combined_change', expect.objectContaining({ formation: '4-4-2' }), 'command-1'));
   await fireEvent.press(screen.getByText(/João · ATT · Energia/));
@@ -40,4 +41,23 @@ test('shows command errors and stops polling after leaving', async () => {
   const calls = jest.mocked(liveMatchService.state).mock.calls.length;
   await act(async () => { jest.advanceTimersByTime(10000); });
   expect(liveMatchService.state).toHaveBeenCalledTimes(calls);
+});
+
+test('initial timeout is visible and the next poll recovers the scoreboard', async () => {
+  jest.mocked(liveMatchService.state).mockRejectedValueOnce(new Error('O servidor demorou para responder. Verifique sua conexão e tente novamente.'));
+  const props = { route: { params: { id: 'match' } }, navigation: { navigate: jest.fn(), replace: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'MatchLive'>;
+  await render(<MatchLiveScreen {...props} />);
+  expect(await screen.findByText(/Não foi possível atualizar a partida/)).toBeTruthy();
+  expect(screen.queryByLabelText('Carregando')).toBeNull();
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  expect(await screen.findByText('Casa 1 × 0 Visitante')).toBeTruthy();
+});
+test('refresh failure preserves the last score and narration', async () => {
+  const props = { route: { params: { id: 'match' } }, navigation: { navigate: jest.fn(), replace: jest.fn() } } as unknown as NativeStackScreenProps<RootStackParamList, 'MatchLive'>;
+  await render(<MatchLiveScreen {...props} />);
+  await screen.findByText('Casa 1 × 0 Visitante');
+  jest.mocked(liveMatchService.state).mockRejectedValueOnce(new Error('Sem conexão'));
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  expect(screen.getByText('Casa 1 × 0 Visitante')).toBeTruthy();
+  expect(screen.getByText('31′ GOL! João finaliza.')).toBeTruthy();
 });

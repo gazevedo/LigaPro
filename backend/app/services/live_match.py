@@ -207,6 +207,8 @@ class MatchRoom:
         self.last_messages = 0
         self.sequence = 0
         self.task = None
+        self.state_refresh_task = None
+        self.http_states = {}
         self.names = {}
         self.club_names = {}
         self.home_user_id = None
@@ -263,6 +265,7 @@ class MatchRoom:
         from app.services.game import MarketService
         from app.services.monthly_finance import MonthlyFinanceService
         from app.services.physical_condition import PhysicalConditionService
+        from app.services.player_development import TrainingService
         from app.services.player_contracts import ContractService
 
         def prepare():
@@ -284,6 +287,8 @@ class MatchRoom:
                     return None
                 for club_id in sorted([current["home_club_id"], current["away_club_id"]]):
                     tx.update("clubs", {"_id": club_id}, {"$inc": {"roster_revision": 1}})
+                    tx.update("training_plans", {"_id": club_id}, {"$inc": {"revision": 1}})
+                    TrainingService.apply_plan(tx, club_id, current["date"], batch=120)
                     PhysicalConditionService().prepare(tx, club_id, current["date"])
                     club = tx.find("clubs", {"_id": club_id})
                     if club.get("is_bot"):
@@ -886,6 +891,8 @@ class MatchRoomManager:
             if room.connections
             or room.session
             and room.match["status"] != "completed"
+            or room.state_refresh_task
+            and not room.state_refresh_task.done()
             or room.task
             and not room.task.done()
         }
@@ -905,7 +912,9 @@ class MatchRoomManager:
 
     async def close(self):
         self.closed = True
-        tasks = [r.task for r in self.rooms.values() if r.task]
+        tasks = [
+            task for r in self.rooms.values() for task in (r.task, r.state_refresh_task) if task
+        ]
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

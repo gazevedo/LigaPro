@@ -12,6 +12,7 @@ export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<Ro
   useEffect(() => {
     let mounted = true, pending = false;
     initialized.current = false;
+    setState(null); setError('');
     async function update() {
       if (pending) return;
       pending = true;
@@ -26,7 +27,7 @@ export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<Ro
         }
         if (data.status === 'finished') navigation.replace('MatchReport', { id: route.params.id });
       } catch (reason) {
-        if (mounted) { setConnected(false); setError(reason instanceof Error ? reason.message : 'Falha ao atualizar a partida.'); }
+        if (mounted) { setConnected(false); setError(`Não foi possível atualizar a partida. Tentaremos novamente automaticamente. ${reason instanceof Error ? reason.message : ''}`); }
       } finally { pending = false; }
     }
     void update();
@@ -78,6 +79,5 @@ export function MatchLiveScreen({ route, navigation }: NativeStackScreenProps<Ro
       </>}
       <NotificationBubble message={notice} tone="info" />
     </>}
-    <Button title="Voltar ao calendário" onPress={() => navigation.navigate('Calendar')} />
   </GamePage>;
 }

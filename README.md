@@ -274,6 +274,10 @@ A base aceita até 20 juniores ativos. No início de cada temporada, apresenta t
 
 Moral vai de 0–100 e varia por participação, resultados, gols, ausência, promoção e transferências; o multiplicador de desempenho fica entre 0,94–1,04, com faixa normal neutra. Entrosamento responde à continuidade da escalação, formação e integração; seu fator fica entre 0,92–1,04. São regras separadas da aleatoriedade do motor.
 
+Planos automáticos de treino: configure um período de 1–30 dias reais, habilidade coletiva, intensidade leve/normal/intensa ou descanso e exceções individuais. Há uma sessão a cada seis horas, processada no servidor inclusive offline, sem repetir sessões já concluídas. O progresso usa a fórmula existente do CT com multiplicadores 1×/2×/3×; cada sessão desconta respectivamente 1/2/3 pontos de energia e condição. Lesionados, suspensos, jogadores ainda não contratados na data da sessão e atletas com condição abaixo de 70 ou energia abaixo de 50 não treinam. Descanso usa a recuperação natural existente. Alterar ou reativar o plano inicia um novo período; sessões anteriores vencidas são liquidadas antes da alteração.
+
+A tela **Desempenho**, acessível pelo Plantel, Treinamento e ficha do jogador, compara atributos, condição e moral, apresenta notas das últimas dez atuações no clube e compara a média das cinco últimas com as cinco anteriores. O gráfico de evolução reaproveita o histórico real das temporadas e registra ganhos de treino a partir desta versão; não reconstrói dados históricos inexistentes. O pós-jogo mostra aproveitamento de saída de bola, progressão, criação e pontaria. Assistências de novos jogos são atribuídas ao autor do passe final registrado na jogada de gol, sem assistências em pênaltis nem preenchimento retroativo.
+
 ### Contratos e mercado
 
 Profissionais iniciais recebem contrato de duas temporadas. Renovação aceita salário positivo e prazo de 1–5 temporadas. Uma temporada corresponde a doze meses do jogo; o período salarial é salvo no contrato. Salários contratados não são alterados retroativamente por novas fórmulas de referência.
@@ -340,7 +344,7 @@ Bots usam os mesmos jogadores, motor e serviços: administram escalação, táti
 
 Notícias são derivadas de eventos reais de transferência, lesão, suspensão, título, finanças, estádio, patrocínio, base e aposentadoria, com deduplicação. O feed pode mostrar clube ou universo. No dashboard, a carta no canto superior direito abre o correio e mostra o total de mensagens não lidas. Abrir uma mensagem salva sua leitura por usuário no MongoDB e reduz o contador; a caixa possui paginação para mensagens antigas.
 
-Estatísticas individuais por clube/temporada/carreira registram partidas, titularidades, minutos reais, gols, cartões, pênaltis, defesas e jogos sem sofrer gols. Assistências têm estrutura preparada, sem atribuição fictícia. Notas de 5–10 derivam das ações e resultado; reservas não utilizados e W.O. não recebem participação inventada.
+Estatísticas individuais por clube/temporada/carreira registram partidas, titularidades, minutos reais, gols, cartões, pênaltis, defesas e jogos sem sofrer gols. Assistências dos novos jogos vêm do passe final registrado pelo motor; jogos antigos não recebem atribuição retroativa. Notas de 5–10 derivam das ações e resultado; reservas não utilizados e W.O. não recebem participação inventada.
 
 Histórico registra temporadas, classificações, campeões, acessos/rebaixamentos, finanças, transferências e carreiras. Recordes incluem transferências, valor de mercado, gols, goleadas, público e sequência de vitórias. Pós-jogo reúne timeline, estatísticas, notas, bilheteria e consequências de energia/moral/condição/lesões/suspensões, com navegação para jogador, classificação e calendário.
 
@@ -552,7 +556,7 @@ A medição registrada não emitiu alertas nas bandas configuradas e não motivo
 - Google OAuth precisa de IDs/certificados próprios e validação em development builds; login Google web não está implementado.
 - Validar em Android/iOS físico: login, fechamento/reabertura, SecureStore/restauração, navegação e reconexão ao vivo.
 - Não há recuperação de senha nem vinculação automática de conta Google a conta local.
-- Assistências não são inventadas; o contador depende de futura atribuição real pelo motor. Clima/árbitros mencionados no desenho inicial não significam funcionalidades implementadas.
+- Clima e árbitros mencionados no desenho inicial ainda não estão implementados.
 - A auditoria npm tem alertas transitivos da toolchain. Não foi aplicado `audit fix --force`, que pode quebrar compatibilidade Expo/React Native.
 - Coleta conjunta dos testes backend/CI precisa considerar nomes de módulos repetidos, como explicado acima. CI remoto, deploy e builds físicos requerem validação própria.
 - Produção exige autenticação do MongoDB, backup/restauração, HTTPS/WSS, secrets e configuração de rede. O Compose local não cobre essa implantação.

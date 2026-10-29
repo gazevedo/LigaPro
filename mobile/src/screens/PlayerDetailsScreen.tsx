@@ -28,6 +28,7 @@ export function PlayerDetailsScreen({ route, navigation }: NativeStackScreenProp
     <Text>Características: {player.innate_characteristics?.join(', ') || '—'}</Text>
     {player.owner_club_id && <Text>Clube proprietário: <Text accessibilityRole="link" style={{ color: palette.primary, textDecorationLine: 'underline' }} onPress={() => navigation.navigate('Club', { id: player.owner_club_id! })}>Ver clube</Text></Text>}
     {player.current_club_id && <Text>Clube atual: <Text accessibilityRole="link" style={{ color: palette.primary, textDecorationLine: 'underline' }} onPress={() => navigation.navigate('Club', { id: player.current_club_id! })}>Ver clube</Text></Text>}
+    <ActionButton title="Desempenho e comparação do plantel" onPress={() => navigation.navigate('Performance')} />
     <ActionButton title="📄 Negociação e contrato" onPress={() => navigation.navigate('PlayerNegotiation', { id: player.id })} />
   </>}</GamePage>;
 }

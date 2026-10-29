@@ -24,6 +24,7 @@ from app.schemas.game import (
     TacticsInput,
     TicketInput,
     TrainingInput,
+    TrainingPlanInput,
     TransferStatusInput,
 )
 from app.services.competition import CompetitionService
@@ -241,6 +242,21 @@ def competition_matches(user: User, repo: Repo, division_id: str | None = None):
 @router.get("/training")
 def training(user: User, repo: Repo):
     return TrainingService(repo).get(user)
+
+
+@router.get("/training/plan")
+def training_plan(user: User, repo: Repo):
+    return TrainingService(repo).plan(user)
+
+
+@router.put("/training/plan")
+def save_training_plan(data: TrainingPlanInput, user: User, repo: Repo):
+    return TrainingService(repo).save_plan(user, data)
+
+
+@router.get("/squad/performance")
+def squad_performance(user: User, repo: Repo):
+    return PlayerStatisticsService(repo).performance(user)
 
 
 @router.post("/players/{identity}/train")

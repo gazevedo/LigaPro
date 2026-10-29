@@ -1,16 +1,21 @@
+import { TrainingPlanEditor } from '../components/TrainingPlanEditor';
 import { useScreenRefresh } from '../components/useScreenRefresh';
 import { useState } from 'react';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 import { Text, View } from 'react-native';
 import { ActionButton as Button, Choices, GamePage, useAction } from '../components/GameUI';
 import { developmentService } from '../services/developmentService';
 import { PlayerSkill } from '../types/game';
 import { useTrainingStore } from '../stores/screenStores';
-export function TrainingScreen() {
+export function TrainingScreen({ navigation }: Partial<NativeStackScreenProps<RootStackParamList, 'Training'>> = {}) {
   const { data, loading, error, load, ensure, refresh } = useTrainingStore();
   const action = useAction();
   const [skill, setSkill] = useState<PlayerSkill>('passing');
   useScreenRefresh(ensure, refresh);
   return <GamePage loading={loading || action.busy} error={action.error || error}>
+    <Button title="Desempenho e comparação do plantel" onPress={() => navigation?.navigate('Performance')} />
+    <TrainingPlanEditor players={data ?? []} />
     <Button title="Atualizar treinamento" onPress={() => void load()} />
     <Text>A cada 100 treinos, a habilidade escolhida pode ganhar um ponto. A força geral acompanha as habilidades.</Text>
     <Choices values={['goalkeeping', 'speed', 'technique', 'passing', 'tackling', 'playmaking', 'finishing']} value={skill} onChange={value => setSkill(value as PlayerSkill)} />

@@ -37,9 +37,32 @@ async def apply_command(room, user, message):
 async def live_state(identity: str, request: Request, user: User):
     room = await request.app.state.match_rooms.get(identity, user, start_task=False)
     club = await asyncio.to_thread(room.authorize, user)
-    async with room.lock:
-        await room.advance_clock()
-        return room.state(str(club["_id"]))
+    # Kick-off/recovery may include slow database work. Keep one refresh running
+    # independently of HTTP cancellation and return the last available scoreboard.
+    club_id = str(club["_id"])
+    cache = room.http_states = getattr(room, "http_states", {})
+    task = getattr(room, "state_refresh_task", None)
+    if task is not None and task.done():
+        room.state_refresh_task = None
+        task.result()
+        cache[club_id] = room.state(club_id)
+        task = None
+    if task is None:
+
+        async def refresh():
+            async with room.lock:
+                await room.advance_clock()
+
+        task = room.state_refresh_task = asyncio.create_task(refresh())
+        task.add_done_callback(
+            lambda complete: None if complete.cancelled() else complete.exception()
+        )
+    done, _ = await asyncio.wait({task}, timeout=2)
+    if done:
+        task.result()
+    if done or club_id not in cache:
+        cache[club_id] = room.state(club_id)
+    return cache[club_id]
 
 
 @router.get("/api/matches/{identity}/events")

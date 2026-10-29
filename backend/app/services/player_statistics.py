@@ -91,6 +91,14 @@ def match_player_summaries(result):
                 )
                 rows[winner][field] += 1
         if kind == "goal":
+            assist = event.get("assist_player_id")
+            if (
+                assist
+                and assist != identity
+                and assist in active[club_id]
+                and not event.get("penalty")
+            ):
+                rows[assist]["assists"] += 1
             for rival_id in active:
                 if rival_id != club_id:
                     for rival in active[rival_id]:
@@ -126,6 +134,113 @@ def match_player_summaries(result):
 class PlayerStatisticsService:
     def __init__(self, repository):
         self.repo = repository
+
+    def performance(self, user):
+        from app.models.player import player_public
+
+        club = self.repo.owned(user.id)
+        players = self.repo.many(
+            "players", {"current_club_id": club["_id"], "status": {"$ne": "retired"}}, limit=None
+        )
+        identities = [p["_id"] for p in players]
+        ratings = self.repo.many(
+            "player_match_ratings",
+            {"player_id": {"$in": identities}, "club_id": club["_id"]},
+            sort=[("match_date", -1), ("_id", -1)],
+            limit=1000,
+        )
+        history = self.repo.many(
+            "player_development_history",
+            {"player_id": {"$in": identities}},
+            sort=[("created_at", -1)],
+            limit=1000,
+        )
+        rows = []
+        for player in players:
+            recent = [r for r in ratings if r["player_id"] == player["_id"]][:10]
+            last = recent[:5]
+            previous = recent[5:10]
+            average = round(sum(r["rating"] for r in last) / len(last), 2) if last else None
+            old_average = (
+                sum(r["rating"] for r in previous) / len(previous) if len(previous) == 5 else None
+            )
+            rows.append(
+                {
+                    "player": player_public(player),
+                    "average_rating": average,
+                    "rating_change": round(average - old_average, 2)
+                    if average is not None and old_average is not None
+                    else None,
+                    "recent": [
+                        {
+                            "date": r["match_date"],
+                            "rating": r["rating"],
+                            "minutes": r["minutes"],
+                            "match_id": r["match_id"],
+                            **{
+                                k: r.get("events_summary", {}).get(k, 0)
+                                for k in ("goals", "assists", "shots", "saves", "defensive_actions")
+                            },
+                        }
+                        for r in reversed(recent)
+                    ],
+                    "development": list(
+                        reversed(
+                            [
+                                {
+                                    "created_at": h["created_at"],
+                                    "strength": h.get("strength", h.get("new_strength")),
+                                    "previous_strength": h.get(
+                                        "previous_strength", h.get("old_strength")
+                                    ),
+                                    "individual_skills": h.get("individual_skills", {}),
+                                    "skill": h.get("skill"),
+                                    "previous_skill": h.get("previous_skill"),
+                                    "reason": h.get("reason", "training"),
+                                }
+                                for h in history
+                                if h["player_id"] == player["_id"]
+                            ][:20]
+                        )
+                    ),
+                }
+            )
+        return public({"players": rows})
+
+    @staticmethod
+    def analysis(statistics, home_id, away_id):
+        rows = []
+        for identity in (str(home_id), str(away_id)):
+            stats = statistics.get(identity, {})
+            phases = stats.get("phases", {})
+            sectors = []
+            for key, label in (
+                ("build", "Saída de bola"),
+                ("progress", "Progressão"),
+                ("create", "Criação"),
+            ):
+                phase = phases.get(key, {})
+                attempts, successes = phase.get("attempts", 0), phase.get("successes", 0)
+                sectors.append(
+                    {
+                        "label": label,
+                        "attempts": attempts,
+                        "successes": successes,
+                        "rate": round(100 * successes / attempts, 1) if attempts else None,
+                    }
+                )
+            shots = stats.get("shots", 0)
+            target = stats.get("shots_on_target", 0)
+            rows.append(
+                {
+                    "club_id": identity,
+                    "sectors": sectors,
+                    "shots": shots,
+                    "shots_on_target": target,
+                    "accuracy": round(100 * target / shots, 1) if shots else None,
+                }
+            )
+        return rows
 
     @staticmethod
     def after_match(repo, match, summaries):
@@ -433,6 +548,11 @@ class PlayerStatisticsService:
                 else "Amistoso"
                 if "division_id" not in match
                 else "Campeonato",
+                "analysis": self.analysis(
+                    projection.get("statistics", match.get("result", {}).get("statistics", {})),
+                    match["home_club_id"],
+                    match["away_club_id"],
+                ),
                 "events": events,
                 **{
                     key: projection.get(

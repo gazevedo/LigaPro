@@ -1,3 +1,4 @@
+from datetime import timedelta
 from random import Random
 
 from bson import ObjectId
@@ -168,7 +169,7 @@ class TrainingService:
         return self.repo.transaction(operation)
 
     @staticmethod
-    def train_for_club(repo, club, identity, skill=None):
+    def train_for_club(repo, club, identity, skill=None, *, multiplier=1, at=None):
         if not ObjectId.is_valid(identity):
             raise HTTPException(404, "Jogador não encontrado.")
         collection = "players"
@@ -209,6 +210,7 @@ class TrainingService:
             + min(2, max(0, training_level - 1))
             + effects(stadium)["training_extra"]
         )
+        level = progress["progress"] + (level - progress["progress"]) * multiplier
         changes = {}
         if level >= 100:
             level -= 100
@@ -222,7 +224,7 @@ class TrainingService:
                     "player_id": player["_id"],
                     "progress": level,
                     "last_skill": skill,
-                    "updated_at": utcnow(),
+                    "updated_at": at or utcnow(),
                 },
                 "$inc": {"season_sessions": 1},
             },
@@ -236,13 +238,160 @@ class TrainingService:
                 {"_id": player["_id"]},
                 {"$set": {"salary_reference": SalaryService.reference(updated)}},
             )
-            MarketValueService().recalculate(repo, [updated], "training", collection=collection)
+            MarketValueService().recalculate(
+                repo, [updated], "training", now=at, collection=collection
+            )
+        current = repo.find(collection, {"_id": player["_id"]})
+        if changes:
+            repo.insert(
+                "player_development_history",
+                {
+                    "_id": ObjectId(),
+                    "player_id": player["_id"],
+                    "club_id": club["_id"],
+                    "created_at": at or utcnow(),
+                    "strength": current.get("strength", current.get("overall", 50)),
+                    "individual_skills": current["individual_skills"],
+                    "skill": skill,
+                    "previous_strength": player.get("strength", player.get("overall", 50)),
+                    "previous_skill": normalize_player(player)["individual_skills"][skill],
+                },
+            )
         return {
-            **player_public(
-                repo.find(collection, {"_id": player["_id"]}), youth=collection == "youth_players"
-            ),
+            **player_public(current, youth=collection == "youth_players"),
             "training_progress": level,
         }
+
+    def plan(self, user):
+        club = self.repo.owned(user.id)
+        return public(
+            self.repo.find("training_plans", {"_id": club["_id"]})
+            or {
+                "enabled": False,
+                "days": 7,
+                "skill": "passing",
+                "intensity": "normal",
+                "individual": {},
+            }
+        )
+
+    def save_plan(self, user, data):
+        now = utcnow()
+
+        def operation(repo):
+            club = repo.owned(user.id)
+            # Serialize saves and scheduled sessions on the same document.
+            repo.database.training_plans.update_one(
+                {"_id": club["_id"]}, {"$inc": {"revision": 1}}, upsert=True, session=repo.session
+            )
+            players = repo.many(
+                "players",
+                {"current_club_id": club["_id"], "status": {"$ne": "retired"}},
+                limit=None,
+            )
+            if not set(data.individual).issubset({str(p["_id"]) for p in players}):
+                raise HTTPException(422, "O plano contém jogadores que não pertencem ao plantel.")
+            self.apply_plan(repo, club["_id"], now, batch=120)
+            changes = {
+                **data.model_dump(),
+                "club_id": club["_id"],
+                "started_at": now,
+                "ends_at": now + timedelta(days=data.days),
+                "next_session_at": now + timedelta(hours=6),
+                "sessions_completed": 0,
+                "updated_at": now,
+            }
+            repo.update("training_plans", {"_id": club["_id"]}, {"$set": changes})
+            return public(repo.find("training_plans", {"_id": club["_id"]}))
+
+        return self.repo.transaction(operation)
+
+    @staticmethod
+    def apply_plan(repo, club_id, now, batch=8):
+        from app.services.physical_condition import PhysicalConditionService
+
+        plan = repo.find("training_plans", {"_id": club_id, "enabled": True})
+        if not plan:
+            return
+        club = repo.find("clubs", {"_id": club_id})
+        if not club or club.get("active") is False:
+            return
+        cursor = plan["next_session_at"]
+        sessions = 0
+        while cursor <= min(now, plan["ends_at"]) and sessions < batch:
+            PhysicalConditionService().prepare(repo, club_id, cursor)
+            players = repo.many(
+                "players",
+                {
+                    "current_club_id": club_id,
+                    "status": {"$nin": ["retired", "injured", "suspended"]},
+                },
+                limit=None,
+            )
+            for player in players:
+                skill = plan.get("individual", {}).get(str(player["_id"]), plan["skill"])
+                if (
+                    skill == "rest"
+                    or plan["intensity"] == "rest"
+                    or player.get("joined_at", cursor) > cursor
+                ):
+                    continue
+                if player.get("physical_condition", 100) < 70 or player.get("energy", 100) < 50:
+                    continue
+                multiplier = {"light": 1, "normal": 2, "intense": 3}[plan["intensity"]]
+                if normalize_player(player)["individual_skills"][skill] >= 100:
+                    continue
+                TrainingService.train_for_club(
+                    repo, club, str(player["_id"]), skill, multiplier=multiplier, at=cursor
+                )
+                repo.update(
+                    "players",
+                    {"_id": player["_id"]},
+                    {
+                        "$inc": {"energy": -multiplier, "physical_condition": -multiplier},
+                        "$set": {
+                            "condition_updated_at": max(
+                                cursor, player.get("condition_updated_at", cursor)
+                            )
+                        },
+                    },
+                )
+            cursor += timedelta(hours=6)
+            sessions += 1
+        repo.update(
+            "training_plans",
+            {"_id": club_id},
+            {
+                "$set": {
+                    "next_session_at": cursor,
+                    "enabled": cursor <= plan["ends_at"],
+                    "last_processed_at": now,
+                },
+                "$inc": {"sessions_completed": sessions},
+            },
+        )
+
+    @staticmethod
+    def process_due(repo, now):
+        from app.services.live_match import busy_clubs
+
+        busy = busy_clubs(repo)
+        for plan in repo.many(
+            "training_plans",
+            {"enabled": True, "next_session_at": {"$lte": now}},
+            limit=None,
+            projection={"_id": 1},
+        ):
+            if plan["_id"] in busy:
+                continue
+
+            def operation(tx, identity=plan["_id"]):
+                tx.update("training_plans", {"_id": identity}, {"$inc": {"revision": 1}})
+                if identity in busy_clubs(tx):
+                    return
+                TrainingService.apply_plan(tx, identity, now)
+
+            repo.transaction(operation)
 
     def select_youth(self, user, identity):
         def operation(repo):

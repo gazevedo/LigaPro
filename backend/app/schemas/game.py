@@ -127,6 +127,28 @@ class TrainingInput(Input):
     ) = None
 
 
+class TrainingPlanInput(Input):
+    enabled: bool = True
+    days: int = Field(default=7, ge=1, le=30, strict=True)
+    skill: Literal[
+        "goalkeeping", "speed", "technique", "passing", "tackling", "playmaking", "finishing"
+    ] = "passing"
+    intensity: Literal["light", "normal", "intense", "rest"] = "normal"
+    individual: dict[
+        str,
+        Literal[
+            "goalkeeping",
+            "speed",
+            "technique",
+            "passing",
+            "tackling",
+            "playmaking",
+            "finishing",
+            "rest",
+        ],
+    ] = Field(default_factory=dict, max_length=25)
+
+
 class NegotiationInput(Input):
     player_id: str
     offer_type: Literal["sale", "loan"] = "sale"

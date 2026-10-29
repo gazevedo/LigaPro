@@ -9,6 +9,7 @@ export interface Statistics {
 }
 export interface MatchReport {
   match: { phase?: string; extra_time?: boolean; shootout_score?: Record<string, number> | null; winner_club_id?: string; id: string; round: number; date: string; home_club_id: string; away_club_id: string; home_goals: number; away_goals: number };
+  analysis?: { club_id: string; shots: number; shots_on_target: number; accuracy: number | null; sectors: { label: string; attempts: number; successes: number; rate: number | null }[] }[];
   home_name: string; away_name: string;
   competition?: string;
   events?: { id?: string; minute: number; type: string; team_id?: string; player_id?: string }[];
@@ -22,3 +23,10 @@ export const statisticsService = {
   get: (ranking: Ranking = 'goals', season?: string) => apiRequest<Statistics>(`/statistics?${new URLSearchParams({ ranking, ...(season ? { season_id: season } : {}) })}`),
   report: (id: string) => apiRequest<MatchReport>(`/competition/matches/${id}`),
 };
+
+export interface PerformanceRow {
+  player: import('../types/game').Player; average_rating: number | null; rating_change: number | null;
+  recent: { date: string; rating: number; minutes: number; match_id: string; goals: number; assists: number; shots: number; saves: number; defensive_actions: number }[];
+  development: { created_at: string; strength: number; previous_strength: number; individual_skills: Record<string, number>; skill: string; previous_skill: number }[];
+}
+export const performanceService = { get: () => apiRequest<{ players: PerformanceRow[] }>('/squad/performance') };
