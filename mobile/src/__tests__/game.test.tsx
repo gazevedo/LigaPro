@@ -36,9 +36,15 @@ beforeEach(() => {
   jest.mocked(clubService.catalog).mockResolvedValue({ countries: [{ id: 'BR', name: 'Brasil' }], badges: [{ id: 'blue', name: 'blue', symbol: '🛡', color: '#2563eb' }] });
   jest.mocked(marketService.mine).mockResolvedValue({ listings: [], loans: [], incoming: [{ id: 'offer1', listing_id: 'listing1', buyer_club_id: 'club2', seller_club_id: club.id, amount: 10000, status: 'pending' }], outgoing: [] });
 });
+async function selectClubOptions() {
+  const badge = await screen.findByRole('button', { name: /^(blue|Azul)$/ });
+  await fireEvent.press(screen.getByRole('button', { name: 'Escolher país' }));
+  await fireEvent.press(screen.getByText('Brasil'));
+  await fireEvent.press(badge);
+}
 test('creates club from catalog and enters with the returned club', async () => {
   jest.mocked(clubService.create).mockResolvedValue(club);
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   expect(screen.getByLabelText('Logotipo LigaPro')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('Nome do estádio'), ' Arena do Clube ');
@@ -134,7 +140,7 @@ test('club hides consultation and management shortcuts', async () => {
 test('country picker searches without accents and selects the result', async () => {
   jest.mocked(clubService.catalog).mockResolvedValue({ countries: [{ id: 'BR', name: 'Brasil' }, { id: 'JP', name: 'Japão' }], badges: [{ id: 'blue', name: 'Azul', symbol: '🛡', color: '#2563eb' }] });
   jest.mocked(clubService.create).mockResolvedValue(club);
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.press(screen.getByText('✓ Brasil'));
   await fireEvent.changeText(screen.getByLabelText('Buscar país'), 'japao');
   await fireEvent.press(screen.getByText('Japão'));
@@ -147,7 +153,7 @@ test('country picker searches without accents and selects the result', async () 
 test.each([new ApiError(401, 'Sessão expirada')])('failed creation returns to login without checking or creating again (%s)', async error => {
   useAuthStore.setState({ authenticated: true });
   jest.mocked(clubService.create).mockRejectedValueOnce(error);
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await waitFor(() => expect(useAuthStore.getState().authenticated).toBe(false));
@@ -160,7 +166,7 @@ test.each([new ApiError(401, 'Sessão expirada')])('failed creation returns to l
 test.each([new ApiTimeoutError(), new ApiError(409, 'Você já possui um clube.')])('recovers the created club without repeating the POST (%s)', async error => {
   useAuthStore.setState({ authenticated: true });
   jest.mocked(clubService.create).mockRejectedValueOnce(error);
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await waitFor(() => expect(useClubStore.getState().data?.club?.id).toBe('club1'));
@@ -174,7 +180,7 @@ test.each([false, true])('unconfirmed timeout keeps the session and form (status
   jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
   if (statusFails) jest.mocked(clubService.status).mockRejectedValueOnce(new ApiTimeoutError());
   else jest.mocked(clubService.status).mockResolvedValueOnce({ club: null });
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await screen.findByText('Não foi possível confirmar a criação do clube a tempo. Seus dados foram mantidos. Tente novamente em instantes.');
@@ -187,7 +193,7 @@ test('expired session during timeout recovery returns to login', async () => {
   useAuthStore.setState({ authenticated: true });
   jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
   jest.mocked(clubService.status).mockRejectedValueOnce(new ApiError(401, 'Sessão expirada'));
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await waitFor(() => expect(useAuthStore.getState().authenticated).toBe(false));
@@ -199,7 +205,7 @@ test('late timeout recovery cannot enter another session', async () => {
   jest.mocked(clubService.create).mockRejectedValueOnce(new ApiTimeoutError());
   let finish!: (value: { club: typeof club }) => void;
   jest.mocked(clubService.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await waitFor(() => expect(clubService.status).toHaveBeenCalledTimes(1));
@@ -209,7 +215,7 @@ test('late timeout recovery cannot enter another session', async () => {
 });
 
 test('opening the initial form never creates a club', async () => {
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   expect(clubService.create).not.toHaveBeenCalled();
 });
 
@@ -217,7 +223,7 @@ test('a successful response after session expiry does not enter the game', async
   useAuthStore.setState({ authenticated: true });
   let finish!: (value: typeof club) => void;
   jest.mocked(clubService.create).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   await act(async () => { await useAuthStore.getState().clearSession(); finish(club); });
@@ -326,7 +332,7 @@ test('creation popup rotates messages, allows editing and closes on success', as
   let finish!: (value: typeof club) => void;
   jest.mocked(clubService.create).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   try {
-    await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+    await render(<CreateClubScreen />); await selectClubOptions();
     await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
     await fireEvent.press(screen.getByText('Criar clube'));
     expect(screen.getByLabelText('Criação do clube em andamento')).toBeTruthy();
@@ -353,7 +359,7 @@ test('creation popup rotates messages, allows editing and closes on success', as
 test('creation failure dismisses popup and preserves form for retry', async () => {
   let fail!: (reason: Error) => void;
   jest.mocked(clubService.create).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
-  await render(<CreateClubScreen />); await screen.findByText('✓ Brasil');
+  await render(<CreateClubScreen />); await selectClubOptions();
   await fireEvent.changeText(screen.getByLabelText('Nome do clube'), 'Clube teste');
   await fireEvent.press(screen.getByText('Criar clube'));
   expect(screen.getByLabelText('Criação do clube em andamento')).toBeTruthy();

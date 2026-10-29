@@ -36,19 +36,32 @@ function CreationProgress({ onClose }: { onClose: () => void }) {
 }
 
 export function CreateClubScreen() {
-  const [name, setName] = useState(''), [country, setCountry] = useState('BR'), [badge, setBadge] = useState('blue');
+  const [name, setName] = useState(''), [country, setCountry] = useState(''), [badge, setBadge] = useState('');
   const [stadiumName, setStadiumName] = useState('');
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const action = useAction();
   const [creating, setCreating] = useState(false), [progressVisible, setProgressVisible] = useState(false);
   async function loadCatalog() {
-    const data = await clubService.catalog(); setCatalog(data);
-    setCountry(value => data.countries.some(item => item.id === value) ? value : data.countries[0]?.id || '');
-    setBadge(value => data.badges.some(item => item.id === value) ? value : data.badges[0]?.id || '');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const data = await clubService.catalog();
+        if (!data.countries.length || !data.badges.length) throw new Error('Não foi possível carregar todas as opções do clube. Tente novamente.');
+        setCatalog(data);
+        setCountry(value => data.countries.some(item => item.id === value) ? value : '');
+        setBadge(value => data.badges.some(item => item.id === value) ? value : '');
+        return;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) throw error;
+        if (attempt === 2) throw new Error('Não foi possível carregar todas as opções do clube. Tente novamente.');
+      }
+    }
   }
   useEffect(() => { void action.run(loadCatalog); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   function enterClub(club: Club) { useNotificationStore.getState().show(`${club.name} está pronto. Bem-vindo ao jogo!`); useClubStore.setState({ data: { club }, error: null, loading: false }); }
+  const selectionsValid = !!catalog?.countries.some(item => item.id === country) && !!catalog?.badges.some(item => item.id === badge);
+  const formValid = selectionsValid && name.trim().length >= 3 && name.trim().length <= 60 && (!stadiumName.trim() || (stadiumName.trim().length >= 3 && stadiumName.trim().length <= 60));
   async function create() {
+    if (!selectionsValid) throw new Error('Selecione o país e o escudo do clube para continuar.');
     setCreating(true); setProgressVisible(true);
     try { await submitClub(); }
     finally { setCreating(false); setProgressVisible(false); }
@@ -99,7 +112,7 @@ export function CreateClubScreen() {
     <Card><Text style={{ fontWeight: '700', fontSize: 20, color: palette.ink }}>2. Seu escudo</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{catalog?.badges.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`${badge === item.id ? '✓ ' : ''}${item.name}`} accessibilityState={{ selected: badge === item.id }} onPress={() => setBadge(item.id)} style={{ alignItems: 'center', gap: 8, width: 136, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: badge === item.id ? palette.primary : palette.border, backgroundColor: badge === item.id ? '#e8f7f1' : '#fff' }}><ClubBadge badge={item} name={name} size={58} /><Text style={{ color: palette.ink, fontWeight: '600' }}>{badge === item.id ? '✓ ' : ''}{item.name}</Text></Pressable>)}</View></Card>
     <Card><View style={{ flexDirection: 'row', gap: 20, alignItems: 'center' }}><ClubBadge badge={catalog?.badges.find(item => item.id === badge)} name={name} /><View style={{ flex: 1, gap: 6 }}><Text style={{ color: palette.muted }}>PRÉVIA DO CLUBE</Text><Text style={{ fontSize: 24, fontWeight: '800', color: palette.ink }}>{name.trim() || 'Seu clube'}</Text><Text style={{ color: palette.muted }}>{catalog?.countries.find(item => item.id === country)?.name || 'Escolha um país'}</Text></View></View>
     {!catalog && <ActionButton secondary title="Recarregar opções" disabled={action.busy} onPress={() => void action.run(loadCatalog)} />}
-    <ActionButton title="Criar clube" disabled={action.busy || !catalog || name.trim().length < 3} onPress={() => void action.run(create)} />{creating && !progressVisible && <ActionButton secondary title="Ver andamento" onPress={() => setProgressVisible(true)} />}</Card>
+    <ActionButton title="Criar clube" disabled={action.busy || !formValid} onPress={() => void action.run(create)} />{creating && !progressVisible && <ActionButton secondary title="Ver andamento" onPress={() => setProgressVisible(true)} />}</Card>
     <ActionButton secondary title="Sair" onPress={() => void useAuthStore.getState().logout()} />
   </GamePage>;
 }

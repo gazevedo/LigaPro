@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import version from '../../version.json';
-import { ActivityIndicator, Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ImageBackground, ImageSourcePropType, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActionButton, Card, Field, GamePage, NotificationBubble, pageLayout } from './GameUI';
+import { ActionButton, Card, Field, FloatingLoader, GamePage, NotificationBubble, pageLayout } from './GameUI';
 import { useNotificationStore } from '../stores/notificationStore';
 import { useClubStore } from '../stores/clubStore';
 import { useAuthStore } from '../stores/authStore';
@@ -46,7 +46,7 @@ export function AuthForm({ register = false, onCreateAccount, background }: {
             <View style={styles.field}><Text style={styles.label}>E-mail</Text><TextInput accessibilityLabel="E-mail" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" placeholder="seuemail@exemplo.com" placeholderTextColor="#8191a3" editable={!auth.loading} style={styles.input} /></View>
             <View style={styles.field}><Text style={styles.label}>Senha</Text><View style={styles.passwordRow}><TextInput accessibilityLabel="Senha" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" autoComplete="current-password" maxLength={128} placeholder="Sua senha" placeholderTextColor="#8191a3" editable={!auth.loading} style={[styles.input, styles.passwordInput]} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Ocultar senha' : 'Mostrar senha'} accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} hitSlop={6} onPress={() => setShowPassword(value => !value)} style={styles.eye}><Image source={showPassword ? require('../../assets/auth/eye.png') : require('../../assets/auth/eye-off.png')} accessible={false} style={{ width: 24, height: 24 }} /></Pressable></View></View>
             <Pressable accessibilityRole="button" disabled={auth.loading} onPress={() => setInfo('A recuperação de senha ainda não está disponível.')} style={styles.forgot}><Text style={styles.link}>Esqueci a senha</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Entrar" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => void submit()} style={({ pressed }) => [styles.enter, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}>{auth.loading ? <ActivityIndicator color="#fff" accessibilityLabel="Entrando" /> : <Text style={styles.enterText}>Entrar</Text>}</Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Entrar" accessibilityState={{ disabled: auth.loading }} disabled={auth.loading} onPress={() => void submit()} style={({ pressed }) => [styles.enter, { opacity: auth.loading ? 0.5 : pressed ? 0.8 : 1 }]}><Text style={styles.enterText}>Entrar</Text></Pressable>
             <View style={styles.divider}><View style={styles.line} /><Text style={{ color: '#728297' }}>ou</Text><View style={styles.line} /></View>
             <GoogleButton disabled={auth.loading} onPress={() => { auth.clearError(); void auth.loginWithGoogle(); }} />
           </View>
@@ -55,6 +55,7 @@ export function AuthForm({ register = false, onCreateAccount, background }: {
       </ScrollView>
       <View style={styles.footer}><Text accessibilityLabel={`Versão do aplicativo ${appVersion}`} style={styles.version}>v{appVersion}</Text></View>
     </KeyboardAvoidingView></SafeAreaView>
+    {auth.loading && <FloatingLoader label="Entrando" />}
   </ImageBackground>;
   return <GamePage error={validation || auth.error} loading={auth.loading}>
     <View style={styles.brand}><Image accessibilityLabel="Logotipo LigaPro" source={require('../../assets/brand/logo-ligapro.png')} resizeMode="contain" style={styles.logo} /></View>

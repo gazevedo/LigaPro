@@ -24,8 +24,15 @@ export function GameBackground({ children }: { children: ReactNode }) {
   </ImageBackground>;
 }
 export const pageLayout = { paddingVertical: 24, paddingHorizontal: 8, gap: 18, width: '100%' as const, maxWidth: 1000, alignSelf: 'center' as const, paddingBottom: 48 };
+export function FloatingLoader({ label = 'Carregando' }: { label?: string }) {
+  return <View pointerEvents="none" style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }, { zIndex: 100, alignItems: 'center', justifyContent: 'center' }]}>
+    <View style={{ padding: 22, borderRadius: 22, backgroundColor: '#fff', borderWidth: 1, borderColor: palette.border, boxShadow: '0 6px 24px #14243a33' }}>
+      <ActivityIndicator accessibilityLabel={label} size="large" color={palette.primary} />
+    </View>
+  </View>;
+}
 export function GamePage({ children, loading, error }: { children: ReactNode; loading?: boolean; error?: string | null }) {
-  return <GameBackground><ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} keyboardShouldPersistTaps="handled" contentContainerStyle={pageLayout}>{loading && <ActivityIndicator color={palette.primary} />}<NotificationBubble message={error} />{children}</ScrollView></GameBackground>;
+  return <GameBackground><View style={{ flex: 1 }}><ScrollView style={{ flex: 1, backgroundColor: 'transparent' }} keyboardShouldPersistTaps="handled" contentContainerStyle={pageLayout}><NotificationBubble message={error} />{children}</ScrollView>{loading && <FloatingLoader />}</View></GameBackground>;
 }
 export function Field({ label, value, onChange, numeric = false, ...props }: { label: string; value: string; onChange: (value: string) => void; numeric?: boolean } & Omit<TextInputProps, 'value' | 'onChange' | 'onChangeText'>) {
   return <View style={{ gap: 8 }}><Text style={{ fontWeight: '600', color: palette.ink }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} keyboardType={numeric ? 'numeric' : 'default'} placeholderTextColor={palette.muted} {...props} style={{ borderWidth: 1, borderColor: palette.border, backgroundColor: '#fff', color: palette.ink, padding: 14, borderRadius: 12, fontSize: 16 }} /></View>;
