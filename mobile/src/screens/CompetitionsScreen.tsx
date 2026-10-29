@@ -57,7 +57,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
           <Text style={{ fontWeight: '700', color: palette.ink }}>{match.home_name ?? 'Mandante'} × {match.away_name ?? 'Visitante'}</Text>
           {match.status === 'completed' && <Text>{match.home_goals ?? 0} × {match.away_goals ?? 0}</Text>}
         </View>
-        {match.status === 'completed' ? <ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: match.id })} /> : match.status === 'live' || match.status === 'in_progress' ? <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: match.id })} /> : <ActionButton secondary title="Acompanhar" onPress={() => navigation.navigate('MatchLive', { id: match.id })} />}
+        {match.status === 'completed' ? <ActionButton secondary title="Ver relatório" onPress={() => navigation.navigate('MatchReport', { id: match.id })} /> : match.status === 'live' || match.status === 'in_progress' ? <ActionButton title="Assistir" onPress={() => navigation.navigate('MatchLive', { id: match.id })} /> : null}
       </View>)}
       {!matches.length && games.data !== null && !loading && <Text style={{ color: palette.muted }}>Nenhuma partida neste campeonato.</Text>}
     </View>}

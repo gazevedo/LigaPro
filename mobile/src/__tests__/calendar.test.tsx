@@ -18,6 +18,7 @@ test('calendar distinguishes completed, live and scheduled matches and opens the
   expect(screen.getByText('Agendada')).toBeTruthy();
   await fireEvent.press(screen.getByText('Ver relatório'));
   expect(navigate).toHaveBeenCalledWith('MatchReport', { id: 'match1' });
-  await fireEvent.press(screen.getByText('Assistir'));
+  expect(screen.getAllByRole('button', { name: 'Acompanhar' })).toHaveLength(1);
+  await fireEvent.press(screen.getByRole('button', { name: 'Acompanhar' }));
   expect(navigate).toHaveBeenCalledWith('MatchLive', { id: 'match2' });
 });
