@@ -385,6 +385,28 @@ class MatchRoom:
         if not snapshots:
             await self.checkpoint(force=True)
 
+    async def refresh_clock(self, timeout=2):
+        """Share a bounded recovery between status reads without cancelling work."""
+        task = self.state_refresh_task
+        if task is not None and task.done():
+            self.state_refresh_task = None
+            task.result()
+            task = None
+        if task is None:
+
+            async def refresh():
+                async with self.lock:
+                    await self.advance_clock()
+
+            task = self.state_refresh_task = asyncio.create_task(refresh())
+            task.add_done_callback(
+                lambda complete: None if complete.cancelled() else complete.exception()
+            )
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+        if done:
+            task.result()
+        return bool(done)
+
     async def advance_clock(self, now=None):
         """Recover persisted progress and reveal only elapsed play, without a worker loop."""
         now = now or utcnow()
@@ -876,6 +898,35 @@ class MatchRoomManager:
             ):
                 room.task = asyncio.create_task(room.run())
             return room
+
+    async def refresh_due_for_user(self, user):
+        """Recover one due fixture for this club if the external worker is late."""
+        now = utcnow()
+        club = await asyncio.to_thread(self.repo.owned, user.id)
+
+        def candidates():
+            return [
+                match
+                for collection in MATCH_COLLECTIONS
+                for match in self.repo.many(
+                    collection,
+                    {
+                        "status": {"$in": ["scheduled", "live"]},
+                        "date": {"$lte": now},
+                        "$or": [{"home_club_id": club["_id"]}, {"away_club_id": club["_id"]}],
+                    },
+                    limit=1,
+                    sort=[("date", 1)],
+                    projection={"date": 1},
+                )
+            ]
+
+        matches = await asyncio.to_thread(candidates)
+        if not matches:
+            return
+        match = min(matches, key=lambda item: item["date"])
+        room = await self.get(str(match["_id"]), user, start_task=False)
+        await room.refresh_clock()
 
     async def start_due(self):
         for room in list(self.rooms.values()):

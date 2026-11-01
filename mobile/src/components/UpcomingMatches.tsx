@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useScreenRefresh } from './useScreenRefresh';
 import { Text, View } from 'react-native';
 import { useUpcomingMatchesStore } from '../stores/screenStores';
 import { ActionButton, palette } from './GameUI';
 
 export function UpcomingMatches({ open }: { open: (id: string) => void }) {
-  const { data: matches, ensure } = useUpcomingMatchesStore();
-  useEffect(() => { void ensure(); }, [ensure]);
+  const { data: matches, ensure, refresh } = useUpcomingMatchesStore();
+  useScreenRefresh(ensure, refresh, true, undefined, 3000);
   const ordered = [...(matches || [])].sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
   const match = ordered.find(item => item.status === 'live') || ordered.find(item => item.status === 'scheduled');
   const live = match?.status === 'live';

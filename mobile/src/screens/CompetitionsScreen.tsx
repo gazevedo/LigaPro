@@ -33,7 +33,7 @@ export function CompetitionsScreen({ navigation }: NativeStackScreenProps<RootSt
   const clubId = useClubStore(state => state.data?.club?.id);
   const loading = kind === 'league' ? table.loading || games.loading : cupStore.loading;
   const error = kind === 'league' ? table.error || games.error : cupStore.error;
-  useScreenRefresh(() => Promise.all([table.ensure(divisionId), games.ensure(divisionId)]), () => Promise.all([table.refresh(divisionId), games.refresh(divisionId)]), kind === 'league', divisionId);
+  useScreenRefresh(() => Promise.all([table.ensure(divisionId), games.ensure(divisionId)]), () => Promise.all([table.refresh(divisionId), games.refresh(divisionId)]), kind === 'league', divisionId, 3000);
   useScreenRefresh(cupStore.ensure, cupStore.refresh, kind === 'cup');
   const columns = [{ title: 'Clube', width: 160 }, ...['P', 'J', 'V', 'E', 'D', 'GP', 'GC', 'SG', 'CV', 'CA'].map(title => ({ title, width: 34 }))];
   return <GamePage loading={loading} error={error}>

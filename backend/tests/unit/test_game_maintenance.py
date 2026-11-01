@@ -66,13 +66,14 @@ def application(main):
     return app
 
 
-def test_competition_reads_return_saved_data_without_simulating_matches():
+def test_competition_reads_recover_only_own_due_fixture_without_universe_maintenance():
     main = module()
     app = application(main)
     user, repo = Mock(), Mock()
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[main.game.repository] = lambda: repo
     app.state.request_game_tick = AsyncMock()
+    app.state.match_rooms = SimpleNamespace(refresh_due_for_user=AsyncMock())
     events = []
 
     def process(**kwargs):
@@ -93,6 +94,7 @@ def test_competition_reads_return_saved_data_without_simulating_matches():
             assert response.status_code == 200
             assert response.json() == {"games": 4}
     assert events == ["read", "read"]
+    app.state.match_rooms.refresh_due_for_user.assert_awaited_once_with(user)
     competition.return_value.process_due.assert_not_called()
     app.state.request_game_tick.assert_not_awaited()
 

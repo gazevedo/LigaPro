@@ -17,7 +17,7 @@ function setup() {
   }) };
   function Screen() {
     const data = store();
-    useScreenRefresh(data.ensure, data.load);
+    useScreenRefresh(data.ensure, data.load, true, undefined, 3000);
     return <><Text>{data.data}</Text>{data.loading && <ActivityIndicator testID="loader" />}</>;
   }
   return { loader, store, Screen,

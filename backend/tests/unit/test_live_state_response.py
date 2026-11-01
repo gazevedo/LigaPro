@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from app.controllers.live import live_state
+from app.services.live_match import MatchRoom
 
 
 def test_slow_kickoff_keeps_one_background_refresh_and_returns_scoreboard():
@@ -14,6 +15,9 @@ def test_slow_kickoff_keeps_one_background_refresh_and_returns_scoreboard():
             advance_clock=AsyncMock(side_effect=lambda: None),
             state=Mock(return_value={"home_name": "Casa"}),
         )
+
+        room.state_refresh_task = None
+        room.refresh_clock = lambda: MatchRoom.refresh_clock(room)
 
         async def slow():
             await gate.wait()

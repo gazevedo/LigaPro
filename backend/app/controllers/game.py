@@ -1,6 +1,7 @@
+import asyncio
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.dependencies import get_current_user
 from app.database.mongo import get_database
@@ -235,8 +236,11 @@ def competition(user: User, repo: Repo, division_id: str | None = None):
 
 
 @router.get("/competition/matches")
-def competition_matches(user: User, repo: Repo, division_id: str | None = None):
-    return CompetitionService(repo).matches(user, division_id)
+async def competition_matches(
+    request: Request, user: User, repo: Repo, division_id: str | None = None
+):
+    await request.app.state.match_rooms.refresh_due_for_user(user)
+    return await asyncio.to_thread(CompetitionService(repo).matches, user, division_id)
 
 
 @router.get("/training")
@@ -528,7 +532,12 @@ def history(user: User, repo: Repo):
 
 
 @router.get("/matches/upcoming")
-def upcoming_matches(user: User, repo: Repo):
+async def upcoming_matches(request: Request, user: User, repo: Repo):
+    await request.app.state.match_rooms.refresh_due_for_user(user)
+    return await asyncio.to_thread(_upcoming_matches, user, repo)
+
+
+def _upcoming_matches(user, repo):
     from app.services.live_match import MATCH_COLLECTIONS
 
     club = repo.owned(user.id)
